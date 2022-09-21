@@ -1,0 +1,28 @@
+name: haploclust_env
+dependencies:
+    - pip
+    - liblapack
+    - openblas
+    - r=3.6.0
+    - bioconductor-biovizbase=1.34.0
+    - bioconductor-genomeinfodb=1.22.0
+    - bioconductor-genomeinfodbdata
+    - bioconductor-genomicalignments=1.22.0
+    - bioconductor-genomicranges=1.38.0
+    - bioconductor-iranges=2.20.0
+    - bioconductor-rsamtools=2.2.0
+    - r-assertthat>=0.2.1
+    - r-data.table>=1.12.2
+    - r-dplyr>=1.0.4
+    - r-foreach
+    - r-doparallel
+    - r-dosnow
+    - r-iterators
+    - r-igraph>=1.2.4.1
+    - r-lpsolve>=5.6.13.3
+    - r-matrixstats>=0.54.0
+    - r-tidyr>=0.8.3
+    - r-reshape2>=1.4.3
+    - r-seqinr>=3.6_1
+    - r-matrix
+    - r-pkgconfig

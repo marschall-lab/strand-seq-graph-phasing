@@ -1,0 +1,44 @@
+### Note: SS read names should not have "_" character
+
+sample: HG002v11nl12slt1e6
+assembly: /gpfs/project/projects/medbioinf/projects/mihen108/input/HG002/assembly_v1-1/assembly.homopolymer-compressed.gfa
+# For this high quality assembly, most chromosome pairs are a single component,
+# with acrocentrics tangled
+num_components: 25
+
+strandseq_dir: /gpfs/project/projects/medbioinf/projects/mihen108/input/HG002/strandseq
+strandseq_suffix: .fastq.gz
+
+# tools
+# Rscript: /usr/local/package/bin/Rscript
+# #whatshap_split : ../../tools/whatshap-fork/whatshap/cli/split.py
+whatshap_split : utils/split.py
+# #hifiasm: ../../tools/hifiasm/hifiasm
+# assembly: verkko_test_graph
+# BubbleGun: utils/split.py # ~/.local/bin/BubbleGun
+#
+# # long reads
+# long_reads_dir: /gpfs/project/projects/medbioinf/projects/mihen108/input/
+#
+# # directory including all Strand-seq fastq files
+# SS_fastq_dir: ../../ss_fastq
+#
+reference: /gpfs/project/projects/medbioinf/projects/mihen108/input/references/T2Tv11_hg002Yv2_chm13.fasta
+#
+# phased_vcf_dir: ../../ground-true-phasing/
+# vcf_prefix: PR05
+#
+# # SS bams and phased vcf files
+# #SS_bam_dir: ../../ss_bams
+#
+# bubble_info: "TRUE"
+# evaluation: "FALSE"
+#
+
+
+
+
+numLibs: 12
+# saarclust parameters
+segmentLengthThreshold: 1000000
+EMiter: 100

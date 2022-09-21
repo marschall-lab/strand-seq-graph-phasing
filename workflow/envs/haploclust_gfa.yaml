@@ -1,0 +1,3 @@
+name: haploclust_gfa
+dependencies:
+  - gfapy=1.2.3

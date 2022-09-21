@@ -1,0 +1,50 @@
+### Note: SS read names should not have "_" character
+
+sample: NA20509
+assembly: /gpfs/project/projects/medbioinf/projects/mihen108/input/NA20509/assembly/assembly.homopolymer-compressed.gfa
+strandseq_dir: /gpfs/project/projects/medbioinf/projects/mihen108/input/NA20509/strandseq
+strandseq_suffix: _sequence.fastq.gz
+# tools
+# Rscript: /usr/local/package/bin/Rscript
+# #whatshap_split : ../../tools/whatshap-fork/whatshap/cli/split.py
+whatshap_split : utils/split.py
+# #hifiasm: ../../tools/hifiasm/hifiasm
+# assembly: verkko_test_graph
+# BubbleGun: ~/.local/bin/BubbleGun
+#
+# # long reads
+# long_reads_dir: /gpfs/project/projects/medbioinf/projects/mihen108/input/
+#
+# # directory including all Strand-seq fastq files
+# SS_fastq_dir: ../../ss_fastq
+#
+reference: /gpfs/project/projects/medbioinf/projects/mihen108/input/references/T2Tv11_hg002Yv2_chm13.fasta
+#
+# phased_vcf_dir: ../../ground-true-phasing/
+# vcf_prefix: PR05
+#
+# # SS bams and phased vcf files
+# #SS_bam_dir: ../../ss_bams
+#
+# bubble_info: "TRUE"
+# evaluation: "FALSE"
+#
+# # saarclust parameters
+# testNumClustersHard: [50,60,80,90,100,200]
+# numClustersHard: 80
+# numClustersSoft: 47
+# EMiter: 2
+# alpha: 0.01
+# minLib: 1
+# upperQ: 1 #0.95
+# logLth: 1
+# theta_constrain: "FALSE"
+# log_scale: "TRUE"
+# filter_soft_clust_input: "FALSE"
+# numAlignments: 30000 #150000
+#
+numLibs: 96
+segmentLengthThreshold: 1000000
+num_components: 40
+EMiter: 100
+# num_chromosomes: 23

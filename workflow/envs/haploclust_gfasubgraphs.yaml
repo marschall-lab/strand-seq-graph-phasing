@@ -1,0 +1,6 @@
+name: haploclust_gfasubgraphs
+dependencies:
+  - pip=22.1.1
+  
+  ## github package 2022 June 16 https://github.com/fawaz-dabbaghieh/gfa_subgraphs
+  # - gfa_subgraphs

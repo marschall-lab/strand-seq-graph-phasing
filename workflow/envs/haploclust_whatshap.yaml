@@ -1,0 +1,3 @@
+name: haploclust_whatshap
+dependencies:
+  - whatshap=1.0
