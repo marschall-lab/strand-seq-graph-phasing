@@ -237,6 +237,8 @@ def end_as_tuple(x):
 def tuple_as_end(x, graph):
     return gfapy.SegmentEnd(graph.segment(x[0]), x[1])
 
+
+# Self Links
 def is_self_link(edge):
     return edge.from_segment == edge.to_segment
 
@@ -285,17 +287,16 @@ def add_line_unique_safe(graph, line):
         added = False
     return added
 
+# The whole thing with dead end segments is stupid
 def macro_simplify(
   graph,
-  threshold=1000000,
-  keep=None,
-  keep_only=False,
-  dead_end_segments_to_keep_names=None):
+  threshold=None,
+  keep=None):
     #  keep ~ segment names
-    if keep is None and  keep_only:
-        raise ValueError('no segments to simplify')
+    if keep is None and  threshold is None:
+        raise ValueError('no segments to remove')
 
-    if keep_only:
+    if threshold is None:
         segments_to_keep_names = keep
     else:
         segments_to_keep_names = set()
@@ -311,9 +312,8 @@ def macro_simplify(
         segment = graph.segment(segment_name)
         for neigh in segment.neighbours:
             segments_to_keep_neighbour_names.add(neigh.name)
-
-    if dead_end_segments_to_keep_names is None:
-        dead_end_segments_to_keep_names =  [seg.name for seg in graph.segments if is_dead_end(seg)]
+        
+    dead_end_segments_to_keep_names =  [seg.name for seg in graph.segments if is_dead_end(seg)]
 
     terminal_segment_names = segments_to_keep_neighbour_names.union(segments_to_keep_names).union(dead_end_segments_to_keep_names)
 
@@ -364,16 +364,26 @@ def refresh_graph(graph, removed_segment_names):
             add_line_unique_safe(graph2, edge.clone())
     return graph2
 
+
+# Solo segments
 def is_solo(seg):
     connectivity =  [len(seg.neighbours_L), len(seg.neighbours_R)]
     return 0 == connectivity[0] and  0 == connectivity[1]
 
-def remove_solo_segments(graph, thresh = 5000000, keep = None):
-    solo_segment_names =  {seg.name for seg in graph.segments if is_solo(seg) and seg.length and seg.length < thresh}
+def remove_solo_segments(graph, thresh = None, keep = None):
+    # solo_segment_names =  {seg.name for seg in graph.segments if is_solo(seg) and seg.length and seg.length < thresh}
+    # 
+    # 
+    # if keep is not None:
+    #     solo_segment_names = solo_segment_names.difference(keep)
 
+    solo_segments_to_remove =  [seg for seg in graph.segments if is_solo(seg) and seg.length]
+    if thresh is not None:
+        solo_segments_to_remove = [seg for seg in solo_segments_to_remove if seg.length < thresh]    
     if keep is not None:
-        solo_segment_names = solo_segment_names.difference(keep)
-
+        solo_segments_to_remove = [seg for seg in solo_segments_to_remove if seg.name not in keep]
+        
+    solo_segment_names =  {seg.name for seg in solo_segments_to_remove}
     removed_nodes=set()
     for seg_name in solo_segment_names:
         print(seg_name)
@@ -386,29 +396,20 @@ def is_dead_end(seg):
     connectivity =  [len(seg.neighbours_L), len(seg.neighbours_R)]
     return 0 in connectivity #  and not seg.gfa.is_cut_segment(seg)
 
-def remove_dead_ends_once(graph, thresh = 3000000, keep = None):
-    dead_end_segments_to_remove_names =  {seg.name for seg in graph.segments if is_dead_end(seg) and seg.length and seg.length < thresh}
-
-    if keep is not None:
-        dead_end_segments_to_remove_names = dead_end_segments_to_remove_names.difference(keep)
-
-    removed_nodes=set()
-    for name in dead_end_segments_to_remove_names:
-        removed = remove_if_not_cut(graph, name)
-        if removed:
-            print(name)
-            removed_nodes.add(name)
-
-    return refresh_graph(graph, removed_nodes)
-
-def remove_dead_ends(graph, thresh = 3000000, keep = None):
+def remove_dead_ends(graph, thresh = None, keep = None):
     # TODO I don't like the way this function is written, I would like to avoid
-    # the repeared refresh_graph calls, hopefully by doing this additively
+    # the repeated refresh_graph calls, hopefully by doing this additively
     # instead of subtractively
-    dead_end_segments_to_remove_names =  {seg.name for seg in graph.segments if is_dead_end(seg) and seg.length and seg.length < thresh}
+    dead_end_segments_to_remove =  [seg for seg in graph.segments if is_dead_end(seg) and seg.length]
+    
+    if thresh is not None:
+        dead_end_segments_to_remove = [seg for seg in dead_end_segments_to_remove if seg.length < thresh]
     if keep is not None:
-        dead_end_segments_to_remove_names = dead_end_segments_to_remove_names.difference(keep)
+        dead_end_segments_to_remove = [seg for seg in dead_end_segments_to_remove if seg.name not in keep]
 
+    dead_end_segments_to_remove_names =  {seg.name for seg in dead_end_segments_to_remove}
+    
+    
     removed_nodes=set()
     any_removed = True
     while any_removed:
@@ -420,22 +421,30 @@ def remove_dead_ends(graph, thresh = 3000000, keep = None):
                 print(name)
                 removed_nodes.add(name)
         graph = refresh_graph(graph, removed_nodes)
-        dead_end_segments_to_remove_names =  {seg.name for seg in graph.segments if is_dead_end(seg) and seg.length and seg.length < thresh}
+        
+        dead_end_segments_to_remove =  [seg for seg in graph.segments if is_dead_end(seg) and seg.length]
+        if thresh is not None:
+            dead_end_segments_to_remove = [seg for seg in dead_end_segments_to_remove if seg.length < thresh]
         if keep is not None:
-            dead_end_segments_to_remove_names = dead_end_segments_to_remove_names.difference(keep)
+            dead_end_segments_to_remove = [seg for seg in dead_end_segments_to_remove if seg.name not in keep]
+        dead_end_segments_to_remove_names =  {seg.name for seg in dead_end_segments_to_remove}
+    
 
     return refresh_graph(graph, removed_nodes)
 
-def remove_nodes(graph, threshold=1000000, keep = None):
+def remove_nodes(graph, threshold=None, keep = None):
 
     # iterate over list of names, not segments, as disconnecting segments while
     # looping over list of them them can lead to problems with the list being
     # modified during iteration
-
+    if keep is None and  threshold is None:
+        raise ValueError('no segments to keep')
+      
     segments_to_keep_names = set()
-    for seg in graph.segments:
-        if seg.length >= threshold:
-            segments_to_keep_names.add(seg.name)
+    if threshold is not None:
+        for seg in graph.segments:
+            if seg.length >= threshold:
+                segments_to_keep_names.add(seg.name)
 
     if keep is not None:
         segments_to_keep_names = segments_to_keep_names.union(keep)
@@ -444,6 +453,7 @@ def remove_nodes(graph, threshold=1000000, keep = None):
     for name in graph.segment_names:
         if name not in segments_to_keep_names:
             segments_to_remove_names.add(name)
+    # TODO is this step still needed?
     # Order segments_to_remove_names to remove segments adjacent to (nodes being
     # kept) last. this may help more accurately preserve the presence of tip
     # structures during pass through removal
