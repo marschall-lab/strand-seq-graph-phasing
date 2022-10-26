@@ -247,7 +247,8 @@ valid_lib_bubble_thresh <- 2
 coverage <-
   coverage %>%
   semi_join(
-    valid_libs_per_bubble[valid_libs >= valid_lib_bubble_thresh]
+    valid_libs_per_bubble[valid_libs >= valid_lib_bubble_thresh],
+    by=c('chrom.clust', 'bubbleName')
   )
 
 # TODO some sort of more specific reports about what and how much each is filtered?
