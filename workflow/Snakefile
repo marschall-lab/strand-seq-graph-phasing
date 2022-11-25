@@ -47,31 +47,31 @@ print(libs)
 
 # Should probably add periods and underscores to sample wildcard constraint
 wildcard_constraints:
-	sample = "[a-zA-Z\d]+",
-	clust = "[\d]+"
+    sample = "[a-zA-Z\d]+",
+    clust = "[\d]+"
 
 ###############################
 ############ Rules ############
 ###############################
 
 # rule all:
-	# input:
-		#expand("../../{sample}/{assembly}/asm.r_utg.fa", sample=sample),
-		# expand("../../{sample}/{assembly}/clustering_orientation_strandstate/hard_clusters.RData", sample=sample, assembly=assembly),
-		# expand("/{sample}/split/{sample}_{clust}.gfa", sample=sample, clust=chromosomes)
+    # input:
+        #expand("../../{sample}/{assembly}/asm.r_utg.fa", sample=sample),
+        # expand("../../{sample}/{assembly}/clustering_orientation_strandstate/hard_clusters.RData", sample=sample, assembly=assembly),
+        # expand("/{sample}/split/{sample}_{clust}.gfa", sample=sample, clust=chromosomes)
 
 rule temp:
-	input:
-		ref_aln = expand("{sample}/ref_aln/{sample}.bam", sample=sample),
-		split_assembly_fasta_by_clust=expand("{sample}/clustered_ss_fasta/", sample=sample),
-		split_ss_reads_by_clust=expand("{sample}/clustered_assembly_fasta/", sample=sample),
-		detect_bubbles=  expand("{sample}/graph_components/simplified_assembly.gfa.json", sample=sample),
-		fastmap_ss_reads_to_unitigs=expand("{sample}/exact_match/", sample=sample),
-		output_valid_maps=expand("{sample}/valid_exact_match/", sample=sample),
-		phase_unitigs=expand("{sample}/phasing/{sample}_phased_unitigs.data", sample=sample),
-		summary_stats=expand("{sample}/phasing/{sample}_phased_summary_stats.csv", sample=sample),
-		unmerged_SaaRclust_by_component = expand("{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", sample=sample),
-		# phase_unitigs=expand("{sample}/phasing/phased_unitigs_{component}.data", sample=sample, component=non_acrocentric_components),
+    input:
+        ref_aln = expand("{sample}/ref_aln/{sample}.bam", sample=sample),
+        split_assembly_fasta_by_clust=expand("{sample}/clustered_ss_fasta/", sample=sample),
+        split_ss_reads_by_clust=expand("{sample}/clustered_assembly_fasta/", sample=sample),
+        detect_bubbles=  expand("{sample}/graph_components/simplified_assembly.gfa.json", sample=sample),
+        fastmap_ss_reads_to_unitigs=expand("{sample}/exact_match/", sample=sample),
+        output_valid_maps=expand("{sample}/valid_exact_match/", sample=sample),
+        phase_unitigs=expand("{sample}/phasing/{sample}_phased_unitigs.data", sample=sample),
+        summary_stats=expand("{sample}/phasing/{sample}_phased_summary_stats.csv", sample=sample),
+        unmerged_SaaRclust_by_component = expand("{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", sample=sample)
+        # phase_unitigs=expand("{sample}/phasing/phased_unitigs_{component}.data", sample=sample, component=non_acrocentric_components),
 
 
 ################################################
@@ -82,36 +82,36 @@ rule temp:
 # used for the initial clustering step which assigns
 # unitig chromosome and orientation, and calls library strand state
 rule unzip_ss:
-	input: ss_dir+"/{lib}_{pair}"+ss_suffix,
-	output: temp("{sample}/ss/unmerged/{lib}_{pair}.fasta")
-	conda:'envs/haploclust_cl.yaml'
-	log: "log/unzip_ss_{sample}_{lib}_{pair}.log"
-	shell:
-		'''
-		(time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1
-		'''
+    input: ss_dir+"/{lib}_{pair}"+ss_suffix
+    output: temp("{sample}/ss/unmerged/{lib}_{pair}.fasta")
+    conda:'envs/haploclust_cl.yaml'
+    log: "log/unzip_ss_{sample}_{lib}_{pair}.log"
+    shell:
+        '''
+        (time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1
+        '''
 
 rule add_ss_libname_unmerged:
-	input: "{sample}/ss/unmerged/{lib}_{pair}.fasta"
-	output: temp("{sample}/ss/unmerged/{lib}_{pair}.renamed.fasta")
-	conda:'envs/haploclust_cl.yaml'
-	log: "log/add_ss_libname_{sample}_{lib}_{pair}.log"
-	shell:
-		'''
-		bioawk -c fastx -v libname={wildcards.lib} '{{print \">\"$name"_"libname; print $seq}}' <(cat {input}) > {output}
-		'''
+    input: "{sample}/ss/unmerged/{lib}_{pair}.fasta"
+    output: temp("{sample}/ss/unmerged/{lib}_{pair}.renamed.fasta")
+    conda:'envs/haploclust_cl.yaml'
+    # log: "log/add_ss_libname_{sample}_{lib}_{pair}.log"
+    shell:
+        '''
+        bioawk -c fastx -v libname={wildcards.lib} '{{print \">\"$name"_"libname; print $seq}}' <(cat {input}) > {output}
+        '''
 
 rule homopolymer_compress_unmerged_ss:
-	input: "{sample}/ss/unmerged/{lib}_{pair}.renamed.fasta",
-	output: "{sample}/ss/unmerged/{lib}_{pair}.homopolymer-compressed.fasta",
-	conda:'envs/haploclust_pyenv.yaml'
-	log: "log/compress_unmerged_ss_{sample}_{lib}_{pair}.log"
-	shell:
-		'''
-		(python3 scripts/python/homopolymer_compress_fasta.py \\
-		--input {input} \\
-		--output {output}) > {log} 2>&1
-		'''
+    input: "{sample}/ss/unmerged/{lib}_{pair}.renamed.fasta"
+    output: "{sample}/ss/unmerged/{lib}_{pair}.homopolymer-compressed.fasta"
+    conda:'envs/haploclust_pyenv.yaml'
+    log: "log/compress_unmerged_ss_{sample}_{lib}_{pair}.log"
+    shell:
+        '''
+        (python3 scripts/python/homopolymer_compress_fasta.py \\
+        --input {input} \\
+        --output {output}) > {log} 2>&1
+        '''
 
 
 ##############################################
@@ -123,52 +123,52 @@ rule homopolymer_compress_unmerged_ss:
 
 # TODO check the name of the merged reads, does it simply take the name of the first read in the pair?
 rule pear_merge_mates:
-	input:
-		fq1=ss_dir+"/{lib}_1"+ss_suffix,
-		fq2=ss_dir+"/{lib}_2"+ss_suffix,
-	output:
-		"{sample}/ss/merged/{lib}.assembled.fastq",
-		"{sample}/ss/merged/{lib}.discarded.fastq",
-		"{sample}/ss/merged/{lib}.unassembled.forward.fastq",
-		"{sample}/ss/merged/{lib}.unassembled.reverse.fastq"
-	conda:'envs/haploclust_cl.yaml'
-	resources:
-		mem_mb = lambda wildcards, attempt: 4096 * attempt,
-		walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	log: "log/pear_merge_mates_{sample}_{lib}.log"
-	benchmark: "benchmark/pear_merge_mates_{sample}_{lib}.benchmark"
-	shell: "(pear -f {input.fq1} -r {input.fq2} -t 101 -o {wildcards.sample}/ss/merged/{wildcards.lib}) > {log} 2>&1"
+    input:
+        fq1=ss_dir+"/{lib}_1"+ss_suffix,
+        fq2=ss_dir+"/{lib}_2"+ss_suffix
+    output:
+        "{sample}/ss/merged/{lib}.assembled.fastq",
+        "{sample}/ss/merged/{lib}.discarded.fastq",
+        "{sample}/ss/merged/{lib}.unassembled.forward.fastq",
+        "{sample}/ss/merged/{lib}.unassembled.reverse.fastq"
+    conda:'envs/haploclust_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 4096 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/pear_merge_mates_{sample}_{lib}.log"
+    benchmark: "benchmark/pear_merge_mates_{sample}_{lib}.benchmark"
+    shell: "(pear -f {input.fq1} -r {input.fq2} -t 101 -o {wildcards.sample}/ss/merged/{wildcards.lib}) > {log} 2>&1"
 
 rule concat_assembled_with_first_pair_of_unassembled:
-	input:
-		"{sample}/ss/merged/{lib}.assembled.fastq",
-		"{sample}/ss/merged/{lib}.unassembled.forward.fastq",
-	output: temp("{sample}/ss/merged/{lib}.combined.fasta")
-	conda:'envs/haploclust_cl.yaml'
-	log: "log/concat_merged_with_first_unmerged_{sample}_{lib}.log"
-	shell: "(time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1"
+    input:
+        "{sample}/ss/merged/{lib}.assembled.fastq",
+        "{sample}/ss/merged/{lib}.unassembled.forward.fastq"
+    output: temp("{sample}/ss/merged/{lib}.combined.fasta")
+    conda:'envs/haploclust_cl.yaml'
+    log: "log/concat_merged_with_first_unmerged_{sample}_{lib}.log"
+    shell: "(time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1"
 
 rule add_ss_libname_merged:
-	input: "{sample}/ss/merged/{lib}.combined.fasta"
-	output: temp("{sample}/ss/merged/{lib}.combined.renamed.fasta")
-	conda:'envs/haploclust_cl.yaml'
-	log: "log/add_ss_libname_{sample}_{lib}.log"
-	shell:
-		'''
-		bioawk -c fastx -v libname={wildcards.lib} '{{print \">\"$name"_"libname; print $seq}}' <(cat {input}) > {output}
-		'''
+    input: "{sample}/ss/merged/{lib}.combined.fasta"
+    output: temp("{sample}/ss/merged/{lib}.combined.renamed.fasta")
+    conda:'envs/haploclust_cl.yaml'
+    # log: "log/add_ss_libname_{sample}_{lib}.log"
+    shell:
+        '''
+        bioawk -c fastx -v libname={wildcards.lib} '{{print \">\"$name"_"libname; print $seq}}' <(cat {input}) > {output}
+        '''
 
 rule homopolymer_compress_merged_ss:
-	input: "{sample}/ss/merged/{lib}.combined.renamed.fasta" # concat_assembled_with_first_pair_of_unassembled
-	output: "{sample}/ss/merged/{lib}.combined.homopolymer-compressed.fasta"
-	conda:'envs/haploclust_pyenv.yaml'
-	log: "log/compress_ss_{sample}_{lib}.log"
-	shell:
-		'''
-		python3 scripts/python/homopolymer_compress_fasta.py \\
-		--input {input} \\
-		--output {output}
-		'''
+    input: "{sample}/ss/merged/{lib}.combined.renamed.fasta" # concat_assembled_with_first_pair_of_unassembled
+    output: "{sample}/ss/merged/{lib}.combined.homopolymer-compressed.fasta"
+    conda:'envs/haploclust_pyenv.yaml'
+    # log: "log/compress_ss_{sample}_{lib}.log"
+    shell:
+        '''
+        python3 scripts/python/homopolymer_compress_fasta.py \\
+        --input {input} \\
+        --output {output}
+        '''
 
 
 #####################################################################
@@ -176,87 +176,87 @@ rule homopolymer_compress_merged_ss:
 #####################################################################
 
 rule gfa_to_fasta:
-	input: assembly,
-	output: "{sample}/{sample}_assembly.fa",
-	threads: 2
-	log: "log/gfa_to_fasta_{sample}.log"
-	shell:
-		'''
-		(time grep S {input} | awk '{{print \">\"$2\"\\n\"$3}}' > {output}) > {log} 2<&1
-		'''
+    input: assembly
+    output: "{sample}/{sample}_assembly.fa"
+    threads: 2
+    log: "log/gfa_to_fasta_{sample}.log"
+    shell:
+        '''
+        (time grep S {input} | awk '{{print \">\"$2\"\\n\"$3}}' > {output}) > {log} 2<&1
+        '''
 
 rule bwa_index_unitigs:
-	input: "{sample}/{sample}_assembly.fa" # gfa_to_fasta
-	output: expand("{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices)
-	conda:'envs/haploclust_cl.yaml'
-	resources:
-		mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-		walltime = lambda wildcards, attempt: f'{8 + attempt*attempt:02}:59:00'
-	log: "log/bwa_index_hifiasm_unitigs_{sample}.log"
-	benchmark: "benchmark/bwa_index_unitigs_{sample}.benchmark"
-	shell: "(time bwa index {input}) > {log} 2>&1"
+    input: "{sample}/{sample}_assembly.fa" # gfa_to_fasta
+    output: expand("{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices)
+    conda:'envs/haploclust_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{8 + attempt*attempt:02}:59:00'
+    log: "log/bwa_index_hifiasm_unitigs_{sample}.log"
+    benchmark: "benchmark/bwa_index_unitigs_{sample}.benchmark"
+    shell: "(time bwa index {input}) > {log} 2>&1"
 
 rule bwa_align_unmerged_compressed_ss_to_unitigs:
-	input:
-		unitigs="{sample}/{sample}_assembly.fa", # gfa_to_fasta
-		unitigs_index=expand("{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices), # bwa_index_unitigs
-		mate1="{sample}/ss/unmerged/{lib}_1.homopolymer-compressed.fasta",
-		mate2="{sample}/ss/unmerged/{lib}_2.homopolymer-compressed.fasta",
-	output: temp("{sample}/temp_unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam")
-	threads: 6
-	conda:'envs/haploclust_cl.yaml'
-	resources:
-		mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
-		walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	log:
-		bwa="log/bwa_align_unmerged_compressed_ss_to_unitigs_bwa_{sample}_{lib}.log",
-		samtools="log/bwa_align_unmerged_compressed_ss_to_unitigs_samtools_{sample}_{lib}.log",
-	shell:
-		'''
-		bwa mem -t {threads} -R "@RG\\tID:{wildcards.lib}" -v 2 {input.unitigs} {input.mate1} {input.mate2} 2> {log.bwa} | samtools view -b -F 2304 /dev/stdin > {output} 2> {log.samtools}
- 		'''
+    input:
+        unitigs="{sample}/{sample}_assembly.fa", # gfa_to_fasta
+        unitigs_index=expand("{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices), # bwa_index_unitigs
+        mate1="{sample}/ss/unmerged/{lib}_1.homopolymer-compressed.fasta",
+        mate2="{sample}/ss/unmerged/{lib}_2.homopolymer-compressed.fasta"
+    output: temp("{sample}/temp_unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam")
+    threads: 6
+    conda:'envs/haploclust_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log:
+        bwa="log/bwa_align_unmerged_compressed_ss_to_unitigs_bwa_{sample}_{lib}.log",
+        samtools="log/bwa_align_unmerged_compressed_ss_to_unitigs_samtools_{sample}_{lib}.log"
+    shell:
+        '''
+        bwa mem -t {threads} -R "@RG\\tID:{wildcards.lib}" -v 2 {input.unitigs} {input.mate1} {input.mate2} 2> {log.bwa} | samtools view -b -F 2304 /dev/stdin > {output} 2> {log.samtools}
+        '''
 
 rule bwa_sort_unmerged_compressed_ss_to_unitigs:
-	input:  "{sample}/temp_unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam" # bwa_align
-	output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam"
-	conda:'envs/haploclust_cl.yaml'
-	resources:
-		mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-		walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	log: "log/bwa_sort_unmerged_{sample}_{lib}.log"
-	benchmark: "benchmark/bwa_sort_unmerged_{sample}_{lib}.benchmark"
-	shell:
-		'''
-		(time samtools sort -o {output} {input}) > {log} 2>&1
-		'''
+    input:  "{sample}/temp_unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam" # bwa_align
+    output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam"
+    conda:'envs/haploclust_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/bwa_sort_unmerged_{sample}_{lib}.log"
+    benchmark: "benchmark/bwa_sort_unmerged_{sample}_{lib}.benchmark"
+    shell:
+        '''
+        (time samtools sort -o {output} {input}) > {log} 2>&1
+        '''
 
 rule unmerged_mark_duplicates:
-	input:  "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam" # bwa_sort
-	output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam",
-	conda:'envs/haploclust_cl.yaml'
-	resources:
-		mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-		walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	log: "log/unmerged_mark_duplicates_{sample}_{lib}.log"
-	benchmark: "benchmark/unmerged_mark_duplicates_{sample}_{lib}.benchmark"
-	shell:
-		'''
-		(time sambamba markdup {input} {output}) > {log} 2>&1
-		'''
+    input:  "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam" # bwa_sort
+    output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam"
+    conda:'envs/haploclust_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/unmerged_mark_duplicates_{sample}_{lib}.log"
+    benchmark: "benchmark/unmerged_mark_duplicates_{sample}_{lib}.benchmark"
+    shell:
+        '''
+        (time sambamba markdup {input} {output}) > {log} 2>&1
+        '''
 
 rule unmerged_bwa_index:
-	input:  "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam" # mark_duplicates
-	output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam.bai"
-	conda:'envs/haploclust_cl.yaml'
-	resources:
-		mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-		walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	log: "log/unmerged_bwa_index_{sample}_{lib}.log"
-	benchmark: "benchmark/unmerged_bwa_index_{sample}_{lib}.benchmark"
-	shell:
-		'''
-		(time samtools index {input}) > {log} 2>&1
-		'''
+    input:  "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam" # mark_duplicates
+    output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam.bai"
+    conda:'envs/haploclust_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/unmerged_bwa_index_{sample}_{lib}.log"
+    benchmark: "benchmark/unmerged_bwa_index_{sample}_{lib}.benchmark"
+    shell:
+        '''
+        (time samtools index {input}) > {log} 2>&1
+        '''
 
 
 ###############################################################
@@ -264,40 +264,40 @@ rule unmerged_bwa_index:
 ###############################################################
 
 rule clust_orient_strand_state:
-	input:
-		bam=expand("{{sample}}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam", lib=libs), # mark_duplicates
-		bai=expand("{{sample}}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam.bai", lib=libs), # bwa_index
-		gfa=assembly
-	output:
-		ML_clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # ~ MLclust.data ~ unitig_clusters.tsv
-		ss_clust="{sample}/clustering_orientation_strandstate/ss_clusters.tsv", # ss_clusters.data ~ ss_clusters.tsv
-		# ss_clust_sp=directory("{sample}/clustering_orientation_strandstate/ss_clusters/"),
-		clust_pairs="{sample}/clustering_orientation_strandstate/clust_partners.tsv", # clust_partners.txt ~ clust_partners.tsv
-		wc_cells_clusters="{sample}/clustering_orientation_strandstate/wc_libraries.tsv", # wc_cells_clusters.data ~ wc_libraries.tsv
-		unclustered='{sample}/clustering_orientation_strandstate/SaaRclust_unclustered_rnames.tsv'
-	params:
-		prefix = expand("{sample}/SaaRclust/", sample=sample),
-		EMiter=EMiter,
-		segment_length_threshold=segment_length_threshold
-	singularity: "haploclust_Renv2.sif"
-	# conda: "envs/haploclust_Renv.yaml"
-	resources:
-		mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
-		walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	threads: 8 # 24
-	log: "log/SaaRclust_by_component_{sample}_initial_clusters.log"
-	benchmark: "benchmark/SaaRclust_by_component_{sample}_initial_clusters.benchmark"
-	shell:
-	 	'''
-		Rscript --vanilla scripts/R/unmerged_SaaRclust_contibait.snakemake.R \\
-		--bam {input.bam} \\
-		--gfa {input.gfa} \\
-		--output-prefix {params.prefix} \\
-		--em-iter {params.EMiter} \\
-		--threads {threads} \\
-		--segment-length-threshold {params.segment_length_threshold} \\
-		--log {log}
-		'''
+    input:
+        bam=expand("{{sample}}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam", lib=libs), # mark_duplicates
+        bai=expand("{{sample}}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam.bai", lib=libs), # bwa_index
+        gfa=assembly
+    output:
+        ML_clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # ~ MLclust.data ~ unitig_clusters.tsv
+        ss_clust="{sample}/clustering_orientation_strandstate/ss_clusters.tsv", # ss_clusters.data ~ ss_clusters.tsv
+        # ss_clust_sp=directory("{sample}/clustering_orientation_strandstate/ss_clusters/"),
+        clust_pairs="{sample}/clustering_orientation_strandstate/clust_partners.tsv", # clust_partners.txt ~ clust_partners.tsv
+        wc_cells_clusters="{sample}/clustering_orientation_strandstate/wc_libraries.tsv", # wc_cells_clusters.data ~ wc_libraries.tsv
+        unclustered='{sample}/clustering_orientation_strandstate/SaaRclust_unclustered_rnames.tsv'
+    params:
+        prefix = expand("{sample}/SaaRclust/", sample=sample),
+        EMiter=EMiter,
+        segment_length_threshold=segment_length_threshold
+    singularity: "haploclust_Renv2.sif"
+    # conda: "envs/haploclust_Renv.yaml"
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    threads: 8 # 24
+    log: "log/SaaRclust_by_component_{sample}_initial_clusters.log"
+    benchmark: "benchmark/SaaRclust_by_component_{sample}_initial_clusters.benchmark"
+    shell:
+        '''
+        Rscript --vanilla scripts/R/unmerged_SaaRclust_contibait.snakemake.R \\
+        --bam {input.bam} \\
+        --gfa {input.gfa} \\
+        --output-prefix {params.prefix} \\
+        --em-iter {params.EMiter} \\
+        --threads {threads} \\
+        --segment-length-threshold {params.segment_length_threshold} \\
+        --log {log}
+        '''
 
 
 #######################################################################################
@@ -305,53 +305,53 @@ rule clust_orient_strand_state:
 #######################################################################################
 
 rule merge_all_ss_fasta:
-	input: expand("{{sample}}/ss/merged/{lib}.combined.homopolymer-compressed.fasta", lib=libs) # homopolymer_compress_ss
-	output: temp("{sample}/ss/split/all_libs.fasta")
-	conda:'envs/haploclust_cl.yaml'
-	log: "log/merge_all_ss_fasta_{sample}.log"
-	benchmark: "benchmark/merge_all_ss_fasta_{sample}.benchmark"
-	shell:
-		'''
-		for f in {input}
-		do
-			libname=$(basename $f .combined.homopolymer-compressed.fasta)
-			echo libname = $libname
-			bioawk -c fastx '{{print \">\"$name; print $seq}}' $f >> {output}
-		done
-		'''
+    input: expand("{{sample}}/ss/merged/{lib}.combined.homopolymer-compressed.fasta", lib=libs) # homopolymer_compress_ss
+    output: temp("{sample}/ss/split/all_libs.fasta")
+    conda:'envs/haploclust_cl.yaml'
+    # log: "log/merge_all_ss_fasta_{sample}.log"
+    benchmark: "benchmark/merge_all_ss_fasta_{sample}.benchmark"
+    shell:
+        '''
+        for f in {input}
+        do
+            libname=$(basename $f .combined.homopolymer-compressed.fasta)
+            echo libname = $libname
+            bioawk -c fastx '{{print \">\"$name; print $seq}}' $f >> {output}
+        done
+        '''
 
 # TODO sanitize the outputs for these whatshap_split rules ~ they don't make folders if they don't exist
 rule split_ss_reads_by_clust:
-	input:
-		fasta="{sample}/ss/split/all_libs.fasta", # merge_all_ss_fasta
-		component="{sample}/clustering_orientation_strandstate/ss_clusters.tsv", # SaaRclust
-	output: directory("{sample}/clustered_ss_fasta/")
-	conda:'envs/haploclust_pyenv.yaml'
-	resources:
-		mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
-		walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	log: "log/split_ss_reads_{sample}.log"
-	benchmark: "benchmark/split_ss_reads_{sample}.benchmark"
-	shell: # mkdir appears to be neeeded when directory is specified for output
-		'''
-		(time mkdir {output} &&
-		python3 scripts/python/whatshap_split.py {input.fasta} {input.component}  --output-folder {output} --split-by-cluster) > {log} 2>&1
-		'''
+    input:
+        fasta="{sample}/ss/split/all_libs.fasta", # merge_all_ss_fasta
+        component="{sample}/clustering_orientation_strandstate/ss_clusters.tsv" # SaaRclust
+    output: directory("{sample}/clustered_ss_fasta/")
+    conda:'envs/haploclust_pyenv.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/split_ss_reads_{sample}.log"
+    benchmark: "benchmark/split_ss_reads_{sample}.benchmark"
+    shell: # mkdir appears to be neeeded when directory is specified for output
+        '''
+        (time mkdir {output} &&
+        python3 scripts/python/whatshap_split.py {input.fasta} {input.component}  --output-folder {output} --split-by-cluster) > {log} 2>&1
+        '''
 
 rule split_assembly_fasta_by_clust:
-	input:
-		fasta="{sample}/{sample}_assembly.fa", #gfa to fasta
-		clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # SaarClust
-	output:
-		directory("{sample}/clustered_assembly_fasta/"),
-	conda:'envs/haploclust_pyenv.yaml'
-	log: "log/split_assembly_graph_{sample}.log"
-	benchmark: "benchmark/split_assembly_graph_{sample}.benchmark"
-	shell: # mkdir appears to be neeeded when directory is specified for output
-		'''
-		(time mkdir {output} &&
-		python3 scripts/python/whatshap_split.py {input.fasta} {input.clust} --output-folder {output} --split-by-cluster) > {log} 2>&1
-		'''
+    input:
+        fasta="{sample}/{sample}_assembly.fa", #gfa to fasta
+        clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv" # SaarClust
+    output:
+        directory("{sample}/clustered_assembly_fasta/")
+    conda:'envs/haploclust_pyenv.yaml'
+    log: "log/split_assembly_graph_{sample}.log"
+    benchmark: "benchmark/split_assembly_graph_{sample}.benchmark"
+    shell: # mkdir appears to be neeeded when directory is specified for output
+        '''
+        (time mkdir {output} &&
+        python3 scripts/python/whatshap_split.py {input.fasta} {input.clust} --output-folder {output} --split-by-cluster) > {log} 2>&1
+        '''
 
 
 ##########################################
@@ -359,33 +359,33 @@ rule split_assembly_fasta_by_clust:
 ##########################################
 
 rule simplify_assembly:
-	input:
-		assembly=assembly,
-		clusters="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv"
-	output: "{sample}/graph_components/simplified_assembly.gfa",
-	conda:'envs/haploclust_gfa.yaml'
-	resources:
-		mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
-		walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	log: "log/simplify_assembly_{sample}.log"
-	shell:
-		'''
-		(python3 scripts/python/simplify_gfa.py \\
-		--input {input.assembly} \\
-		--output {output} \\
-		--clusters {input.clusters}) > {log} 2>&1
-		'''
+    input:
+        assembly=assembly,
+        clusters="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv"
+    output: "{sample}/graph_components/simplified_assembly.gfa"
+    conda:'envs/haploclust_gfa.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/simplify_assembly_{sample}.log"
+    shell:
+        '''
+        (python3 scripts/python/simplify_gfa.py \\
+        --input {input.assembly} \\
+        --output {output} \\
+        --clusters {input.clusters}) > {log} 2>&1
+        '''
 
 rule detect_bubbles:
-	input: "{sample}/graph_components/simplified_assembly.gfa"
-	output: "{sample}/graph_components/simplified_assembly.gfa.json"
-	conda:'envs/haploclust_bubblegun.yaml'
-	resources:
-		mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-		walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	log: "log/detect_bubbles_assembly_{sample}.log"
-	benchmark: "benchmark/detect_bubbles_assembly_{sample}.benchmark"
-	shell: "(time BubbleGun -g {input} bchains --only_simple --bubble_json {output})> {log} 2>&1"
+    input: "{sample}/graph_components/simplified_assembly.gfa"
+    output: "{sample}/graph_components/simplified_assembly.gfa.json"
+    conda:'envs/haploclust_bubblegun.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/detect_bubbles_assembly_{sample}.log"
+    benchmark: "benchmark/detect_bubbles_assembly_{sample}.benchmark"
+    shell: "(time BubbleGun -g {input} bchains --only_simple --bubble_json {output})> {log} 2>&1"
 
 
 
@@ -395,42 +395,42 @@ rule detect_bubbles:
 
 # TODO maybe a clever way to parallelize this even when number of files is unknown ahead of time?
 # TODO maybe if you can't parallelize with unknown number of files, maybe it is
-#      faster to align all to all instead of looping thorugh clustered files. Likely would run better on Hilbert as well in terms of scheduling.
+#      faster to align all to all instead of looping through clustered files. Likely would run better on Hilbert as well in terms of scheduling.
 #      as then the rule wouldn't have to wait until the clustering step had been run to start.
 rule fastmap_ss_reads_to_unitigs:
-	input:
-		SSreads="{sample}/clustered_ss_fasta/", # make_clust_fasta_file_lists
-		utg="{sample}/clustered_assembly_fasta/" # make_clust_fasta_file_lists
-	output:
-		map=directory("{sample}/exact_match/") #component{component}_maximal_unique_exact_match.data",
-	params:
-		utg_prefix= expand("{sample}_assembly_", sample=sample),
-		ss_prefix = "all_libs_"
-	conda:'envs/haploclust_cl.yaml'
-	resources:
-		mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-		walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	threads: 2
-	log: "log/map_SS_reads_to_unitigs_{sample}.log"
-	benchmark: "benchmark/map_SS_reads_to_unitigs_{sample}.benchmark"
-	shell:
-		'''
-		mkdir {output} &&(
-			NFILES=$(ls {input.SSreads} | grep ".fasta$" | wc -l)
-			echo $NFILES
-			for ((i=1; i<=NFILES; i++))
-			do
-				utig={input.utg}/{params.utg_prefix}$i.fa
-				ss={input.SSreads}/{params.ss_prefix}$i.fasta
-				out={output}/maximal_unique_exact_match_$i.data
-				echo $i
-				echo $utig
-				echo $ss
-				echo $out
-				(time bwa index $utig && bwa fastmap -w 1 -l 75 $utig $ss > $out) >> {log} 2>&1
-			done
-		)
-		'''
+    input:
+        SSreads="{sample}/clustered_ss_fasta/", # make_clust_fasta_file_lists
+        utg="{sample}/clustered_assembly_fasta/" # make_clust_fasta_file_lists
+    output:
+        map=directory("{sample}/exact_match/") #component{component}_maximal_unique_exact_match.data",
+    params:
+        utg_prefix= expand("{sample}_assembly_", sample=sample),
+        ss_prefix = "all_libs_"
+    conda:'envs/haploclust_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    threads: 2
+    log: "log/map_SS_reads_to_unitigs_{sample}.log"
+    benchmark: "benchmark/map_SS_reads_to_unitigs_{sample}.benchmark"
+    shell:
+        '''
+        mkdir {output} &&(
+            NFILES=$(ls {input.SSreads} | grep ".fasta$" | wc -l)
+            echo $NFILES
+            for ((i=1; i<=NFILES; i++))
+            do
+                utig={input.utg}/{params.utg_prefix}$i.fa
+                ss={input.SSreads}/{params.ss_prefix}$i.fasta
+                out={output}/maximal_unique_exact_match_$i.data
+                echo $i
+                echo $utig
+                echo $ss
+                echo $out
+                (time bwa index $utig && bwa fastmap -w 1 -l 75 $utig $ss > $out) >> {log} 2>&1
+            done
+        )
+        '''
 
 
 #############################################################
@@ -442,37 +442,37 @@ rule fastmap_ss_reads_to_unitigs:
 # TODO This script can likely be hugely simplified by taking the blocks that only indicate a match of length 1
 # EG under an SQ or //SQ row, a single "EM XX YY 1"
 rule output_valid_maps:
-	input:
-		map="{sample}/exact_match/", # map_ss_reads_to_unitigs
-		bubbles="{sample}/graph_components/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
-	output: directory("{sample}/valid_exact_match/") # valid_{component}_maximal_unique_exact_match.data"
-	params:
-		map_prefix= "maximal_unique_exact_match_",
-	conda:'envs/haploclust_pyenv.yaml'
-	# resources:
-	# 	mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-	# 	walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	log: "log/output_valid_maps_{sample}.log"
-	benchmark: "benchmark/output_valid_maps_{sample}.benchmark"
-	shell:
-		'''
-		mkdir {output} &&(
-			NFILES=$(ls {input.map} | wc -l)
-			echo $NFILES
-			for ((i=1; i<=NFILES; i++))
-			do
-				map={input.map}/{params.map_prefix}$i.data
-				out={output}/valid_maximal_unique_exact_match_$i.data
-				echo $i
-				echo $map
-				echo $out
-				python3 scripts/python/output_valid_maps.snakemake.py \\
-				--bubbles {input.bubbles} \\
-				--map $map \\
-				--output $out
-			done
-		) > {log} 2>&1
-		'''
+    input:
+        map="{sample}/exact_match/", # map_ss_reads_to_unitigs
+        bubbles="{sample}/graph_components/simplified_assembly.gfa.json" # detect_bubbles_overlap_graph
+    output: directory("{sample}/valid_exact_match/") # valid_{component}_maximal_unique_exact_match.data"
+    params:
+        map_prefix= "maximal_unique_exact_match_"
+    conda:'envs/haploclust_pyenv.yaml'
+    # resources:
+    # 	mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+    # 	walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/output_valid_maps_{sample}.log"
+    benchmark: "benchmark/output_valid_maps_{sample}.benchmark"
+    shell:
+        '''
+        mkdir {output} &&(
+            NFILES=$(ls {input.map} | wc -l)
+            echo $NFILES
+            for ((i=1; i<=NFILES; i++))
+            do
+                map={input.map}/{params.map_prefix}$i.data
+                out={output}/valid_maximal_unique_exact_match_$i.data
+                echo $i
+                echo $map
+                echo $out
+                python3 scripts/python/output_valid_maps.snakemake.py \\
+                --bubbles {input.bubbles} \\
+                --map $map \\
+                --output $out
+            done
+        ) > {log} 2>&1
+        '''
 
 
 #################################
@@ -482,30 +482,30 @@ rule output_valid_maps:
 
 
 rule phase_unitigs:
-	input:
-		ss_clust="{sample}/clustering_orientation_strandstate/ss_clusters.tsv", # SaaRclust
-		unitigs_clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # SaaRclust
-		clust_pairs="{sample}/clustering_orientation_strandstate/clust_partners.tsv", # SaaRclust
-		map="{sample}/valid_exact_match/", # output_valid_maps
-		bubbles="{sample}/graph_components/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
-		wc_cell_clust="{sample}/clustering_orientation_strandstate/wc_libraries.tsv", # SaaRclust
-	output:"{sample}/phasing/{sample}_phased_unitigs.data",
-	singularity: "haploclust_Renv2.sif"
-	resources:
-		mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
-		walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-	log: "log/phase_unitigs_{sample}.log"
-	benchmark: "benchmark/phase_unitigs_{sample}.benchmark"
-	shell:
-		'''
-   		Rscript --vanilla scripts/R/phase_bubbles.snakemake.R \\
-   		--clust-pairs {input.clust_pairs} \\
-   		--wc-cell-clust {input.wc_cell_clust} \\
-		--ss-clust {input.ss_clust} \\
-		--unitig-clust {input.unitigs_clust} \\
-		--map {input.map} \\
-		--bubbles {input.bubbles} \\
-		--sample {wildcards.sample} \\
-   		--output {output} \\
-   		--log {log}
-   		'''
+    input:
+        ss_clust="{sample}/clustering_orientation_strandstate/ss_clusters.tsv", # SaaRclust
+        unitigs_clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # SaaRclust
+        clust_pairs="{sample}/clustering_orientation_strandstate/clust_partners.tsv", # SaaRclust
+        map="{sample}/valid_exact_match/", # output_valid_maps
+        bubbles="{sample}/graph_components/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
+        wc_cell_clust="{sample}/clustering_orientation_strandstate/wc_libraries.tsv" # SaaRclust
+    output:"{sample}/phasing/{sample}_phased_unitigs.data"
+    singularity: "haploclust_Renv2.sif"
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/phase_unitigs_{sample}.log"
+    benchmark: "benchmark/phase_unitigs_{sample}.benchmark"
+    shell:
+        '''
+        Rscript --vanilla scripts/R/phase_bubbles.snakemake.R \\
+        --clust-pairs {input.clust_pairs} \\
+        --wc-cell-clust {input.wc_cell_clust} \\
+        --ss-clust {input.ss_clust} \\
+        --unitig-clust {input.unitigs_clust} \\
+        --map {input.map} \\
+        --bubbles {input.bubbles} \\
+        --sample {wildcards.sample} \\
+        --output {output} \\
+        --log {log}
+        '''
