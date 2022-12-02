@@ -14,41 +14,26 @@ print(sample)
 ss_dir = config["strandseq_dir"]
 ss_suffix = config["strandseq_suffix"]
 
-EMiter          = config["EMiter"]
-segment_length_threshold = config["segmentLengthThreshold"]
 
-
-num_components=config["num_components"]
-components = range(1, num_components+1)
 
 assembly = config['assembly']
 
-
-reference = config['reference']
-reference_stem = Path(reference).stem # Without extension
-reference_name = os.path.basename(reference) # With extension
-
-
+segment_length_threshold = config["segmentLengthThreshold"]
 
 bwa_index_suffices = ["amb", "ann", "bwt", "pac", "sa"]
 
-outputfolder    = "SaaRclust_results"
+
 libs, = glob_wildcards(os.path.join(ss_dir, "{lib}_1"+ss_suffix))
 
-
-# Libs Subsets
-num_libs = config["numLibs"]
-libs = libs[0:num_libs]
-print(libs)
 
 #####################################
 ############ Constraints ############
 #####################################
 
 # Should probably add periods and underscores to sample wildcard constraint
-wildcard_constraints:
-    sample = "[a-zA-Z\d]+",
-    clust = "[\d]+"
+# wildcard_constraints:
+#     sample = "[a-zA-Z\d]+",
+#     clust = "[\d]+"
 
 ###############################
 ############ Rules ############
@@ -62,7 +47,6 @@ wildcard_constraints:
 
 rule temp:
     input:
-        ref_aln = expand("{sample}/ref_aln/{sample}.bam", sample=sample),
         split_assembly_fasta_by_clust=expand("{sample}/clustered_ss_fasta/", sample=sample),
         split_ss_reads_by_clust=expand("{sample}/clustered_assembly_fasta/", sample=sample),
         detect_bubbles=  expand("{sample}/graph_components/simplified_assembly.gfa.json", sample=sample),
@@ -72,6 +56,10 @@ rule temp:
         summary_stats=expand("{sample}/phasing/{sample}_phased_summary_stats.csv", sample=sample),
         unmerged_SaaRclust_by_component = expand("{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", sample=sample)
         # phase_unitigs=expand("{sample}/phasing/phased_unitigs_{component}.data", sample=sample, component=non_acrocentric_components),
+
+rule all:
+    input:
+        phased_unitigs = expand("{sample}/phasing/{sample}_phased_unitigs.data", sample=sample)
 
 
 ################################################

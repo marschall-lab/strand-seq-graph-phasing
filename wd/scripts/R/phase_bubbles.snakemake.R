@@ -3,6 +3,34 @@
 args <- commandArgs(trailingOnly = FALSE)
 print(args)
 
+# args <-
+#   c(
+# "/opt/conda/lib/R/bin/exec/R"                                       ,
+# "--no-echo"                                                         ,
+# "--no-restore"                                                      ,
+# "--vanilla"                                                         ,
+# "--file=scripts/R/phase_bubbles.snakemake.R"                        ,
+# "--args"                                                            ,
+# "--clust-pairs"                                                     ,
+# "HG002tester/clustering_orientation_strandstate/clust_partners.tsv" ,
+# "--wc-cell-clust"                                                   ,
+#  "HG002tester/clustering_orientation_strandstate/wc_libraries.tsv"   ,
+#  "--ss-clust"                                                        ,
+#  "HG002tester/clustering_orientation_strandstate/ss_clusters.tsv"    ,
+#  "--unitig-clust"                                                    ,
+#  "HG002tester/clustering_orientation_strandstate/unitig_clusters.tsv",
+#  "--map"                                                             ,
+#  "HG002tester/valid_exact_match"                                     ,
+#  "--bubbles"                                                         ,
+#  "HG002tester/graph_components/simplified_assembly.gfa.json"         ,
+#  "--sample"                                                          ,
+#  "HG002tester"                                                       ,
+#  "--output"                                                          ,
+#  "HG002tester/phasing/HG002tester_phased_unitigs.data"               ,
+#  "--log"                                                             ,
+#  "log/phase_unitigs_HG002tester.log"
+#   )
+
 #TODO rewrite this to work without ss-clust, only unitig -clust? This would
 #likely involve the skipping the output_valid_maps_step and incorporating it
 #into this script?
@@ -96,7 +124,7 @@ wc.cell.clust <-
   merge(
     wc.cell.clust,
     clust.pairs,
-    by.x = c('clust.forward', 'clust.backward'),
+    by.x = c('first_clust', 'second_clust'),
     by.y = c('first_clust', 'second_clust')
   )
 print('got clusters')
@@ -147,7 +175,7 @@ stopifnot(
 map <-
   semi_join(map,
             wc.cell.clust,
-            by = c('SSlib' = 'lib', 'chrom.clust' = 'chrom_clust'))
+            by = c('SSlib' = 'library', 'chrom.clust' = 'chrom_clust'))
 
 # Coverage ----------------------------------------------------------------
 
@@ -407,7 +435,7 @@ bubble_coverage_summary <-
 
 exclusion_summary <-
   unitig_clust %>%
-  rename(unitig_name = `#rname`) %>%
+  dplyr::rename(unitig_name = `#rname`) %>%
   full_join(bubble_coverage_summary, by = c('chrom_clust' = 'chrom.clust')) %>%
   mutate(
     exclusion = case_when(
@@ -420,7 +448,7 @@ exclusion_summary <-
     )
   ) %>%
   select(unitig_name, chrom_clust, exclusion) %>%
-  rename(clust=chrom_clust)
+  dplyr::rename(clust=chrom_clust)
 
 if(any(exclusion_summary$exclusion == 'Failure', na.rm = TRUE)) {
   stop('Exclusion Failure')
@@ -456,7 +484,7 @@ phase_counts <- phase_counts[, .(n=sum(n)), by=c( 'chrom.clust', 'unitig_name', 
 phase_counts <-
   phase_counts %>%
   dcast(chrom.clust + unitig_name + bubbleName + bubbleAllele ~ haplotype, value.var='n') %>%
-  rename(haplotype_1_support = '0', haplotype_2_support='1')
+  dplyr::rename(haplotype_1_support = '0', haplotype_2_support='1')
 
 phase_counts[, support_percentage := haplotype_1_support/(haplotype_1_support+haplotype_2_support)]
 

@@ -5,150 +5,6 @@
 args <- commandArgs(trailingOnly = FALSE)
 
 
-#
-args <-c(
-  "/gpfs/project/projects/medbioinf/projects/mihen108/wd/.snakemake/conda/43452f50fb7d157c7f3e7e0cf48c0de7/lib/R/bin/exec/R",
-  "--slave"                                                                                                                 ,
-  "--no-restore"                                                                                                            ,
-  "--vanilla"                                                                                                               ,
-  "--file=scripts/R/unmerged_SaaRclust_by_gfa.snakemake.R"                                                            ,
-  "--args"                                                                                                                  ,
-  "--bam"                                                                                                                   ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20376.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20368.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20484.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20341.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20337.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20387.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20364.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20458.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20306.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20466.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20417.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20303.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20473.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20357.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20328.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20350.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20405.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20414.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20492.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20339.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20347.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20379.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20469.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20327.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20464.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20391.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20440.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20483.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20392.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20419.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20345.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20352.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20486.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20359.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20307.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20343.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20319.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20452.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20435.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20308.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20362.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20355.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20421.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20407.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20450.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20403.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20487.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20305.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20485.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20425.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20313.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20325.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20381.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20443.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20389.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20454.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20393.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20431.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20342.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20358.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20488.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20432.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20351.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20336.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20479.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20340.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20367.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20335.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20301.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20434.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20353.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20356.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20329.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20424.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20422.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20445.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20491.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20331.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20430.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20377.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20374.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20315.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20439.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20490.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20361.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20467.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20428.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20334.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20363.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20494.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20378.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20388.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20318.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_01PE20332.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20456.mdup.bam"                          ,
-  "HG002v11nl96slt1e6/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/NA24385_hpg_ilnxs-80pe_02PE20416.mdup.bam"                          ,
-  "--gfa"                                                                                                                  ,
-  "HG002v11nl96slt1e6/graph_components/component1.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component2.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component3.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component4.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component5.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component6.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component7.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component8.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component9.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component10.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component11.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component12.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component13.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component14.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component15.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component16.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component17.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component18.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component19.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component20.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component21.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component22.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component23.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component24.gfa"                                                   ,
-  "HG002v11nl96slt1e6/graph_components/component25.gfa"                                                   ,
-  "--output-prefix"                                                                                                         ,
-  "HG002v11nl96slt1e6/SaaRclust/"                                                                                                        ,
-  "--em-iter"                                                                                                               ,
-  "100"                                                                                                                     ,
-  "--threads"                                                                                                               ,
-  "7"                                                                                                                       ,
-  '--segment-length-threshold',
-  '1000000',
-  "--log"                                                                                                                   ,
-  "log/SaaRclust_by_gfa_HG002v11nl96slt1e6_initial_clusters.log")
-
-print(args)
-
 # Parsing Helper ----------------------------------------------------------
 ## Expected Args
 expected_args <-
@@ -161,7 +17,6 @@ expected_args <-
     '--log',
     
     ## Params
-    '--em-iter',
     '--threads',
     '--segment-length-threshold'
   )
@@ -199,10 +54,10 @@ get_script_dir <- function() {
 
 # Log ---------------------------------------------------------------------
 
-log_path <- get_values('--log', singular=FALSE)
-# log <- file(log_path, open='wt')
-# sink(file=log, type='message')
-# sink(file=log, type='output')
+log_path <- get_values('--log', singular=TRUE)
+log <- file(log_path, open='wt')
+sink(file=log, type='message')
+sink(file=log, type='output')
 
 print(args)
 
@@ -216,30 +71,25 @@ library(matrixStats)
 library(contiBAIT)
 
 source(file.path(get_script_dir(), "module_utils/utils.R"))
-
-
 # Parsing -----------------------------------------------------------------
 
 ## Input
 
 input.alignment.files <- get_values("--bam", singular=FALSE)
-gfas <- get_values("--gfa", singular=FALSE)
+gfa <- get_values("--gfa", singular=TRUE)
 
 
 ## Parameters
-EM.iter <- as.numeric(get_values("--em-iter"))
-numCPU <- as.numeric(get_values("--threads")) # snakemake@threads[[1]]
+numCPU <- as.numeric(get_values("--threads"))
 segment_length_threshold <- as.numeric(get_values('--segment-length-threshold'))
 
 ## Output
-# outputfolder <- dirname(dirname(snakemake@output[["hard_clust"]])) # SaarClust/
 outputfolder <- get_values('--output-prefix')
 
 parsed_args <-
   list(
     input.alignment.files = input.alignment.files,
-    gfas=gfas,
-    EM.iter = EM.iter,
+    gfa=gfa,
     numCPU = numCPU,
     segment_length_threshold=segment_length_threshold,
     outputfolder = outputfolder
@@ -293,32 +143,15 @@ unspoof_rownames <- function(m) {
 
 # Useful Variables --------------------------------------------------------
 
-cl <- makeCluster(numCPU)
-doParallel::registerDoParallel(cl)
 
-rlengths_by_gfa <-
-  foreach (gfa = gfas, .packages = 'dplyr') %dopar% {
-    read_segment_lengths_from_gfa(gfa)
-  }
+rlengths  <- read_segment_lengths_from_gfa(gfa)
 
-stopCluster(cl)
 
-names(rlengths_by_gfa) <- basename_no_ext(gfas)
+rnames <- names(rlengths)
 
-rnames_by_gfa <-
-  lapply(rlengths_by_gfa, names)
+rlengths_dt <-
+  data.table(rname = rnames, length = rlengths)
 
-rnames_by_gfa_dt <-
-  lapply(rnames_by_gfa, function(x) data.table(rname=x)) %>%
-  rbindlist(idcol='gfa')
-
-rlengths_by_gfa_dt <-
-  lapply(rlengths_by_gfa, function(x) data.table(rname=names(x), length=x)) %>%
-  rbindlist(idcol='gfa')
-
-all_rnames <-
-  rnames_by_gfa %>%
-  Reduce(c, .)
 
 
 # Load Alignments ---------------------------------------------------------
@@ -388,12 +221,8 @@ counts <-
 
 # Filter Segment Length Threshold -----------------------------------------
 
-long_rnames_by_gfa <-
-  lapply(rlengths_by_gfa, function(x) names(x[x >= segment_length_threshold]))
-
 long_rnames <-
-  long_rnames_by_gfa %>%
-  Reduce(c, .)
+  rnames[rlengths >= segment_length_threshold]
 
 counts <- counts[rname %in% long_rnames] 
 
@@ -438,22 +267,22 @@ cl <-
 # debugonce(findSexGroups, signature = c('LinkageGroupList', 'StrandStateMatrix'))
 cl <- findSexGroups(cl, strand.states$strandMatrix)
 
-haploid_sex_clusters <- grepl('^sex', names(cl))
-if(length(haploid_sex_clusters) > 1) {
+is_haploid_sex_cluster <- grepl('^sex', names(cl))
+if(sum(is_haploid_sex_cluster) > 1) {
   warning('More than 1 cluster has been identified as a haploid chromosome cluster')
 }
 
 # If no haploid, need an empty vector when looking at excluded unitigs
 haploid_sex_rnames <- c()
-if(any(haploid_sex_clusters)) {
-
+if(any(is_haploid_sex_cluster)) {
+  
   haploid_sex_rnames <-
-    cl[haploid_sex_clusters] %>%
+    cl[is_haploid_sex_cluster] %>%
     Reduce(c, .) %>%
     unspoof()
   
   # remove haploid clusters from rest of process.
-  cl[haploid_sex_clusters] <- NULL
+  cl[is_haploid_sex_cluster] <- NULL
 }
 
 # Excluded Unitigs --------------------------------------------------------
@@ -461,7 +290,7 @@ if(any(haploid_sex_clusters)) {
 # At this point, all untigs that will be filtered out, should already be
 # filtered out. Can now record reason why each unitig was excluded
 short_rnames <-
-  setdiff(all_rnames, long_rnames)
+  setdiff(rnames, long_rnames)
 
 high_wc_rnames <-as.character(strand.states$AWCcontigs@seqnames@values)
 
@@ -513,7 +342,7 @@ prcomps <-
   lapply(get.wfrac.matrix) %>% 
   lapply(prcomp, center=FALSE, scale=FALSE)
 
-# Assume each cluster comes from one chromosome
+# Assume each contiBAIT cluster comes from one chromosome
 strand_orientation_clusters <-
   lapply(prcomps, `[[`, 'x') %>%
   # lapply(abs) %>%
@@ -567,7 +396,7 @@ clustered_rnames <-
   unique()
 
 excluded_rnames <- excluded_unitigs$unitig_name
-stopifnot(setequal(all_rnames, c(clustered_rnames, excluded_rnames)))
+stopifnot(setequal(rnames, c(clustered_rnames, excluded_rnames)))
 
 
 # Export Preparation ------------------------------------------------------
@@ -601,7 +430,7 @@ new_cluster_ids <-
 unitig_clusters <-
   unitig_clusters %>% 
   left_join(new_cluster_ids, by = c("clust", "strand_clust")) %>% 
-  select(rname, first_clust, second_clust)
+  select(rname, first_clust, second_clust, chrom_clust)
 
 ## List of WC libraries for each cluster
 ##### names: lib, thetawc, clust.forward, clust.backward
@@ -624,7 +453,7 @@ clustered_ss_reads <-
   alignments %>% 
   rbindlist(idcol='library') %>% 
   select(rname, qname, strand) %>% 
-  left_join(unitig_clusters, by = "rname") %>% 
+  left_join(select(unitig_clusters, -chrom_clust), by = "rname") %>% 
   left_join(new_cluster_ids, by = c("first_clust", "second_clust")) 
 
 clustered_ss_reads <-
@@ -633,7 +462,7 @@ clustered_ss_reads <-
   select(qname, clust, chrom_clust)
 
 clustered_ss_reads <-
-clustered_ss_reads %>% 
+  clustered_ss_reads %>% 
   filter(!is.na(clust)) # reads mapping to ecluded untigis 
 
 # Export ------------------------------------------------------------------
@@ -642,13 +471,20 @@ clustered_ss_reads %>%
 outputfolder <- file.path(outputfolder)
 dir_create_if_does_not_exist(outputfolder)
 
+# TODO to refactor these output, it appear that one would have to learn/ remove
+# the whatshap_split step, as changing the variable names/order in these tables
+# can lead to unclear errors, and the scripts is very confusing. Consider
+# eliminating that step all together lol.
+
 ## Unitig Clustering
-# names: rname, first_clust, second_clust
-fwrite(unitig_clusters, 
-       file=file.path(outputfolder, 'unitig_clusters.tsv'), 
-       sep='\t',
-       quote = F,
-       row.names = F)
+# names: rname, first_clust, second_clust, chrom_clust
+unitig_clusters %>% 
+  dplyr::select(rname, first_clust, chrom_clust) %>% 
+  dplyr::rename(`#rname` = rname) %>% 
+  fwrite(file=file.path(outputfolder, 'unitig_clusters.tsv'), 
+         sep='\t',
+         quote = F,
+         row.names = F)
 
 ## Cluster ID table
 # names: first_clust, second_clust, chrom_clust
@@ -656,7 +492,7 @@ new_cluster_ids  %>%
   select(first_clust, second_clust, chrom_clust) %>% 
   filter(first_clust < second_clust) %>% 
   fwrite( 
-    file=file.path(outputfolder, 'clust_patners.tsv'), 
+    file=file.path(outputfolder, 'clust_partners.tsv'), 
     sep='\t',
     quote = F,
     row.names = F)
@@ -680,6 +516,16 @@ clustered_ss_reads %>%
     quote = F,
     row.names = F)
 
+
+
+# excluded unitigs:
+excluded_unitigs %>% 
+  fwrite(
+    file=file.path(outputfolder, 'excluded_unitigs.tsv'), 
+    sep='\t',
+    quote = F,
+    row.names = F
+  )
 
 
 
