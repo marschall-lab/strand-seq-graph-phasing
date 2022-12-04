@@ -26,6 +26,7 @@ bwa_index_suffices = ["amb", "ann", "bwt", "pac", "sa"]
 libs, = glob_wildcards(os.path.join(ss_dir, "{lib}_1"+ss_suffix))
 
 
+
 #####################################
 ############ Constraints ############
 #####################################
@@ -53,7 +54,6 @@ rule temp:
         fastmap_ss_reads_to_unitigs=expand("{sample}/exact_match/", sample=sample),
         output_valid_maps=expand("{sample}/valid_exact_match/", sample=sample),
         phase_unitigs=expand("{sample}/phasing/{sample}_phased_unitigs.data", sample=sample),
-        summary_stats=expand("{sample}/phasing/{sample}_phased_summary_stats.csv", sample=sample),
         unmerged_SaaRclust_by_component = expand("{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", sample=sample)
         # phase_unitigs=expand("{sample}/phasing/phased_unitigs_{component}.data", sample=sample, component=non_acrocentric_components),
 
@@ -251,21 +251,30 @@ rule unmerged_bwa_index:
 ############ Clustering, Orientation, Strand State ############
 ###############################################################
 
+# For Mir, there is a recent bug where the rscript cannot access the contents of any folder
+# except the working directory. However, shell commands appear to work just fine.
+
+rule copy_assembly_to_wd:
+    input:
+        assembly
+    output:
+        temp("{sample}/assembly.gfa")
+    shell: 'cp {input} {output}'
+
 rule clust_orient_strand_state:
     input:
         bam=expand("{{sample}}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam", lib=libs), # mark_duplicates
         bai=expand("{{sample}}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam.bai", lib=libs), # bwa_index
-        gfa=assembly
+        gfa="{sample}/assembly.gfa"
     output:
         ML_clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # ~ MLclust.data ~ unitig_clusters.tsv
         ss_clust="{sample}/clustering_orientation_strandstate/ss_clusters.tsv", # ss_clusters.data ~ ss_clusters.tsv
         # ss_clust_sp=directory("{sample}/clustering_orientation_strandstate/ss_clusters/"),
         clust_pairs="{sample}/clustering_orientation_strandstate/clust_partners.tsv", # clust_partners.txt ~ clust_partners.tsv
         wc_cells_clusters="{sample}/clustering_orientation_strandstate/wc_libraries.tsv", # wc_cells_clusters.data ~ wc_libraries.tsv
-        unclustered='{sample}/clustering_orientation_strandstate/SaaRclust_unclustered_rnames.tsv'
+        unclustered='{sample}/clustering_orientation_strandstate/excluded_unitigs.tsv'
     params:
-        prefix = expand("{sample}/SaaRclust/", sample=sample),
-        EMiter=EMiter,
+        prefix = expand("{sample}/clustering_orientation_strandstate/", sample=sample),
         segment_length_threshold=segment_length_threshold
     singularity: "haploclust_Renv2.sif"
     # conda: "envs/haploclust_Renv.yaml"
@@ -281,7 +290,6 @@ rule clust_orient_strand_state:
         --bam {input.bam} \\
         --gfa {input.gfa} \\
         --output-prefix {params.prefix} \\
-        --em-iter {params.EMiter} \\
         --threads {threads} \\
         --segment-length-threshold {params.segment_length_threshold} \\
         --log {log}
