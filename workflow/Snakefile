@@ -3,7 +3,6 @@
 ###################################
 
 import os
-from pathlib import Path
 
 ################################
 ############ Config ############
@@ -25,7 +24,26 @@ bwa_index_suffices = ["amb", "ann", "bwt", "pac", "sa"]
 
 libs, = glob_wildcards(os.path.join(ss_dir, "{lib}_1"+ss_suffix))
 
+if not libs:
+    raise FileNotFoundError(f'No Strand-Seq files F=found. Strand-Seq files are expected to have filenames of the form: {os.path.join(ss_dir, "{lib}_{1,2}"+ss_suffix)}')
 
+print(libs)
+
+#####################################
+############ Offline/Online #########
+#####################################
+
+deploy_offline = config["deploy_offline"]
+
+if deploy_offline:
+    pass
+    conda_r_env = None
+    singularity_r_env = config["singularity_Renv"]
+    if not os.path.isfile(singularity_r_env):
+        raise FileNotFoundError('R Singularity environment not found.')
+else:
+    conda_r_env = "envs/env_Renv2.yaml"
+    singularity_r_env = None
 
 #####################################
 ############ Constraints ############
@@ -40,17 +58,12 @@ libs, = glob_wildcards(os.path.join(ss_dir, "{lib}_1"+ss_suffix))
 ############ Rules ############
 ###############################
 
-# rule all:
-    # input:
-        #expand("../../{sample}/{assembly}/asm.r_utg.fa", sample=sample),
-        # expand("../../{sample}/{assembly}/clustering_orientation_strandstate/hard_clusters.RData", sample=sample, assembly=assembly),
-        # expand("/{sample}/split/{sample}_{clust}.gfa", sample=sample, clust=chromosomes)
 
 rule temp:
     input:
         detect_bubbles=  expand("{sample}/graph_components/simplified_assembly.gfa.json", sample=sample),
         phase_unitigs=expand("{sample}/phasing/{sample}_phased_unitigs.tsv", sample=sample),
-        unmerged_SaaRclust_by_component = expand("{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", sample=sample)
+        unitig_clusters = expand("{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", sample=sample)
 
 
 rule all:
@@ -68,7 +81,7 @@ rule all:
 rule unzip_ss:
     input: ss_dir+"/{lib}_{pair}"+ss_suffix
     output: temp("{sample}/ss/unmerged/{lib}_{pair}.fasta")
-    conda:'envs/haploclust_cl.yaml'
+    conda:'envs/env_cl.yaml'
     log: "log/unzip_ss_{sample}_{lib}_{pair}.log"
     shell:
         '''
@@ -78,7 +91,7 @@ rule unzip_ss:
 rule add_ss_libname_unmerged:
     input: "{sample}/ss/unmerged/{lib}_{pair}.fasta"
     output: temp("{sample}/ss/unmerged/{lib}_{pair}.renamed.fasta")
-    conda:'envs/haploclust_cl.yaml'
+    conda:'envs/env_cl.yaml'
     # log: "log/add_ss_libname_{sample}_{lib}_{pair}.log"
     shell:
         '''
@@ -88,7 +101,7 @@ rule add_ss_libname_unmerged:
 rule homopolymer_compress_unmerged_ss:
     input: "{sample}/ss/unmerged/{lib}_{pair}.renamed.fasta"
     output: "{sample}/ss/unmerged/{lib}_{pair}.homopolymer-compressed.fasta"
-    conda:'envs/haploclust_pyenv.yaml'
+    conda:'envs/env_pyenv.yaml'
     log: "log/compress_unmerged_ss_{sample}_{lib}_{pair}.log"
     shell:
         '''
@@ -115,7 +128,7 @@ rule pear_merge_mates:
         "{sample}/ss/merged/{lib}.discarded.fastq",
         "{sample}/ss/merged/{lib}.unassembled.forward.fastq",
         "{sample}/ss/merged/{lib}.unassembled.reverse.fastq"
-    conda:'envs/haploclust_cl.yaml'
+    conda:'envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 4096 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
@@ -128,14 +141,14 @@ rule concat_assembled_with_first_pair_of_unassembled:
         "{sample}/ss/merged/{lib}.assembled.fastq",
         "{sample}/ss/merged/{lib}.unassembled.forward.fastq"
     output: temp("{sample}/ss/merged/{lib}.combined.fasta")
-    conda:'envs/haploclust_cl.yaml'
+    conda:'envs/env_cl.yaml'
     log: "log/concat_merged_with_first_unmerged_{sample}_{lib}.log"
     shell: "(time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1"
 
 rule add_ss_libname_merged:
     input: "{sample}/ss/merged/{lib}.combined.fasta"
     output: temp("{sample}/ss/merged/{lib}.combined.renamed.fasta")
-    conda:'envs/haploclust_cl.yaml'
+    conda:'envs/env_cl.yaml'
     # log: "log/add_ss_libname_{sample}_{lib}.log"
     shell:
         '''
@@ -145,7 +158,7 @@ rule add_ss_libname_merged:
 rule homopolymer_compress_merged_ss:
     input: "{sample}/ss/merged/{lib}.combined.renamed.fasta" # concat_assembled_with_first_pair_of_unassembled
     output: "{sample}/ss/merged/{lib}.combined.homopolymer-compressed.fasta"
-    conda:'envs/haploclust_pyenv.yaml'
+    conda:'envs/env_pyenv.yaml'
     # log: "log/compress_ss_{sample}_{lib}.log"
     shell:
         '''
@@ -170,7 +183,7 @@ rule gfa_to_fasta:
 rule bwa_index_unitigs:
     input: "{sample}/{sample}_assembly.fa" # gfa_to_fasta
     output: expand("{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices)
-    conda:'envs/haploclust_cl.yaml'
+    conda:'envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
         walltime = lambda wildcards, attempt: f'{8 + attempt*attempt:02}:59:00'
@@ -191,7 +204,7 @@ rule bwa_align_unmerged_compressed_ss_to_unitigs:
         mate2="{sample}/ss/unmerged/{lib}_2.homopolymer-compressed.fasta"
     output: temp("{sample}/temp_unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam")
     threads: 6
-    conda:'envs/haploclust_cl.yaml'
+    conda:'envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
@@ -206,7 +219,7 @@ rule bwa_align_unmerged_compressed_ss_to_unitigs:
 rule bwa_sort_unmerged_compressed_ss_to_unitigs:
     input:  "{sample}/temp_unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam" # bwa_align
     output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam"
-    conda:'envs/haploclust_cl.yaml'
+    conda:'envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
@@ -220,7 +233,7 @@ rule bwa_sort_unmerged_compressed_ss_to_unitigs:
 rule unmerged_mark_duplicates:
     input:  "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam" # bwa_sort
     output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam"
-    conda:'envs/haploclust_cl.yaml'
+    conda:'envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
@@ -234,7 +247,7 @@ rule unmerged_mark_duplicates:
 rule unmerged_bwa_index:
     input:  "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam" # mark_duplicates
     output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam.bai"
-    conda:'envs/haploclust_cl.yaml'
+    conda:'envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
@@ -273,17 +286,17 @@ rule clust_orient_strand_state:
     params:
         prefix = expand("{sample}/clustering_orientation_strandstate/", sample=sample),
         segment_length_threshold=segment_length_threshold
-    singularity: "haploclust_Renv2.sif"
-    # conda: "envs/haploclust_Renv.yaml"
+    singularity: singularity_r_env
+    conda: conda_r_env
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     threads: 8 # 24
-    log: "log/SaaRclust_by_component_{sample}_initial_clusters.log"
-    benchmark: "benchmark/SaaRclust_by_component_{sample}_initial_clusters.benchmark"
+    log: "log/cos_{sample}.log"
+    benchmark: "benchmark/cos_{sample}.benchmark"
     shell:
         '''
-        Rscript --vanilla scripts/R/unmerged_SaaRclust_contibait.snakemake.R \\
+        Rscript --vanilla scripts/R/clustering_orient_strandstate.snakemake.R \\
         --bam {input.bam} \\
         --gfa {input.gfa} \\
         --output-prefix {params.prefix} \\
@@ -302,7 +315,7 @@ rule simplify_assembly:
         assembly=assembly,
         clusters="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv"
     output: "{sample}/graph_components/simplified_assembly.gfa"
-    conda:'envs/haploclust_gfa.yaml'
+    conda:'envs/env_gfa.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
@@ -318,7 +331,7 @@ rule simplify_assembly:
 rule detect_bubbles:
     input: "{sample}/graph_components/simplified_assembly.gfa"
     output: "{sample}/graph_components/simplified_assembly.gfa.json"
-    conda:'envs/haploclust_bubblegun.yaml'
+    conda:'envs/env_bubblegun.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
@@ -341,7 +354,7 @@ rule fastmap_ss_reads_to_unitigs:
 		SSreads="{sample}/ss/merged/{lib}.combined.homopolymer-compressed.fasta",
 	output: "{sample}/exact_match/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
 	threads: 2
-	conda: 'envs/haploclust_cl.yaml'
+	conda: 'envs/env_cl.yaml'
 	resources:
 		mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
 		walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
@@ -362,7 +375,7 @@ rule output_valid_maps:
         map="{sample}/exact_match/{lib}_maximal_unique_exact_match.tsv", # map_ss_reads_to_unitigs
         bubbles="{sample}/graph_components/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
     output: "{sample}/valid_exact_match/{lib}_valid_maximal_unique_exact_match.tsv" # valid_{component}_maximal_unique_exact_match.data"
-    conda:'envs/haploclust_pyenv.yaml'
+    conda:'envs/env_pyenv.yaml'
     # resources:
     #     mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
     #     walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
@@ -383,14 +396,14 @@ rule output_valid_maps:
 
 rule phase_unitigs:
     input:
-        # ss_clust="{sample}/clustering_orientation_strandstate/ss_clusters.tsv", # SaaRclust
-        unitigs_clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # SaaRclust
-        clust_pairs="{sample}/clustering_orientation_strandstate/clust_partners.tsv", # SaaRclust
+        unitigs_clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # COS
+        clust_pairs="{sample}/clustering_orientation_strandstate/clust_partners.tsv", # COS
         map=expand("{{sample}}/valid_exact_match/{lib}_valid_maximal_unique_exact_match.tsv", lib=libs), # output_valid_maps
         bubbles="{sample}/graph_components/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
-        wc_cell_clust="{sample}/clustering_orientation_strandstate/wc_libraries.tsv", # SaaRclust
+        wc_cell_clust="{sample}/clustering_orientation_strandstate/wc_libraries.tsv", # COS
     output:"{sample}/phasing/{sample}_phased_unitigs.tsv",
-    singularity: "haploclust_Renv2.sif"
+    singularity: singularity_r_env
+    conda: conda_r_env
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'

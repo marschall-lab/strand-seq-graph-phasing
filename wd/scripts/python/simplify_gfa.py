@@ -25,7 +25,7 @@ clust_file = None
 if args.segment_length_threshold is not None:
     thresh = args.segment_length_threshold[0]
     
-if args.clusters is not None
+if args.clusters is not None:
     clust_file = clusts_file = args.clusters[0]
     
 if thresh is None and clust_file is None:
@@ -69,6 +69,7 @@ def simplify_and_crimp_graph(graph, thresh=None, segments_to_keep_names=None):
 # Empty graph check:
 if not graph.segments and not graph.dovetails:
     graph.to_file(args.output[0])
+
 elif args.clusters is not None:
     # TODO
     clusts_file = args.clusters[0]
@@ -92,7 +93,7 @@ elif args.clusters is not None:
     for x in clust_rname.values():
         all_clustered_rnames.extend(x)
     # Speed things up by doing an all over simplify before, which reduces a 
-    # lot of reduncant work when simplifying each cluster 
+    # lot of redundant work when simplifying each cluster
     simplified_graph = simplify_graph(graph, thresh=thresh, segments_to_keep_names=all_clustered_rnames) 
     
     simplified_graphs = [simplify_and_crimp_graph(simplified_graph, thresh=thresh, segments_to_keep_names=keep_names) for keep_names in clust_rname.values()]

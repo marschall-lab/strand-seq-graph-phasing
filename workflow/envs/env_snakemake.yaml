@@ -1,0 +1,6 @@
+name: env_snakemake_runner
+dependencies:
+  # versions in mir's testing environment
+  - python=3.11.0
+  - snakemake=7.18.2
+  - pip

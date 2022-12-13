@@ -1,4 +1,4 @@
-name: haploclust_Renv2
+name: env_Renv2
 dependencies:
     - pip
     - liblapack

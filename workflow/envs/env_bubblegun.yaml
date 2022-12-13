@@ -1,4 +1,4 @@
-name: haploclust_bubblegun
+name: env_bubblegun
 dependencies:
   - pip=22.1.1
   

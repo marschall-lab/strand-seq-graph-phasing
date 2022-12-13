@@ -1,4 +1,4 @@
-name: haploclust_cl
+name: env_cl
 dependencies:
 # Mir added because it wasn't in Maryam's file
   - pear=0.9.6

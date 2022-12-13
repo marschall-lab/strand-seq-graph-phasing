@@ -4,7 +4,7 @@
 
 There are two difficulties with setting up this workflow on Hilbert: The `R` and `BubbleGun` conda environments. 
 
-Due to Hilbert's difficulties with R bioconductor packages (which attempt to connect to the internet during installation), the cluster cannot create the conda environment needed for `R` rules. Instead, a `.sif` [Singularity](https://docs.sylabs.io/guides/latest/user-guide/) file, corresponding to the environment in `workflow/envs/haploclust_Renv2.yaml`, has to be used. Peter has already created this file, but it still needs to be accounted for during setup.  
+Due to Hilbert's difficulties with R bioconductor packages (which attempt to connect to the internet during installation), the cluster cannot create the conda environment needed for `R` rules. Instead, a `.sif` [Singularity](https://docs.sylabs.io/guides/latest/user-guide/) file, corresponding to the environment in `workflow/envs/env_Renv2.yaml`, has to be used. Peter has already created this file, but it still needs to be accounted for during setup.  
 
 `BubbleGun` is a package that is only available from `pip`, and not from conda. Accordingly, the `BubbleGun` environment has to be set-up as a special case described below.
 
@@ -17,13 +17,15 @@ Due to Hilbert's difficulties with R bioconductor packages (which attempt to con
 
 3. Copy Hilbert cluster profile into `wd`.
 
-4. Copy `R` singularity environment, `/gpfs/project/projects/medbioinf/projects/mihen108/haploclust_Renv2.sif`, into `wd`.
+4. Copy `R` singularity environment, `/gpfs/project/projects/medbioinf/projects/mihen108/env_Renv2.sif`, into `wd`.
 
 5. Create the conda environment that will be used to run snakemake. Keep this environment somewhere in the project directory, EG: 
 
 ```python
 conda create -p strand-seq-graph-phasing/env/snakemake_runner/ snakemake
 ```
+
+An environment file that contains the Python and Snakemake versions that Mir has been using to test can be found at `workflow/envs/env_snakemake.yaml`
 
 6. load the `Singularity` module: `module load Singularity`
 
