@@ -49,13 +49,13 @@ libs, = glob_wildcards(os.path.join(ss_dir, "{lib}_1"+ss_suffix))
 rule temp:
     input:
         detect_bubbles=  expand("{sample}/graph_components/simplified_assembly.gfa.json", sample=sample),
-        phase_unitigs=expand("{sample}/phasing/{sample}_phased_unitigs.data", sample=sample),
+        phase_unitigs=expand("{sample}/phasing/{sample}_phased_unitigs.tsv", sample=sample),
         unmerged_SaaRclust_by_component = expand("{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", sample=sample)
 
 
 rule all:
     input:
-        phased_unitigs = expand("{sample}/phasing/{sample}_phased_unitigs.data", sample=sample)
+        phased_unitigs = expand("{sample}/phasing/{sample}_phased_unitigs.tsv", sample=sample)
 
 
 ################################################
