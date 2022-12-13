@@ -3,34 +3,6 @@
 args <- commandArgs(trailingOnly = FALSE)
 print(args)
 
-# args <-
-#   c(
-# "/opt/conda/lib/R/bin/exec/R"                                       ,
-# "--no-echo"                                                         ,
-# "--no-restore"                                                      ,
-# "--vanilla"                                                         ,
-# "--file=scripts/R/phase_bubbles.snakemake.R"                        ,
-# "--args"                                                            ,
-# "--clust-pairs"                                                     ,
-# "HG002tester/clustering_orientation_strandstate/clust_partners.tsv" ,
-# "--wc-cell-clust"                                                   ,
-#  "HG002tester/clustering_orientation_strandstate/wc_libraries.tsv"   ,
-#  "--ss-clust"                                                        ,
-#  "HG002tester/clustering_orientation_strandstate/ss_clusters.tsv"    ,
-#  "--unitig-clust"                                                    ,
-#  "HG002tester/clustering_orientation_strandstate/unitig_clusters.tsv",
-#  "--map"                                                             ,
-#  "HG002tester/valid_exact_match"                                     ,
-#  "--bubbles"                                                         ,
-#  "HG002tester/graph_components/simplified_assembly.gfa.json"         ,
-#  "--sample"                                                          ,
-#  "HG002tester"                                                       ,
-#  "--output"                                                          ,
-#  "HG002tester/phasing/HG002tester_phased_unitigs.data"               ,
-#  "--log"                                                             ,
-#  "log/phase_unitigs_HG002tester.log"
-#   )
-
 #TODO rewrite this to work without ss-clust, only unitig -clust? This would
 #likely involve the skipping the output_valid_maps_step and incorporating it
 #into this script?
@@ -48,11 +20,11 @@ expected_args <-
     '--unitig-clust',
     '--map',
     '--bubbles',
-
+    
     ## Output
     '--output',
     '--log',
-
+    
     ## Wildcards
     '--sample'
   )
@@ -64,10 +36,10 @@ arg_idx <- c(arg_idx, length(args) + 1) # edge case of last tag
 get_values <- function(arg, singular=TRUE){
   idx <- which(args == arg)
   stopifnot(length(idx) == 1)
-
+  
   next_idx <- arg_idx[which.max(arg_idx > idx)]
   values <- args[(idx + 1):(next_idx - 1)]
-
+  
   # More than one value? return list. One value ~ remove from list structure. It
   # is probably bad practice to return two different types like that, but most
   # arguments have single values and it makes the code less annoying to look at.
@@ -77,7 +49,7 @@ get_values <- function(arg, singular=TRUE){
   } else {
     stopifnot(length(values)>1)
   }
-
+  
   return(values)
 }
 
@@ -110,13 +82,26 @@ source(file.path(get_script_dir(), "module_utils/utils.R"))
 
 # Parsing -----------------------------------------------------------------
 
-# unitigs clustered by chromosome
-unitig_clust <- fread(get_values('--unitig-clust'))
+
 
 sample <- get_values('--sample')
 
 # Cluster -> Chromosome map
 clust.pairs <- fread(get_values('--clust-pairs'))
+temp <- clust.pairs %>% 
+  mutate(temp = first_clust) %>% 
+  mutate(first_clust = second_clust,
+         second_clust=temp) %>% 
+  select(-temp)
+clust.pairs <- rbind(clust.pairs, temp) %>%  arrange(first_clust)
+
+
+# unitigs clustered by chromosome
+unitig_clust <- fread(get_values('--unitig-clust'))
+unitig_clust <- merge(unitig_clust, clust.pairs,    
+                      by.x = c('first_clust', 'chrom_clust'),
+                      by.y = c('first_clust', 'chrom_clust'),
+                      all.x = TRUE)
 
 # WC libraries for each chromosome cluster
 wc.cell.clust <- fread(get_values("--wc-cell-clust"))
@@ -130,27 +115,15 @@ wc.cell.clust <-
 print('got clusters')
 
 
-# SS Read Import ----------------------------------------------------------
-
-
-# SS reads clustered by chromosome
-ss.clust <- fread(get_values('--ss-clust'), header=T)
-colnames(ss.clust) <- c("SSname", "SSclust", "chrom.clust")
-
-# ssname and sslib are pasted together, separated by an underscore
-#TODO this step is by far the slowest in the whole script. It might take longer
-#than the rest of the script combined. 
-ss.clust[, SSname:=strsplit(SSname, '_')[[1]][1], by=SSname] 
-
-
 # Import Exact Matches ----------------------------------------------------
 
 # 
-map_path <- get_values("--map")
+map_files <- get_values("--map", singular=FALSE)
 
 map <-
-  list.files(map_path, full.names = TRUE) %>%
-  setNames(basename_no_ext(.)) %>%
+  # list.files(map_path, full.names = TRUE) 
+  map_files %>%
+  # setNames(gsub('_valid_maximal_unique_exact_match', '', basename_no_ext(.))) %>%
   lapply(fread) %>%
   rbindlist()
 
@@ -158,13 +131,14 @@ map <-
 
 # Join --------------------------------------------------------------------
 
+
 # join cluster ids to clusters
-map <- merge(map, ss.clust, by="SSname", all.x=TRUE)
+map <- merge(map, unitig_clust, by.x="unitig_name", by.y='#rname', all.x=TRUE)
 
 # check every unititg only maps to one bubble/allele and chrom.clust
 stopifnot(
   map %>%
-    distinct(unitig_name, chrom.clust, bubbleName, bubbleAllele) %>%
+    distinct(unitig_name, chrom_clust, bubbleName, bubbleAllele) %>%
     dplyr::count(unitig_name) %>%
     with(all(n==1))
 )
@@ -175,8 +149,13 @@ stopifnot(
 map <-
   semi_join(map,
             wc.cell.clust,
-            by = c('SSlib' = 'library', 'chrom.clust' = 'chrom_clust'))
+            by = c('SSlib' = 'library', 'chrom_clust' = 'chrom_clust'))
 
+# Alignment Direction -----------------------------------------------------
+
+map <-
+  map %>% 
+  mutate(alignment_direction_cluster = ifelse(isReverseMapped, second_clust, first_clust))
 # Coverage ----------------------------------------------------------------
 
 
@@ -186,13 +165,13 @@ coverage <-
     num.bubble.al0 = sum(bubbleAllele == '0'),
     num.bubble.al1 = sum(bubbleAllele == '1'),
     num_reads = .N
-  ), .(chrom.clust, SSlib, SSclust, bubbleName)]
+  ), .(chrom_clust, SSlib, alignment_direction_cluster, bubbleName)]
 
-# within each chrom clust, make both SSclust have the same set of lib and bubbleNames
+# within each chrom clust, make both alignment_direction_cluster have the same set of lib and bubbleNames
 coverage <-
   coverage %>%
-  group_by(chrom.clust) %>%
-  tidyr::complete(SSclust, SSlib, bubbleName, fill=list(num.bubble.al0=0,num.bubble.al1=0, num_reads=0)) %>%
+  group_by(chrom_clust) %>%
+  tidyr::complete(alignment_direction_cluster, SSlib, bubbleName, fill=list(num.bubble.al0=0,num.bubble.al1=0, num_reads=0)) %>%
   ungroup() %>%
   as.data.table()
 
@@ -219,7 +198,7 @@ coverage[, bubbleAllele := ifelse(al0_ratio >= 0.75, '0', ifelse(al0_ratio < 0.2
 # the bubble.
 valid_libs_per_bubble <-
   coverage[, .(
-    valid_libs = sum(!is.na(bubbleAllele))), by=c('chrom.clust', 'bubbleName')]
+    valid_libs = sum(!is.na(bubbleAllele))), by=c('chrom_clust', 'bubbleName')]
 
 # need at least 2 Libs to make comparisons. 2 is a logical minimum to vote on
 # concensus scores. Terefore, 2 is essentially not filtering anything but the
@@ -230,7 +209,7 @@ coverage <-
   coverage %>%
   semi_join(
     valid_libs_per_bubble[valid_libs >= valid_lib_bubble_thresh],
-    by=c('chrom.clust', 'bubbleName')
+    by=c('chrom_clust', 'bubbleName')
   )
 
 # TODO some sort of more specific report about what and how much each is
@@ -242,18 +221,18 @@ coverage <-
 
 make_coverage_matrices <- function(coverage) {
   coverage_matrix <-
-    data.table::dcast(coverage, SSclust + bubbleName ~ SSlib, value.var = "bubbleAllele")
+    data.table::dcast(coverage, alignment_direction_cluster + bubbleName ~ SSlib, value.var = "bubbleAllele")
   
-  # SSclust/bubblName combinations without any mappings from a SSlib
+  # alignment_direction_cluster/bubblName combinations without any mappings from a SSlib
   coverage_matrix[is.na(coverage_matrix)] <- "-"
   
-  # split map by SSclust
-  return(split(coverage_matrix, by = 'SSclust', keep.by = FALSE))
+  # split map by alignment_direction_cluster
+  return(split(coverage_matrix, by = 'alignment_direction_cluster', keep.by = FALSE))
 }
 
 coverage_matrices <-
   coverage %>%
-  split(by = 'chrom.clust', keep.by = FALSE) %>%
+  split(by = 'chrom_clust', keep.by = FALSE) %>%
   lapply(make_coverage_matrices)
 
 
@@ -273,15 +252,15 @@ strandphaser_prep <- function(coverage_pair) {
   ## recode and convert to matrix class
   coverage_pair <-
     lapply(coverage_pair, code_matrix_for_strandphasing)
-
+  
   ## Filter and sort shared bubbles ID and cells so that the matrices have matching dimensions
   bubble_ids <-
     lapply(coverage_pair, colnames)
-
+  
   shared_bubble_ids <-
     Reduce(intersect, bubble_ids) %>%
     sort()
-
+  
   ss_libs <-
     lapply(coverage_pair, rownames)
   
@@ -291,16 +270,16 @@ strandphaser_prep <- function(coverage_pair) {
   
   # Ordering matrices to have the same rows and columns
   coverage_pair <- lapply(coverage_pair, function(x) x[shared_ss_libs, shared_bubble_ids, drop=FALSE])
-
+  
   # Original Matrix ID
   rownames(coverage_pair[[1]]) <-
     paste(rownames(coverage_pair[[1]]),  "C1", sep = "__")
-
+  
   rownames(coverage_pair[[2]]) <-
     paste(rownames(coverage_pair[[2]]),  "C2", sep = "__")
-
+  
   stopifnot(all(Reduce(`==`, lapply(coverage_pair, dim))))
-
+  
   return(coverage_pair)
 }
 
@@ -320,7 +299,7 @@ calc_concensus_margin <- function(x, values = c('1', '2')) {
 
 calc_matrix_concensus_score <- function(m, positions=1:ncol(m), values =  c('1', '2')) {
   stopifnot(inherits(m, 'matrix'))
-
+  
   m[, positions, drop=FALSE] %>%
     apply(2, calc_concensus_margin, values=values) %>%
     sum()
@@ -331,22 +310,22 @@ swap_matrix_rows <- function(l, i) {
   m2 <- l[[2]]
   stopifnot(inherits(m1, 'matrix'))
   stopifnot(inherits(m2, 'matrix'))
-
+  
   m1_row_name <- rownames(m1)[i]
   m2_row_name <- rownames(m2)[i]
-
+  
   m1_row <- m1[i, ]
   m2_row <- m2[i, ]
-
+  
   m1[i, ] <- m2_row
   rownames(m1)[i] <- m2_row_name
-
+  
   m2[i, ] <- m1_row
   rownames(m2)[i] <- m1_row_name
-
+  
   out <- list(m1, m2)
   names(out) <- names(l)
-
+  
   return(out)
 }
 
@@ -362,7 +341,7 @@ sort_matrices <- function(coverage_pair){
         which(x[i,] %in% c(1, 2))
       }) %>%
       Reduce(union, .)
-
+    
     unswapped_concensus_score <-
       vapply(
         coverage_pair,
@@ -370,7 +349,7 @@ sort_matrices <- function(coverage_pair){
         positions = covered_positions,
         FUN.VALUE = double(1) # double instead of integer to allow for Inf
       )
-
+    
     swapped_concensus_score <-
       vapply(
         swap_matrix_rows(coverage_pair, i),
@@ -378,13 +357,13 @@ sort_matrices <- function(coverage_pair){
         positions = covered_positions,
         FUN.VALUE = double(1)
       )
-
+    
     if(sum(swapped_concensus_score) < sum(unswapped_concensus_score)) {
       coverage_pair <- swap_matrix_rows(coverage_pair, i)
     }
-
+    
   }
-
+  
   return(coverage_pair)
 }
 
@@ -401,7 +380,7 @@ get_strand_states <- function(coverage_pair) {
     coverage_pair %>%
     lapply(function(x) data.table(lib_hap=rownames(x))) %>%
     rbindlist(idcol ='cluster')
-
+  
   haplo_strand_states <-
     tidyr::separate(
       haplo_strand_states,
@@ -409,9 +388,9 @@ get_strand_states <- function(coverage_pair) {
       into = c('lib', 'haplotype'),
       sep = '__C'
     )
-
+  
   haplo_strand_states[, `:=`(haplotype=as.integer(haplotype)-1, cluster=as.integer(cluster))]
-
+  
   return(haplo_strand_states)
 }
 
@@ -426,17 +405,17 @@ haplo_strand_states <-
 
 unitigs_receiving_reads <-
   map[, unique(unitig_name)]
-  
+
 bubble_coverage_summary <-
   valid_libs_per_bubble[, .(
     bubbles_recieving_any_ss_reads_from_wc_sslibs = sum(bubbleName != 'None'),
     bubbles_with_adequate_wc_sslib_coverage = sum(valid_libs >= valid_lib_bubble_thresh)
-  ), by = 'chrom.clust']
+  ), by = 'chrom_clust']
 
 exclusion_summary <-
   unitig_clust %>%
   dplyr::rename(unitig_name = `#rname`) %>%
-  full_join(bubble_coverage_summary, by = c('chrom_clust' = 'chrom.clust')) %>%
+  full_join(bubble_coverage_summary, by = c('chrom_clust' = 'chrom_clust')) %>%
   mutate(
     exclusion = case_when(
       bubbles_with_adequate_wc_sslib_coverage > 0 & unitig_name %in% unitigs_receiving_reads ~ NA_character_,
@@ -462,28 +441,28 @@ map <-
     haplo_strand_states,
     by = c(
       'SSlib' = 'lib',
-      'chrom.clust' = 'chrom_clust',
-      'SSclust' = 'cluster'
+      'chrom_clust' = 'chrom_clust',
+      'alignment_direction_cluster' = 'cluster'
     )
   )
 
 # Count alignments to each bubble allele from each sorted cluster.
 phase_counts <-
-  map[, .(n=.N), by=c('unitig_name', 'bubbleName', 'bubbleAllele', 'chrom.clust', 'SSclust', 'haplotype')] %>%
+  map[, .(n=.N), by=c('unitig_name', 'bubbleName', 'bubbleAllele', 'chrom_clust', 'alignment_direction_cluster', 'haplotype')] %>%
   tidyr::complete(
-    nesting(chrom.clust, unitig_name, bubbleName, bubbleAllele),
-    SSclust,
+    nesting(chrom_clust, unitig_name, bubbleName, bubbleAllele),
+    alignment_direction_cluster,
     haplotype,
     fill = list(n = 0)
   ) %>%
   as.data.table()
 
-phase_counts <- phase_counts[, .(n=sum(n)), by=c( 'chrom.clust', 'unitig_name', 'bubbleName', 'bubbleAllele', 'haplotype')]
+phase_counts <- phase_counts[, .(n=sum(n)), by=c( 'chrom_clust', 'unitig_name', 'bubbleName', 'bubbleAllele', 'haplotype')]
 
 
 phase_counts <-
   phase_counts %>%
-  dcast(chrom.clust + unitig_name + bubbleName + bubbleAllele ~ haplotype, value.var='n') %>%
+  dcast(chrom_clust + unitig_name + bubbleName + bubbleAllele ~ haplotype, value.var='n') %>%
   dplyr::rename(haplotype_1_support = '0', haplotype_2_support='1')
 
 phase_counts[, support_percentage := haplotype_1_support/(haplotype_1_support+haplotype_2_support)]
@@ -509,19 +488,34 @@ non_bubble_phase_counts[, can_confidently_phase :=
 out <- rbindlist(list(bubble_phase_counts,non_bubble_phase_counts))
 out[, haplotype:=ifelse(!can_confidently_phase, NA, ifelse(support_percentage > 0.75, 'H1', 'H2'))]
 
-# Export ------------------------------------------------------------------
 
+
+# Export Formatting -------------------------------------------------------
 out <-
   out %>%
-  arrange(chrom.clust, bubbleName, bubbleAllele) 
+  arrange(chrom_clust, bubbleName, bubbleAllele) 
 
 out <-
-full_join(out, exclusion_summary,  by = "unitig_name")
+  full_join(out, exclusion_summary,  by = "unitig_name")
 
 out <-
   out %>%
   select(unitig_name, clust, everything()) %>%
   mutate(support_percentage = round(support_percentage * 100, 1))
+
+
+# Formatting for Rukki? From documentation for input market counts: TSV file,
+# where first three columns of every line are interpreted as
+# node_name\tmaternal\tpaternal, where 'maternal'/'paternal' are
+# parental-specific marker counts. All columns after the third in TSV are
+# ignored.
+out <-
+  out %>% 
+  select(unitig_name, haplotype_1_support, haplotype_2_support, everything())
+
+# Export ------------------------------------------------------------------
+
+
 
 outpath <- get_values('--output')
 if(!dir.exists(dirname(outpath))) {
@@ -529,4 +523,4 @@ if(!dir.exists(dirname(outpath))) {
 }
 print(outpath)
 
-fwrite(out, outpath, na='NA')
+fwrite(out, outpath, sep= "\t", na='NA')

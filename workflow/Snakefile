@@ -48,14 +48,10 @@ libs, = glob_wildcards(os.path.join(ss_dir, "{lib}_1"+ss_suffix))
 
 rule temp:
     input:
-        split_assembly_fasta_by_clust=expand("{sample}/clustered_ss_fasta/", sample=sample),
-        split_ss_reads_by_clust=expand("{sample}/clustered_assembly_fasta/", sample=sample),
         detect_bubbles=  expand("{sample}/graph_components/simplified_assembly.gfa.json", sample=sample),
-        fastmap_ss_reads_to_unitigs=expand("{sample}/exact_match/", sample=sample),
-        output_valid_maps=expand("{sample}/valid_exact_match/", sample=sample),
         phase_unitigs=expand("{sample}/phasing/{sample}_phased_unitigs.data", sample=sample),
         unmerged_SaaRclust_by_component = expand("{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", sample=sample)
-        # phase_unitigs=expand("{sample}/phasing/phased_unitigs_{component}.data", sample=sample, component=non_acrocentric_components),
+
 
 rule all:
     input:
@@ -158,11 +154,9 @@ rule homopolymer_compress_merged_ss:
         --output {output}
         '''
 
-
-#####################################################################
-############ Align Unmerged SS Reads to Assembly Unitigs ############
-#####################################################################
-
+#######################################
+############ Index Unitigs ############
+#######################################
 rule gfa_to_fasta:
     input: assembly
     output: "{sample}/{sample}_assembly.fa"
@@ -183,6 +177,11 @@ rule bwa_index_unitigs:
     log: "log/bwa_index_hifiasm_unitigs_{sample}.log"
     benchmark: "benchmark/bwa_index_unitigs_{sample}.benchmark"
     shell: "(time bwa index {input}) > {log} 2>&1"
+#####################################################################
+############ Align Unmerged SS Reads to Assembly Unitigs ############
+#####################################################################
+
+
 
 rule bwa_align_unmerged_compressed_ss_to_unitigs:
     input:
@@ -268,8 +267,6 @@ rule clust_orient_strand_state:
         gfa="{sample}/assembly.gfa"
     output:
         ML_clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # ~ MLclust.data ~ unitig_clusters.tsv
-        ss_clust="{sample}/clustering_orientation_strandstate/ss_clusters.tsv", # ss_clusters.data ~ ss_clusters.tsv
-        # ss_clust_sp=directory("{sample}/clustering_orientation_strandstate/ss_clusters/"),
         clust_pairs="{sample}/clustering_orientation_strandstate/clust_partners.tsv", # clust_partners.txt ~ clust_partners.tsv
         wc_cells_clusters="{sample}/clustering_orientation_strandstate/wc_libraries.tsv", # wc_cells_clusters.data ~ wc_libraries.tsv
         unclustered='{sample}/clustering_orientation_strandstate/excluded_unitigs.tsv'
@@ -293,60 +290,6 @@ rule clust_orient_strand_state:
         --threads {threads} \\
         --segment-length-threshold {params.segment_length_threshold} \\
         --log {log}
-        '''
-
-
-#######################################################################################
-############ Splitting SS reads according to Chromosome Clustering Results ############
-#######################################################################################
-
-rule merge_all_ss_fasta:
-    input: expand("{{sample}}/ss/merged/{lib}.combined.homopolymer-compressed.fasta", lib=libs) # homopolymer_compress_ss
-    output: temp("{sample}/ss/split/all_libs.fasta")
-    conda:'envs/haploclust_cl.yaml'
-    # log: "log/merge_all_ss_fasta_{sample}.log"
-    benchmark: "benchmark/merge_all_ss_fasta_{sample}.benchmark"
-    shell:
-        '''
-        for f in {input}
-        do
-            libname=$(basename $f .combined.homopolymer-compressed.fasta)
-            echo libname = $libname
-            bioawk -c fastx '{{print \">\"$name; print $seq}}' $f >> {output}
-        done
-        '''
-
-# TODO sanitize the outputs for these whatshap_split rules ~ they don't make folders if they don't exist
-rule split_ss_reads_by_clust:
-    input:
-        fasta="{sample}/ss/split/all_libs.fasta", # merge_all_ss_fasta
-        component="{sample}/clustering_orientation_strandstate/ss_clusters.tsv" # SaaRclust
-    output: directory("{sample}/clustered_ss_fasta/")
-    conda:'envs/haploclust_pyenv.yaml'
-    resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-    log: "log/split_ss_reads_{sample}.log"
-    benchmark: "benchmark/split_ss_reads_{sample}.benchmark"
-    shell: # mkdir appears to be neeeded when directory is specified for output
-        '''
-        (time mkdir {output} &&
-        python3 scripts/python/whatshap_split.py {input.fasta} {input.component}  --output-folder {output} --split-by-cluster) > {log} 2>&1
-        '''
-
-rule split_assembly_fasta_by_clust:
-    input:
-        fasta="{sample}/{sample}_assembly.fa", #gfa to fasta
-        clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv" # SaarClust
-    output:
-        directory("{sample}/clustered_assembly_fasta/")
-    conda:'envs/haploclust_pyenv.yaml'
-    log: "log/split_assembly_graph_{sample}.log"
-    benchmark: "benchmark/split_assembly_graph_{sample}.benchmark"
-    shell: # mkdir appears to be neeeded when directory is specified for output
-        '''
-        (time mkdir {output} &&
-        python3 scripts/python/whatshap_split.py {input.fasta} {input.clust} --output-folder {output} --split-by-cluster) > {log} 2>&1
         '''
 
 
@@ -389,44 +332,21 @@ rule detect_bubbles:
 ############ FastMapping Strand-seq reads ############
 ######################################################
 
-# TODO maybe a clever way to parallelize this even when number of files is unknown ahead of time?
-# TODO maybe if you can't parallelize with unknown number of files, maybe it is
-#      faster to align all to all instead of looping through clustered files. Likely would run better on Hilbert as well in terms of scheduling.
-#      as then the rule wouldn't have to wait until the clustering step had been run to start.
+
+
 rule fastmap_ss_reads_to_unitigs:
-    input:
-        SSreads="{sample}/clustered_ss_fasta/", # make_clust_fasta_file_lists
-        utg="{sample}/clustered_assembly_fasta/" # make_clust_fasta_file_lists
-    output:
-        map=directory("{sample}/exact_match/") #component{component}_maximal_unique_exact_match.data",
-    params:
-        utg_prefix= expand("{sample}_assembly_", sample=sample),
-        ss_prefix = "all_libs_"
-    conda:'envs/haploclust_cl.yaml'
-    resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-    threads: 2
-    log: "log/map_SS_reads_to_unitigs_{sample}.log"
-    benchmark: "benchmark/map_SS_reads_to_unitigs_{sample}.benchmark"
-    shell:
-        '''
-        mkdir {output} &&(
-            NFILES=$(ls {input.SSreads} | grep ".fasta$" | wc -l)
-            echo $NFILES
-            for ((i=1; i<=NFILES; i++))
-            do
-                utig={input.utg}/{params.utg_prefix}$i.fa
-                ss={input.SSreads}/{params.ss_prefix}$i.fasta
-                out={output}/maximal_unique_exact_match_$i.data
-                echo $i
-                echo $utig
-                echo $ss
-                echo $out
-                (time bwa index $utig && bwa fastmap -w 1 -l 75 $utig $ss > $out) >> {log} 2>&1
-            done
-        )
-        '''
+	input:
+		unitigs="{sample}/{sample}_assembly.fa",# gfa_to_fasta
+		unitigs_index=expand("{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
+		SSreads="{sample}/ss/merged/{lib}.combined.homopolymer-compressed.fasta",
+	output: "{sample}/exact_match/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
+	threads: 2
+	conda: 'envs/haploclust_cl.yaml'
+	resources:
+		mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
+		walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
+	log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
+	shell: "(bwa fastmap -w 1 -l 75 {input.unitigs} {input.SSreads} > {output}) > {log} 2>&1"
 
 
 #############################################################
@@ -439,38 +359,22 @@ rule fastmap_ss_reads_to_unitigs:
 # EG under an SQ or //SQ row, a single "EM XX YY 1"
 rule output_valid_maps:
     input:
-        map="{sample}/exact_match/", # map_ss_reads_to_unitigs
-        bubbles="{sample}/graph_components/simplified_assembly.gfa.json" # detect_bubbles_overlap_graph
-    output: directory("{sample}/valid_exact_match/") # valid_{component}_maximal_unique_exact_match.data"
-    params:
-        map_prefix= "maximal_unique_exact_match_"
+        map="{sample}/exact_match/{lib}_maximal_unique_exact_match.tsv", # map_ss_reads_to_unitigs
+        bubbles="{sample}/graph_components/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
+    output: "{sample}/valid_exact_match/{lib}_valid_maximal_unique_exact_match.tsv" # valid_{component}_maximal_unique_exact_match.data"
     conda:'envs/haploclust_pyenv.yaml'
     # resources:
-    # 	mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-    # 	walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-    log: "log/output_valid_maps_{sample}.log"
-    benchmark: "benchmark/output_valid_maps_{sample}.benchmark"
+    #     mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+    #     walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/output_valid_maps_{sample}_{lib}.log"
+    benchmark: "benchmark/output_valid_maps_{sample}_{lib}.benchmark"
     shell:
         '''
-        mkdir {output} &&(
-            NFILES=$(ls {input.map} | wc -l)
-            echo $NFILES
-            for ((i=1; i<=NFILES; i++))
-            do
-                map={input.map}/{params.map_prefix}$i.data
-                out={output}/valid_maximal_unique_exact_match_$i.data
-                echo $i
-                echo $map
-                echo $out
-                python3 scripts/python/output_valid_maps.snakemake.py \\
+        (python3 scripts/python/output_valid_maps.snakemake.py \\
                 --bubbles {input.bubbles} \\
-                --map $map \\
-                --output $out
-            done
-        ) > {log} 2>&1
+                --map {input.map} \\
+                --output {output}) > {log} 2>&1
         '''
-
-
 #################################
 ############ Phasing ############
 #################################
@@ -479,13 +383,13 @@ rule output_valid_maps:
 
 rule phase_unitigs:
     input:
-        ss_clust="{sample}/clustering_orientation_strandstate/ss_clusters.tsv", # SaaRclust
+        # ss_clust="{sample}/clustering_orientation_strandstate/ss_clusters.tsv", # SaaRclust
         unitigs_clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # SaaRclust
         clust_pairs="{sample}/clustering_orientation_strandstate/clust_partners.tsv", # SaaRclust
-        map="{sample}/valid_exact_match/", # output_valid_maps
+        map=expand("{{sample}}/valid_exact_match/{lib}_valid_maximal_unique_exact_match.tsv", lib=libs), # output_valid_maps
         bubbles="{sample}/graph_components/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
-        wc_cell_clust="{sample}/clustering_orientation_strandstate/wc_libraries.tsv" # SaaRclust
-    output:"{sample}/phasing/{sample}_phased_unitigs.data"
+        wc_cell_clust="{sample}/clustering_orientation_strandstate/wc_libraries.tsv", # SaaRclust
+    output:"{sample}/phasing/{sample}_phased_unitigs.tsv",
     singularity: "haploclust_Renv2.sif"
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
@@ -497,11 +401,11 @@ rule phase_unitigs:
         Rscript --vanilla scripts/R/phase_bubbles.snakemake.R \\
         --clust-pairs {input.clust_pairs} \\
         --wc-cell-clust {input.wc_cell_clust} \\
-        --ss-clust {input.ss_clust} \\
         --unitig-clust {input.unitigs_clust} \\
         --map {input.map} \\
         --bubbles {input.bubbles} \\
         --sample {wildcards.sample} \\
         --output {output} \\
         --log {log}
-        '''
+           '''
+

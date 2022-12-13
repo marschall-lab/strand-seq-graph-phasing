@@ -447,23 +447,6 @@ wc_libraries <-
   select(library, het_frac, first_clust, second_clust)
 
 
-## Cluster each SS read aligns to
-#### Names: #qname, clust, chrom_clust
-clustered_ss_reads <-
-  alignments %>% 
-  rbindlist(idcol='library') %>% 
-  select(rname, qname, strand) %>% 
-  left_join(select(unitig_clusters, -chrom_clust), by = "rname") %>% 
-  left_join(new_cluster_ids, by = c("first_clust", "second_clust")) 
-
-clustered_ss_reads <-
-  clustered_ss_reads %>% 
-  mutate(clust = ifelse(strand == '+', first_clust, second_clust)) %>% 
-  select(qname, clust, chrom_clust)
-
-clustered_ss_reads <-
-  clustered_ss_reads %>% 
-  filter(!is.na(clust)) # reads mapping to ecluded untigis 
 
 # Export ------------------------------------------------------------------
 
@@ -505,16 +488,6 @@ fwrite(wc_libraries,
        quote = F,
        row.names = F)
 
-
-## Cluster each SS read aligns to
-#### Names: #qname, clust, chrom_clust
-clustered_ss_reads %>% 
-  dplyr::rename(`#qname` = qname) %>% 
-  fwrite( 
-    file=file.path(outputfolder, 'ss_clusters.tsv'), 
-    sep='\t',
-    quote = F,
-    row.names = F)
 
 
 
