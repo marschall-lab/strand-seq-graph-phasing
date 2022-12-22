@@ -1,0 +1,424 @@
+###################################
+############ Libraries ############
+###################################
+
+import os
+
+################################
+############ Config ############
+################################
+
+sample = config["sample"]
+print(sample)
+ss_dir = config["strandseq_dir"]
+ss_suffix = config["strandseq_suffix"]
+
+
+
+assembly = config['assembly']
+
+segment_length_threshold = config["segmentLengthThreshold"]
+
+bwa_index_suffices = ["amb", "ann", "bwt", "pac", "sa"]
+
+
+libs, = glob_wildcards(os.path.join(ss_dir, "{lib}_1"+ss_suffix))
+
+if not libs:
+    raise FileNotFoundError(f'No Strand-Seq files F=found. Strand-Seq files are expected to have filenames of the form: {os.path.join(ss_dir, "{lib}_{1,2}"+ss_suffix)}')
+
+print(libs)
+
+#####################################
+############ Offline/Online #########
+#####################################
+
+deploy_offline = config["deploy_offline"]
+
+if deploy_offline:
+    pass
+    conda_r_env = None
+    singularity_r_env = config["singularity_Renv"]
+    if not os.path.isfile(singularity_r_env):
+        raise FileNotFoundError('R Singularity environment not found.')
+else:
+    conda_r_env = "envs/env_Renv2.yaml"
+    singularity_r_env = None
+
+#####################################
+############ Constraints ############
+#####################################
+
+# Should probably add periods and underscores to sample wildcard constraint
+# wildcard_constraints:
+#     sample = "[a-zA-Z\d]+",
+#     clust = "[\d]+"
+
+###############################
+############ Rules ############
+###############################
+
+
+rule temp:
+    input:
+        detect_bubbles=  expand("{sample}/graph_components/simplified_assembly.gfa.json", sample=sample),
+        phase_unitigs=expand("{sample}/phasing/{sample}_phased_unitigs.tsv", sample=sample),
+        unitig_clusters = expand("{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", sample=sample)
+
+
+rule all:
+    input:
+        phased_unitigs = expand("{sample}/phasing/{sample}_phased_unitigs.tsv", sample=sample)
+
+
+################################################
+############ Unmerged SS Processing ############
+################################################
+
+# Unmerged reads are aligned in bwa mem paired end mode, and alignments are
+# used for the initial clustering step which assigns
+# unitig chromosome and orientation, and calls library strand state
+rule unzip_ss:
+    input: ss_dir+"/{lib}_{pair}"+ss_suffix
+    output: temp("{sample}/ss/unmerged/{lib}_{pair}.fasta")
+    conda:'envs/env_cl.yaml'
+    log: "log/unzip_ss_{sample}_{lib}_{pair}.log"
+    shell:
+        '''
+        (time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1
+        '''
+
+rule add_ss_libname_unmerged:
+    input: "{sample}/ss/unmerged/{lib}_{pair}.fasta"
+    output: temp("{sample}/ss/unmerged/{lib}_{pair}.renamed.fasta")
+    conda:'envs/env_cl.yaml'
+    # log: "log/add_ss_libname_{sample}_{lib}_{pair}.log"
+    shell:
+        '''
+        bioawk -c fastx -v libname={wildcards.lib} '{{print \">\"$name"_"libname; print $seq}}' <(cat {input}) > {output}
+        '''
+
+rule homopolymer_compress_unmerged_ss:
+    input: "{sample}/ss/unmerged/{lib}_{pair}.renamed.fasta"
+    output: "{sample}/ss/unmerged/{lib}_{pair}.homopolymer-compressed.fasta"
+    conda:'envs/env_pyenv.yaml'
+    log: "log/compress_unmerged_ss_{sample}_{lib}_{pair}.log"
+    shell:
+        '''
+        (python3 scripts/python/homopolymer_compress_fasta.py \\
+        --input {input} \\
+        --output {output}) > {log} 2>&1
+        '''
+
+
+##############################################
+############ Merged SS Processing ############
+##############################################
+# Merged SS reads are used with bwa fastmap, for longer exact matches.
+# How useful merging actually is for that step is untested, but it feels like
+# the right thing to do as fastmap does not have a paired alignment mode
+
+# TODO check the name of the merged reads, does it simply take the name of the first read in the pair?
+rule pear_merge_mates:
+    input:
+        fq1=ss_dir+"/{lib}_1"+ss_suffix,
+        fq2=ss_dir+"/{lib}_2"+ss_suffix
+    output:
+        "{sample}/ss/merged/{lib}.assembled.fastq",
+        "{sample}/ss/merged/{lib}.discarded.fastq",
+        "{sample}/ss/merged/{lib}.unassembled.forward.fastq",
+        "{sample}/ss/merged/{lib}.unassembled.reverse.fastq"
+    conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 4096 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/pear_merge_mates_{sample}_{lib}.log"
+    benchmark: "benchmark/pear_merge_mates_{sample}_{lib}.benchmark"
+    shell: "(pear -f {input.fq1} -r {input.fq2} -t 101 -o {wildcards.sample}/ss/merged/{wildcards.lib}) > {log} 2>&1"
+
+rule concat_assembled_with_first_pair_of_unassembled:
+    input:
+        "{sample}/ss/merged/{lib}.assembled.fastq",
+        "{sample}/ss/merged/{lib}.unassembled.forward.fastq"
+    output: temp("{sample}/ss/merged/{lib}.combined.fasta")
+    conda:'envs/env_cl.yaml'
+    log: "log/concat_merged_with_first_unmerged_{sample}_{lib}.log"
+    shell: "(time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1"
+
+rule add_ss_libname_merged:
+    input: "{sample}/ss/merged/{lib}.combined.fasta"
+    output: temp("{sample}/ss/merged/{lib}.combined.renamed.fasta")
+    conda:'envs/env_cl.yaml'
+    # log: "log/add_ss_libname_{sample}_{lib}.log"
+    shell:
+        '''
+        bioawk -c fastx -v libname={wildcards.lib} '{{print \">\"$name"_"libname; print $seq}}' <(cat {input}) > {output}
+        '''
+
+rule homopolymer_compress_merged_ss:
+    input: "{sample}/ss/merged/{lib}.combined.renamed.fasta" # concat_assembled_with_first_pair_of_unassembled
+    output: "{sample}/ss/merged/{lib}.combined.homopolymer-compressed.fasta"
+    conda:'envs/env_pyenv.yaml'
+    # log: "log/compress_ss_{sample}_{lib}.log"
+    shell:
+        '''
+        python3 scripts/python/homopolymer_compress_fasta.py \\
+        --input {input} \\
+        --output {output}
+        '''
+
+#######################################
+############ Index Unitigs ############
+#######################################
+rule gfa_to_fasta:
+    input: assembly
+    output: "{sample}/{sample}_assembly.fa"
+    threads: 2
+    log: "log/gfa_to_fasta_{sample}.log"
+    shell:
+        '''
+        (time grep S {input} | awk '{{print \">\"$2\"\\n\"$3}}' > {output}) > {log} 2<&1
+        '''
+
+rule bwa_index_unitigs:
+    input: "{sample}/{sample}_assembly.fa" # gfa_to_fasta
+    output: expand("{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices)
+    conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{8 + attempt*attempt:02}:59:00'
+    log: "log/bwa_index_hifiasm_unitigs_{sample}.log"
+    benchmark: "benchmark/bwa_index_unitigs_{sample}.benchmark"
+    shell: "(time bwa index {input}) > {log} 2>&1"
+#####################################################################
+############ Align Unmerged SS Reads to Assembly Unitigs ############
+#####################################################################
+
+
+
+rule bwa_align_unmerged_compressed_ss_to_unitigs:
+    input:
+        unitigs="{sample}/{sample}_assembly.fa", # gfa_to_fasta
+        unitigs_index=expand("{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices), # bwa_index_unitigs
+        mate1="{sample}/ss/unmerged/{lib}_1.homopolymer-compressed.fasta",
+        mate2="{sample}/ss/unmerged/{lib}_2.homopolymer-compressed.fasta"
+    output: temp("{sample}/temp_unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam")
+    threads: 6
+    conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log:
+        bwa="log/bwa_align_unmerged_compressed_ss_to_unitigs_bwa_{sample}_{lib}.log",
+        samtools="log/bwa_align_unmerged_compressed_ss_to_unitigs_samtools_{sample}_{lib}.log"
+    shell:
+        '''
+        bwa mem -t {threads} -R "@RG\\tID:{wildcards.lib}" -v 2 {input.unitigs} {input.mate1} {input.mate2} 2> {log.bwa} | samtools view -b -F 2304 /dev/stdin > {output} 2> {log.samtools}
+        '''
+
+rule bwa_sort_unmerged_compressed_ss_to_unitigs:
+    input:  "{sample}/temp_unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam" # bwa_align
+    output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam"
+    conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/bwa_sort_unmerged_{sample}_{lib}.log"
+    benchmark: "benchmark/bwa_sort_unmerged_{sample}_{lib}.benchmark"
+    shell:
+        '''
+        (time samtools sort -o {output} {input}) > {log} 2>&1
+        '''
+
+rule unmerged_mark_duplicates:
+    input:  "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.bam" # bwa_sort
+    output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam"
+    conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/unmerged_mark_duplicates_{sample}_{lib}.log"
+    benchmark: "benchmark/unmerged_mark_duplicates_{sample}_{lib}.benchmark"
+    shell:
+        '''
+        (time sambamba markdup {input} {output}) > {log} 2>&1
+        '''
+
+rule unmerged_bwa_index:
+    input:  "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam" # mark_duplicates
+    output: "{sample}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam.bai"
+    conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/unmerged_bwa_index_{sample}_{lib}.log"
+    benchmark: "benchmark/unmerged_bwa_index_{sample}_{lib}.benchmark"
+    shell:
+        '''
+        (time samtools index {input}) > {log} 2>&1
+        '''
+
+
+###############################################################
+############ Clustering, Orientation, Strand State ############
+###############################################################
+
+# For Mir, there is a recent bug where the rscript cannot access the contents of any folder
+# except the working directory. However, shell commands appear to work just fine.
+
+rule copy_assembly_to_wd:
+    input:
+        assembly
+    output:
+        temp("{sample}/assembly.gfa")
+    shell: 'cp {input} {output}'
+
+rule clust_orient_strand_state:
+    input:
+        bam=expand("{{sample}}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam", lib=libs), # mark_duplicates
+        bai=expand("{{sample}}/unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{lib}.mdup.bam.bai", lib=libs), # bwa_index
+        gfa="{sample}/assembly.gfa"
+    output:
+        ML_clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # ~ MLclust.data ~ unitig_clusters.tsv
+        clust_pairs="{sample}/clustering_orientation_strandstate/clust_partners.tsv", # clust_partners.txt ~ clust_partners.tsv
+        wc_cells_clusters="{sample}/clustering_orientation_strandstate/wc_libraries.tsv", # wc_cells_clusters.data ~ wc_libraries.tsv
+        unclustered='{sample}/clustering_orientation_strandstate/excluded_unitigs.tsv'
+    params:
+        prefix = expand("{sample}/clustering_orientation_strandstate/", sample=sample),
+        segment_length_threshold=segment_length_threshold
+    singularity: singularity_r_env
+    conda: conda_r_env
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    threads: 8 # 24
+    log: "log/cos_{sample}.log"
+    benchmark: "benchmark/cos_{sample}.benchmark"
+    shell:
+        '''
+        Rscript --vanilla scripts/R/clustering_orient_strandstate.snakemake.R \\
+        --bam {input.bam} \\
+        --gfa {input.gfa} \\
+        --output-prefix {params.prefix} \\
+        --threads {threads} \\
+        --segment-length-threshold {params.segment_length_threshold} \\
+        --log {log}
+        '''
+
+
+##########################################
+############ Bubble Detection ############
+##########################################
+
+rule simplify_assembly:
+    input:
+        assembly=assembly,
+        clusters="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv"
+    output: "{sample}/graph_components/simplified_assembly.gfa"
+    conda:'envs/env_gfa.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/simplify_assembly_{sample}.log"
+    shell:
+        '''
+        (python3 scripts/python/simplify_gfa.py \\
+        --input {input.assembly} \\
+        --output {output} \\
+        --clusters {input.clusters}) > {log} 2>&1
+        '''
+
+rule detect_bubbles:
+    input: "{sample}/graph_components/simplified_assembly.gfa"
+    output: "{sample}/graph_components/simplified_assembly.gfa.json"
+    conda:'envs/env_bubblegun.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/detect_bubbles_assembly_{sample}.log"
+    benchmark: "benchmark/detect_bubbles_assembly_{sample}.benchmark"
+    shell: "(time BubbleGun -g {input} bchains --only_simple --bubble_json {output})> {log} 2>&1"
+
+
+
+######################################################
+############ FastMapping Strand-seq reads ############
+######################################################
+
+
+
+rule fastmap_ss_reads_to_unitigs:
+	input:
+		unitigs="{sample}/{sample}_assembly.fa",# gfa_to_fasta
+		unitigs_index=expand("{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
+		SSreads="{sample}/ss/merged/{lib}.combined.homopolymer-compressed.fasta",
+	output: "{sample}/exact_match/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
+	threads: 2
+	conda: 'envs/env_cl.yaml'
+	resources:
+		mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
+		walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
+	log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
+	shell: "(bwa fastmap -w 1 -l 75 {input.unitigs} {input.SSreads} > {output}) > {log} 2>&1"
+
+
+#############################################################
+############ Identifying Phase-Informative Reads ############
+#############################################################
+
+
+# This script extracts extracts reads with unique alignments, and labels if the alignment is to a bubble contig.
+# TODO This script can likely be hugely simplified by taking the blocks that only indicate a match of length 1
+# EG under an SQ or //SQ row, a single "EM XX YY 1"
+rule output_valid_maps:
+    input:
+        map="{sample}/exact_match/{lib}_maximal_unique_exact_match.tsv", # map_ss_reads_to_unitigs
+        bubbles="{sample}/graph_components/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
+    output: "{sample}/valid_exact_match/{lib}_valid_maximal_unique_exact_match.tsv" # valid_{component}_maximal_unique_exact_match.data"
+    conda:'envs/env_pyenv.yaml'
+    # resources:
+    #     mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+    #     walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/output_valid_maps_{sample}_{lib}.log"
+    benchmark: "benchmark/output_valid_maps_{sample}_{lib}.benchmark"
+    shell:
+        '''
+        (python3 scripts/python/output_valid_maps.snakemake.py \\
+                --bubbles {input.bubbles} \\
+                --map {input.map} \\
+                --output {output}) > {log} 2>&1
+        '''
+#################################
+############ Phasing ############
+#################################
+
+
+
+rule phase_unitigs:
+    input:
+        unitigs_clust="{sample}/clustering_orientation_strandstate/unitig_clusters.tsv", # COS
+        clust_pairs="{sample}/clustering_orientation_strandstate/clust_partners.tsv", # COS
+        map=expand("{{sample}}/valid_exact_match/{lib}_valid_maximal_unique_exact_match.tsv", lib=libs), # output_valid_maps
+        bubbles="{sample}/graph_components/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
+        wc_cell_clust="{sample}/clustering_orientation_strandstate/wc_libraries.tsv", # COS
+    output:"{sample}/phasing/{sample}_phased_unitigs.tsv",
+    singularity: singularity_r_env
+    conda: conda_r_env
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/phase_unitigs_{sample}.log"
+    benchmark: "benchmark/phase_unitigs_{sample}.benchmark"
+    shell:
+        '''
+        Rscript --vanilla scripts/R/phase_bubbles.snakemake.R \\
+        --clust-pairs {input.clust_pairs} \\
+        --wc-cell-clust {input.wc_cell_clust} \\
+        --unitig-clust {input.unitigs_clust} \\
+        --map {input.map} \\
+        --bubbles {input.bubbles} \\
+        --sample {wildcards.sample} \\
+        --output {output} \\
+        --log {log}
+           '''
+
