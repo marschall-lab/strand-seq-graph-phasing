@@ -27,4 +27,4 @@ dependencies:
     - r-seqinr>=3.6_1
     - r-matrix
     - r-pkgconfig
-    - t-tidyverse>=1.3.2
+    - r-tidyverse>=1.3.2
