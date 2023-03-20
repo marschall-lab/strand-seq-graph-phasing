@@ -22,6 +22,14 @@ reference = config.get('reference', None)
 
 bwa_index_suffices = ["amb", "ann", "bwt", "pac", "sa"]
 
+################################
+########## Functions ###########
+################################
+
+def get_script_path(*args):
+    out = pathlib.Path(scripts_dir).joinpath(*args).resolve(strict=True)
+    return out.as_posix()
+
 ###################################
 ############ Rules ################
 ###################################
@@ -87,11 +95,14 @@ rule add_ss_libname_unmerged:
 rule homopolymer_compress_unmerged_ss:
     input: "ss/unmerged/{sample}/{lib}_{pair}.renamed.fasta"
     output: "ss/unmerged/{sample}/{lib}_{pair}.homopolymer-compressed.fasta"
+    params:
+        script=get_script_path('python','homopolymer_compress_fasta.py')
     conda:'envs/env_pyenv.yaml'
     log: "log/compress_unmerged_ss_{sample}_{lib}_{pair}.log"
+
     shell:
         '''
-        (python3 scripts/python/homopolymer_compress_fasta.py \\
+        (python3 {params.script} \\
         --input {input} \\
         --output {output}) > {log} 2>&1
         '''
@@ -121,7 +132,7 @@ rule pear_merge_mates:
         mem_mb = lambda wildcards, attempt: 4096 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     log: "log/pear_merge_mates_{sample}_{lib}.log"
-    shell: "(pear -f {input.fq1} -r {input.fq2} -t 101 -o {wildcards.sample}/ss/merged/{wildcards.lib}) > {log} 2>&1"
+    shell: "(pear -f {input.fq1} -r {input.fq2} -t 101 -o ss/merged/{wildcards.sample}/{wildcards.lib}) > {log} 2>&1"
 
 rule concat_assembled_with_first_pair_of_unassembled:
     input:
@@ -145,11 +156,14 @@ rule add_ss_libname_merged:
 rule homopolymer_compress_merged_ss:
     input: "ss/merged/{sample}/{lib}.combined.renamed.fasta" # concat_assembled_with_first_pair_of_unassembled
     output: "ss/merged/{sample}/{lib}.combined.homopolymer-compressed.fasta"
+    params:
+        script=get_script_path('python','homopolymer_compress_fasta.py')
     conda:'envs/env_pyenv.yaml'
     # log: "log/compress_ss_{sample}_{lib}.log"
+
     shell:
         '''
-        python3 scripts/python/homopolymer_compress_fasta.py \\
+        python3 {params.script} \\
         --input {input} \\
         --output {output}
         '''
@@ -226,6 +240,7 @@ rule unmerged_mark_duplicates:
         (time sambamba markdup {input} {output}) > {log} 2>&1
         '''
 
+# DO I still need this rule from Maryam? Does it make filtering and import of the Bams in the R program easier?
 rule unmerged_bwa_index:
     input:  "unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{sample}/{lib}.mdup.bam" # mark_duplicates
     output: "unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{sample}/{lib}.mdup.bam.bai"
@@ -266,7 +281,8 @@ rule clust_orient_strand_state:
         unclustered='clustering_orientation_strandstate/{sample}/excluded_unitigs.tsv'
     params:
         prefix = lambda wildcards: expand("clustering_orientation_strandstate/{sample}/", sample=wildcards.sample),
-        segment_length_threshold=segment_length_threshold
+        segment_length_threshold=segment_length_threshold,
+        script = get_script_path('R','clustering_orient_strandstate.snakemake.R')
     singularity: singularity_r_env
     conda: conda_r_env
     resources:
@@ -276,7 +292,7 @@ rule clust_orient_strand_state:
     log: "log/cos_{sample}.log"
     shell:
         '''
-        Rscript --vanilla scripts/R/clustering_orient_strandstate.snakemake.R \\
+        Rscript --vanilla {params.script} \\
         --bam {input.bam} \\
         --gfa {input.gfa} \\
         --output-prefix {params.prefix} \\
@@ -295,6 +311,8 @@ rule simplify_assembly:
         assembly=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa'],
         clusters="clustering_orientation_strandstate/{sample}/unitig_clusters.tsv"
     output: "graph_components/{sample}/simplified_assembly.gfa"
+    params:
+        script=get_script_path('python','simplify_gfa.py')
     conda:'envs/env_gfa.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
@@ -302,7 +320,7 @@ rule simplify_assembly:
     log: "log/simplify_assembly_{sample}.log"
     shell:
         '''
-        (python3 scripts/python/simplify_gfa.py \\
+        (python3 {params.script} \\
         --input {input.assembly} \\
         --output {output} \\
         --clusters {input.clusters}) > {log} 2>&1
@@ -314,7 +332,7 @@ rule detect_bubbles:
     conda:'envs/env_bubblegun.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+        walltime = lambda wildcards, attempt: f'{1 + attempt*attempt:02}:59:00'
     log: "log/detect_bubbles_assembly_{sample}.log"
     shell: "(time BubbleGun -g {input} bchains --only_simple --bubble_json {output})> {log} 2>&1"
 
@@ -352,6 +370,8 @@ rule output_valid_maps:
         map="exact_match/{sample}/{lib}_maximal_unique_exact_match.tsv", # map_ss_reads_to_unitigs
         bubbles="graph_components/{sample}/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
     output: "valid_exact_match/{sample}/{lib}_valid_maximal_unique_exact_match.tsv" # valid_{component}_maximal_unique_exact_match.data"
+    params:
+        script=get_script_path('python','output_valid_maps.snakemake.py')
     conda:'envs/env_pyenv.yaml'
     # resources:
     #     mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
@@ -359,7 +379,7 @@ rule output_valid_maps:
     log: "log/output_valid_maps_{sample}_{lib}.log"
     shell:
         '''
-        (python3 scripts/python/output_valid_maps.snakemake.py \\
+        (python3 {params.script} \\
                 --bubbles {input.bubbles} \\
                 --map {input.map} \\
                 --output {output}) > {log} 2>&1
@@ -381,6 +401,8 @@ rule phase_unitigs:
         bubbles="graph_components/{sample}/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
         wc_cell_clust="clustering_orientation_strandstate/{sample}/wc_libraries.tsv", # COS
     output:"phasing/{sample}_phased_unitigs.tsv",
+    params:
+        script=get_script_path('R', 'phase_bubbles.snakemake.R')
     singularity: singularity_r_env
     conda: conda_r_env
     resources:
@@ -389,7 +411,7 @@ rule phase_unitigs:
     log: "log/phase_unitigs_{sample}.log"
     shell:
         '''
-        Rscript --vanilla scripts/R/phase_bubbles.snakemake.R \\
+        Rscript --vanilla {params.script} \\
         --clust-pairs {input.clust_pairs} \\
         --wc-cell-clust {input.wc_cell_clust} \\
         --unitig-clust {input.unitigs_clust} \\

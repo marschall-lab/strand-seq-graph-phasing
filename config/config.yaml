@@ -6,5 +6,9 @@ segmentLengthThreshold: 250000
 deploy_offline: True
 singularity_Renv: /gpfs/project/projects/medbioinf/projects/mihen108/env_Renv2.sif
 
+# scripts
+scripts_dir: /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing_testing/scripts/
+
 # evaluation
+## reference fasta
 reference: /gpfs/project/projects/medbioinf/projects/mihen108/input/references/T2Tv11_hg002Yv2_chm13.fasta
