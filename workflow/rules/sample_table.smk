@@ -35,7 +35,12 @@ def process_sample_sheet():
 
         ss_libs = extract_libs(ss_dir, ss_suffix)
 
-        assert(len(ss_libs) *  2 == len(ss_files))
+        if len(ss_libs) *  2 != len(ss_files):
+            print(row.sample)
+            print(sorted(ss_libs))
+            print(len(ss_libs))
+
+        assert(len(ss_libs) *  2 == len(ss_files)), 'Incongruent number of Strand-seq libs and files'
         samples.add(row.sample)
         sample_input[row.sample] = dict(
             gfa=str(row.gfa.resolve(strict=True)),
