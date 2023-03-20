@@ -1,7 +1,10 @@
 samples: /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing_testing/config/samples.tsv
 # modify this to be some sort of num alignments?
-segmentLengthThreshold: 1000000
+segmentLengthThreshold: 250000
 
 # currently only applies to the R environment rules
 deploy_offline: True
 singularity_Renv: /gpfs/project/projects/medbioinf/projects/mihen108/env_Renv2.sif
+
+# evaluation
+reference: /gpfs/project/projects/medbioinf/projects/mihen108/input/references/T2Tv11_hg002Yv2_chm13.fasta

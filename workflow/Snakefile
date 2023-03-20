@@ -4,12 +4,6 @@
 
 import pathlib
 
-###################################
-############ Libraries ############
-###################################
-
-include: 'rules/sample_table.smk'
-
 ################################
 ############ Config ############
 ################################
@@ -18,7 +12,25 @@ segment_length_threshold = config["segmentLengthThreshold"]
 
 deploy_offline = config["deploy_offline"]
 
+scripts_dir = config["scripts_dir"]
+
+reference = config.get('reference', None)
+
+################################
+########## Variables ###########
+################################
+
 bwa_index_suffices = ["amb", "ann", "bwt", "pac", "sa"]
+
+###################################
+############ Rules ################
+###################################
+
+include: 'rules/sample_table.smk'
+
+if reference:
+    include: 'rules/evaluate.smk'
+
 
 #####################################
 ############ Offline/Online #########
@@ -34,12 +46,8 @@ else:
     singularity_r_env = None
 
 ###############################
-############ Rules ############
+############ All ##############
 ###############################
-#
-# rule temp:
-#     input:
-#         fastas = expand("fasta/{sample}/{sample}_assembly.fa", sample=SAMPLES)
 
 rule all:
     input:
