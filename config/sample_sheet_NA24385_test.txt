@@ -1,0 +1,2 @@
+sample	gfa	strandseq_dir	strandseq_suffix
+NA24385_good_frac-50_rep-1_test	/gpfs/project/projects/medbioinf/projects/mihen108/input/HGSVC_production_update/NA24385.ps-trio/assembly.homopolymer-compressed.gfa	/gpfs/project/projects/medbioinf/projects/mihen108/input/NA24385_titration_strandseq/NA24385_good_frac-100_rep-0/	_sequence.txt.gz
