@@ -254,7 +254,36 @@ rule unmerged_bwa_index:
         (time samtools index {input}) > {log} 2>&1
         '''
 
+###############################################################
+          ############ Mashmap Homology ############
+###############################################################
 
+rule mashmap_assembly_to_self:
+    input:  "fasta/{sample}/{sample}_unitigs-hpc.fasta"
+    output: "mashmap/{sample}_mashmap.mashssv"
+    params:
+        percent_identity=95,
+        min_alignment_size=10000
+    conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    threads: 8
+    log: "log/mashmap_{sample}.log"
+    shell:
+        '''
+        mashmap -r {input} -q {input} -t {threads} -f none --pi {params.percent_identity} -s {params.min_alignment_size} -o {output} > {log} 2>&1
+        '''
+
+rule filter_mashmap:
+    input:  "mashmap/{sample}_mashmap.mashssv"
+    output: "mashmap/{sample}_mashmap_unitig-matches.tsv"
+    conda:'envs/env_cl.yaml'
+    # log: "log/mashmap_filter_{sample}.log"
+    shell:
+        '''
+        cat {input} |awk '{{if ($NF > 99 && $4-$3 > 500000 && $1 != $6) print $1"\t"$6}}'|sort |uniq > {output}
+        '''
 
 ###############################################################
 ############ Clustering, Orientation, Strand State ############
@@ -274,7 +303,8 @@ rule clust_orient_strand_state:
     input:
         bam=lambda wildcards: expand("unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{{sample}}/{lib}.mdup.bam", lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs']), # mark_duplicates
         bai=lambda wildcards: expand("unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{{sample}}/{lib}.mdup.bam.bai", lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs']), # bwa_index
-        gfa="{sample}/assembly.gfa"
+        gfa="{sample}/assembly.gfa",
+        homology="mashmap/{sample}_mashmap_unitig-matches.tsv"
     output:
         ML_clust="clustering_orientation_strandstate/{sample}/unitig_clusters.tsv", # ~ MLclust.data ~ unitig_clusters.tsv
         clust_pairs="clustering_orientation_strandstate/{sample}/clust_partners.tsv", # clust_partners.txt ~ clust_partners.tsv
@@ -296,6 +326,7 @@ rule clust_orient_strand_state:
         Rscript --vanilla {params.script} \\
         --bam {input.bam} \\
         --gfa {input.gfa} \\
+        --homology {input.homology} \\
         --output-prefix {params.prefix} \\
         --threads {threads} \\
         --segment-length-threshold {params.segment_length_threshold} \\
