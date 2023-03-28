@@ -173,7 +173,7 @@ rule homopolymer_compress_merged_ss:
 #######################################
 rule gfa_to_fasta:
     input: lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa']
-    output: "fasta/{sample}/{sample}_assembly.fa"
+    output: "fasta/{sample}/{sample}_unitigs-hpc.fasta"
     threads: 2
     log: "log/gfa_to_fasta_{sample}.log"
     shell:
@@ -182,8 +182,8 @@ rule gfa_to_fasta:
         '''
 
 rule bwa_index_unitigs:
-    input: "fasta/{sample}/{sample}_assembly.fa" # gfa_to_fasta
-    output: expand("fasta/{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices)
+    input: "fasta/{sample}/{sample}_unitigs-hpc.fasta" # gfa_to_fasta
+    output: expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices)
     conda:'envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
@@ -196,8 +196,8 @@ rule bwa_index_unitigs:
 
 rule bwa_align_unmerged_compressed_ss_to_unitigs:
     input:
-        unitigs="fasta/{sample}/{sample}_assembly.fa", # gfa_to_fasta
-        unitigs_index=expand("fasta/{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices), # bwa_index_unitigs
+        unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta", # gfa_to_fasta
+        unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices), # bwa_index_unitigs
         mate1="ss/unmerged/{sample}/{lib}_1.homopolymer-compressed.fasta",
         mate2="ss/unmerged/{sample}/{lib}_2.homopolymer-compressed.fasta"
     output: temp("temp_unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{sample}/{lib}.bam")
@@ -253,6 +253,7 @@ rule unmerged_bwa_index:
         '''
         (time samtools index {input}) > {log} 2>&1
         '''
+
 
 
 ###############################################################
@@ -344,8 +345,8 @@ rule detect_bubbles:
 
 rule fastmap_ss_reads_to_unitigs:
 	input:
-		unitigs="fasta/{sample}/{sample}_assembly.fa",# gfa_to_fasta
-		unitigs_index=expand("fasta/{{sample}}/{{sample}}_assembly.fa.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
+		unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
+		unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
 		SSreads="ss/merged/{sample}/{lib}.combined.homopolymer-compressed.fasta",
 	output: "exact_match/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
 	threads: 2
