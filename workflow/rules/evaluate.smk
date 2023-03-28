@@ -39,7 +39,7 @@ rule map_unitigs_to_ref:
 		ref=ref_out,
 		unitigs="fasta/{sample}/{sample}_assembly.fa"
 	output: "reference_alignments/{ref_name}/{sample}_{ref_name}_ref-aln.paf"
-	conda: '../envs/env_minimap.yaml'
+	conda: '../envs/env_cl.yaml'
 	resources:
 		mem_mb=lambda wildcards, attempt: 1024 * 96 * attempt,
 		walltime=lambda wildcards, attempt: f'{8 + attempt * attempt:02}:59:00'

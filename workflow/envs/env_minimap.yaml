@@ -1,3 +1,0 @@
-name: env_minimap
-dependencies:
-  - minimap2=2.24
