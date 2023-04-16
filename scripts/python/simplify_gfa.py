@@ -4,7 +4,7 @@ import pdb
 import csv
 
 import gfapy
-from module_simplify_gfa.simplify_gfa_functions import *
+from scripts.python.module_simplify_gfa.simplify_gfa_functions import *
 
 
 # Parsing -----------------------------------------------------------------
@@ -35,6 +35,7 @@ if thresh is None and clust_file is None:
 # Import ------------------------------------------------------------------
 
 graph = gfapy.Gfa.from_file(args.input[0], vlevel = 3)
+graph = gfapy.Gfa.from_file('/Users/henglinm/Documents/wd/NA24385_good_frac-50_rep-1_test/exploded.gfa', vlevel = 3)
 
 def simplify_graph(graph, thresh=None, segments_to_keep_names=None):
     # remove self links is probably called more than necessary, but it fixed bugs.
@@ -99,11 +100,12 @@ elif args.clusters is not None:
     simplified_graphs = [simplify_and_crimp_graph(simplified_graph, thresh=thresh, segments_to_keep_names=keep_names) for keep_names in clust_rname.values()]
     simplified_graph = graph_from_graph_list(simplified_graphs, overlap=False)
 else:
-    simplified_graph = simplify_and_crimp_graph(graph, thresh=thresh)
+    simplified_graph = simplify_and_crimp_graph(graph, thresh=200000)
    
 print('export')
 
 simplified_graph.to_file(args.output[0])
+simplified_graph.to_file('simplified_exploded.gfa')
 
     
   

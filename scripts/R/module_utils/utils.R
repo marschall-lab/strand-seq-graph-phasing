@@ -48,6 +48,21 @@ dir_create_if_does_not_exist <- function(x) {
 }
 
 
+# Tidying -----------------------------------------------------------------
+
+get_prcomp_plotdata <- function(pca, rownames_col='rname') {
+  out <- as_tibble(pca$x)
+  pc_cols <- names(out)
+  out[, rownames_col] <- rownames(pca$x)
+  
+  return(out[, c(rownames_col, pc_cols)])
+}
+
+# Predicates --------------------------------------------------------------
+
+# all_lengths_same <- function(...) {
+#   stopifnot()
+# }
 
 # MAtrices, Dataframes, etc -----------------------------------------------
 
