@@ -143,6 +143,47 @@ extract_exact_matches <- function(x) {
 }
 
 
+invert_hex <- function(hex_code) {
+  # Convert hex code to RGB values
+  rgb_vals <- col2rgb(hex_code)
+  
+  # Invert RGB values
+  inv_rgb_vals <- 255 - rgb_vals
+  
+  # Convert inverted RGB values to hex code
+  inv_hex <- rgb(inv_rgb_vals[1, ], inv_rgb_vals[2, ], inv_rgb_vals[3, ], maxColorValue = 255)
+  
+  return(inv_hex)
+}
+
+
+make_bandage_colors <- function(color_hex, counts_1, counts_2) {
+  
+  stopifnot(length(color_hex) == 1)
+  stopifnot(length(counts_1) == 1)
+  stopifnot(length(counts_2) == 1)
+  
+  pal_f <- colorRamp(c(color_hex, 'grey', invert_hex(color_hex))) 
+  
+  if(is.na(counts_1) | is.na(counts_2)) {
+    return('black')
+  }
+  
+  if(counts_1 == 0 & counts_2 == 0) {
+    rgb_color <- pal_f(0.5)
+    alpha <- round(0.1 * 255)
+  } else {
+    ratio <- counts_1/(counts_1+counts_2)
+    rgb_color <- pal_f(ratio)
+    alpha <- round(ratio * 255)
+  }
+  
+  color <- rgb(rgb_color[1], rgb_color[2], rgb_color[3], maxColorValue=255)
+  
+  return(color)
+}
+
+
 # Command Line ------------------------------------------------------------
 
 
@@ -1117,12 +1158,76 @@ marker_counts <-
   summarise(c = sum(c), w=sum(w)) %>% 
   ungroup() 
 
+
+# Export ------------------------------------------------------------------
+
+## Join in Excluded Unitigs ------------------------------------------------
+all_unitigs <- unitig_lengths_df$unitig
+
+short_unitigs_df <- 
+  unitig_lengths_df %>% 
+  anti_join(long_unitigs_df, by='unitig') %>% 
+  pull(unitig)
+
+short_unitigs_df <-
+  tibble(
+    unitig = short_unitigs_df,
+    exclusion = paste('Length less than threshold:', segment_length_threshold)
+  )
+
+failed_qc_unitigs_df <-
+  tibble(unitig = as.character(strand.states$AWCcontigs@seqnames),
+         exclusion = 'Too many WC Libraries')
+
+accounted_unitigs <- 
+  c(marker_counts$unitig,
+    short_unitigs_df$unitig,
+    failed_qc_unitigs_df$unitig)
+
+unaccounted_unitigs_df <-
+  tibble(unitig = setdiff(all_unitigs, accounted_unitigs),
+         exclusion = 'other')
+
+exclusions_df <-
+  bind_rows(short_unitigs_df, failed_qc_unitigs_df, unaccounted_unitigs_df)
+
+# Make sure no unitig is double listed
+stopifnot(length(unique(exclusions_df$unitig)) == length(exclusions_df$unitig))
+
+stopifnot(setequal(all_unitigs, c(exclusions_df$unitig, marker_counts$unitig)))
+
+marker_counts <-
+  full_join(marker_counts, exclusions_df, by='unitig')
+
+
+## Additional Information --------------------------------------------------
+
 marker_counts <-
   marker_counts %>% 
   left_join(cluster_df, by='unitig') %>% 
   left_join(homology, by='unitig') %>% 
   arrange(cluster, bubble, bubble_arm)
 
+# first three columns: name, counts_1, counts_2 for rukki
+marker_counts <-
+  marker_counts %>% 
+  dplyr::rename(hap_1_counts = c, hap_2_counts = w) %>% 
+  select(unitig, hap_1_counts, hap_2_counts, everything()) %>% 
+  arrange(cluster, bubble, bubble_arm)
+
+## Bandage Cluster Colors -----------------------------------------------------
+
+
+
+cluster_palette <-
+  marker_counts %>%
+  distinct(cluster) %>%
+  mutate(Color = rainbow(n(), start=0.7, end=0.1))
+
+marker_counts <-
+  marker_counts %>% 
+  left_join(cluster_palette, by='cluster') %>% 
+  mutate(Color = pmap_chr(list(Color, hap_1_counts, hap_2_counts), make_bandage_colors))
 
 # 
 # # Phase Haploid Chromosomes -----------------------------------------------
@@ -1484,6 +1589,8 @@ marker_counts <-
 #     row.names = F
 #   )
 
+## CSV ---------------------------------------------------------------------
 
 
+readr::write_csv(marker_counts, file.path(outputfolder, 'marker_counts.csv'))
 
