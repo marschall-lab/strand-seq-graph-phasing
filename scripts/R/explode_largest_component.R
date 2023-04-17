@@ -6,91 +6,83 @@ library(igraph)
 
 # Import ------------------------------------------------------------------
 
-# TODO make this import process line by line.
-gfa <-
-  readLines('NA24385_good_frac-50_rep-1_test/assembly.gfa')
+extract_links_from_gfa <- function(filepath) {
+  con <- file(filepath, "r")
+  out <- character()
 
-segments <-
-  gfa %>%
-  keep(stringr::str_starts, 'S') %>%
-  strsplit("\t")
+  while ( TRUE ) {
+    line <- readLines(con, n = 1)
+    if ( length(line) == 0 ) {
+      break
+    }
 
-## Remove sequence to shrink graph
-# segments <-
-#   map(segments, function(x) {
-#     x[3] <- '*'
-#     return(x)
-#   })
+    if(stringr::str_starts(line, 'L')){
+      out <- c(out, line)
+    }
+  }
+  
+  close(con)
+  return(out)
+}
 
-links <-
-  gfa %>%
-  keep(stringr::str_starts, 'L') %>%
-  strsplit("\t")
+
+extract_segment_sizes_from_gfa <- function(filepath) {
+  con <- file(filepath, "r")
+  out <- integer()
+  
+  while ( TRUE ) {
+    line <- readLines(con, n = 1)
+    if ( length(line) == 0 ) {
+      break
+    }
+    
+    if(stringr::str_starts(line, 'S')){
+      line <- strsplit(line, '\t')[[1]]
+      segment_name <- line[2]
+      segment_length <- nchar(line[3])
+      out <- c(out, set_names(segment_length, segment_name))
+    }
+  }
+  
+  close(con)
+  return(out)
+}
+
+gfa <- 'NA24385_good_frac-50_rep-1_test/assembly.gfa'
+links_df <- extract_links_from_gfa(gfa)
 
 links_df <-
-  links %>%
+  links_df %>%
+  strsplit("\t") %>%
   map(as.list) %>%
   map(set_names,
       c('RecordType', 'From', 'FromOrient', 'To', 'ToOrient', 'Overlap')) %>%
   map(as_tibble) %>%
   bind_rows()
-#
-#   readr::read_tsv(I(links),
-#                   col_names = c('RecordType', 'From', 'FromOrient', 'To', 'ToOrient', 'Overlap'))
-#
-# segments <-
-#   readr::read_tsv(I(segments))
-
 
 # Segment Lengths ---------------------------------------------------------
 
-segment_names <-
-  segments %>%
-  map_chr(2)
-
-segment_lengths <-
-  segments %>%
-  map_chr(3) %>%
-  map_int(nchar)
-
-vertex_information <-
-  tibble(unitig = segment_names, size = segment_lengths)
-
+segment_sizes <-
+  extract_segment_sizes_from_gfa(gfa)
 
 # Graph Formatting --------------------------------------------------------
 
-# nodes <-
-#   with(links_df, unique(c(From, To))) %>%
-#   sort()
-#
-# links_df <-
-#   links_df %>%
-#   mutate(From = paste(From, ifelse(FromOrient == '+', 'S', 'E'), sep='_'),
-#          To = paste(To, ifelse(ToOrient == '+', 'S', 'E'), sep='_')) %>%
-#   select(From, To)
-#
-# end_to_end_links_df <-
-#   tibble(From = paste(nodes, 'S', sep='_'),
-#          To = paste(nodes, 'E', sep='_'))
-#
-# links_df <-
-#   links_df %>%
-#   bind_rows(end_to_end_links_df)
-#
+
 graph <-
-  graph_from_data_frame(select(links_df, From, To, everything()),
-                        directed = FALSE,
-                        vertices = vertex_information)
+  graph_from_data_frame(
+    select(links_df, From, To, everything()),
+    directed = FALSE,
+    vertices = tibble::enframe(segment_sizes, value =
+                                 'size')
+  )
 
 # Remove Small Isolated ---------------------------------------------------
 
 small_nodes <-
-  vertex_information %>%
-  filter(size < segment_length_threshold) %>%
-  pull(unitig)
+  names(segment_sizes)[segment_sizes < segment_length_threshold]
 
 isolated_small_nodes <-
-  degree(graph, v = small_nodes) %>%
+  degree(graph, v = unname(small_nodes)) %>%
   keep( ~ .x == 0) %>%
   names()
 
@@ -118,33 +110,52 @@ acrocentric_nodes <- get_nodes_in_largest_component(graph)
 acrocentric_small_nodes <-
   intersect(small_nodes, acrocentric_nodes)
 
-sg <- subgraph(graph, acrocentric_small_nodes)
-
-largest_tangle <-
-  get_nodes_in_largest_component(sg)
+largest_tangle_nodes <-
+  get_nodes_in_largest_component(subgraph(graph, acrocentric_small_nodes))
 
 graph <-
   graph %>%
-  delete_vertices(largest_tangle)
+  delete_vertices(largest_tangle_nodes)
 
 
 # Export ------------------------------------------------------------------
 
-deleted_nodes <- setdiff(segment_names, names(V(graph)))
+deleted_nodes <- setdiff(names(segment_sizes), names(V(graph)))
 
-segments <-
-  segments %>%
-  discard( ~ .x[2] %in% deleted_nodes) %>%
-  map_chr(paste, collapse = '\t')
+remove_nodes_from_gfa <- function(inpath, outpath, nodes_to_remove) {
+  in_gfa <- file(inpath, "r")
+  out_gfa <- file(outpath, "w")
+  
+  
+  while ( TRUE ) {
+    line <- readLines(in_gfa, n = 1)
+    if ( length(line) == 0 ) {
+      break
+    }
+    
+    split_line <- strsplit(line, '\t')[[1]]
+    if(split_line[1] == 'S'){
+      if(split_line[2] %in% nodes_to_remove) {
+        next
+      }
+    } else if(split_line[1] == 'L') {
+      if(split_line[2] %in% nodes_to_remove | split_line[4] %in% nodes_to_remove) {
+        next
+      }
+    } else {
+      browser()
+      stop('error lol')
+    }
+    
+    writeLines(line, out_gfa)
+  }
+  
+  close(in_gfa)
+  close(out_gfa)
+  return(TRUE)
+}
 
-links <-
-  links %>%
-  discard( ~ (.x[[2]] %in% deleted_nodes) | (.x[[4]] %in% deleted_nodes)) %>%
-  map_chr(paste, collapse = '\t')
-
-readr::write_lines(c(segments, links), file = 'NA24385_good_frac-50_rep-1_test/exploded.gfa')
-
-
+remove_nodes_from_gfa(gfa, 'NA24385_good_frac-50_rep-1_test/exploded.gfa', deleted_nodes)
 
 # Connected Components in Exploded Graph ----------------------------------
 
