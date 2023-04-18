@@ -1,0 +1,4 @@
+name: env_Renv
+dependencies:
+    - r-igraph>=1.4.1
+    - r-tidyverse>=2.0.0

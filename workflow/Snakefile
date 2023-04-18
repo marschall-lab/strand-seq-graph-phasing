@@ -59,7 +59,7 @@ else:
 
 rule all:
     input:
-        phased_unitigs = expand("phasing/{sample}_phased_unitigs.tsv", sample=SAMPLES)
+        phased_unitigs = expand("haplotype_marker_counts/{sample}_haplotype_marker_counts.csv", sample=SAMPLES)
 
 ################################################
 ############ Unmerged SS Processing ############
@@ -82,6 +82,7 @@ rule unzip_ss:
         (time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1
         '''
 
+# TODO I don't think this step is necessary anymore
 rule add_ss_libname_unmerged:
     input: "ss/unmerged/{sample}/{lib}_{pair}.fasta"
     output: temp("ss/unmerged/{sample}/{lib}_{pair}.renamed.fasta")
@@ -190,8 +191,9 @@ rule bwa_index_unitigs:
         walltime = lambda wildcards, attempt: f'{8 + attempt*attempt:02}:59:00'
     log: "log/bwa_index_unitigs_{sample}.log"
     shell: "(time bwa index {input}) > {log} 2>&1"
+
 #####################################################################
-############ Align Unmerged SS Reads to Assembly Unitigs ############
+############ bwa mem Unmerged SS Reads to Assembly Unitigs ##########
 #####################################################################
 
 rule bwa_align_unmerged_compressed_ss_to_unitigs:
@@ -200,7 +202,7 @@ rule bwa_align_unmerged_compressed_ss_to_unitigs:
         unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices), # bwa_index_unitigs
         mate1="ss/unmerged/{sample}/{lib}_1.homopolymer-compressed.fasta",
         mate2="ss/unmerged/{sample}/{lib}_2.homopolymer-compressed.fasta"
-    output: temp("temp_unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{sample}/{lib}.bam")
+    output: temp("temp_bwa_alignments/mem/{sample}/{lib}.bam")
     threads: 6
     conda:'envs/env_cl.yaml'
     resources:
@@ -215,8 +217,8 @@ rule bwa_align_unmerged_compressed_ss_to_unitigs:
         '''
 
 rule bwa_sort_unmerged_compressed_ss_alignments:
-    input:  "temp_unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{sample}/{lib}.bam" # bwa_align
-    output: temp("unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{sample}/{lib}.bam")
+    input:  "temp_bwa_alignments/mem/{sample}/{lib}.bam" # bwa_align
+    output: temp("bwa_alignments/mem/{sample}/{lib}.bam")
     conda:'envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
@@ -228,8 +230,8 @@ rule bwa_sort_unmerged_compressed_ss_alignments:
         '''
 
 rule unmerged_mark_duplicates:
-    input:  "unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{sample}/{lib}.bam" # bwa_sort
-    output: "unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{sample}/{lib}.mdup.bam"
+    input:  "bwa_alignments/mem/{sample}/{lib}.bam" # bwa_sort
+    output: "bwa_alignments/mem/{sample}/{lib}.mdup.bam"
     conda:'envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
@@ -242,8 +244,8 @@ rule unmerged_mark_duplicates:
 
 # DO I still need this rule from Maryam? Does it make filtering and import of the Bams in the R program easier?
 rule unmerged_bwa_index:
-    input:  "unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{sample}/{lib}.mdup.bam" # mark_duplicates
-    output: "unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{sample}/{lib}.mdup.bam.bai"
+    input:  "bwa_alignments/mem/{sample}/{lib}.mdup.bam" # mark_duplicates
+    output: "bwa_alignments/mem/{sample}/{lib}.mdup.bam.bai"
     conda:'envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
@@ -254,8 +256,27 @@ rule unmerged_bwa_index:
         (time samtools index {input}) > {log} 2>&1
         '''
 
+#############################################################
+############ fastmap merged Strand-seq reads ################
+#############################################################
+
+rule fastmap_ss_reads_to_unitigs:
+	input:
+		unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
+		unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
+		SSreads="ss/merged/{sample}/{lib}.combined.homopolymer-compressed.fasta",
+	output: "bwa_alignments/fastmap/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
+	threads: 2
+	conda: 'envs/env_cl.yaml'
+	resources:
+		mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
+		walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
+	log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
+	shell: "(bwa fastmap -w 1 -l 75 {input.unitigs} {input.SSreads} > {output}) > {log} 2>&1"
+
+
 ###############################################################
-          ############ Mashmap Homology ############
+####################### Mashmap Homology ######################
 ###############################################################
 
 rule mashmap_assembly_to_self:
@@ -285,12 +306,37 @@ rule filter_mashmap:
         cat {input} |awk '{{if ($NF > 99 && $4-$3 > 500000 && $1 != $6) print $1"\t"$6}}'|sort |uniq > {output}
         '''
 
-###############################################################
-############ Clustering, Orientation, Strand State ############
-###############################################################
+###################################################
+############ Acrocentric Tangle Removal ###########
+###################################################
 
-# For Mir, there is a recent bug where the rscript cannot access the contents of any folder
-# except the working directory. However, shell commands appear to work just fine.
+rule remove_acrocentric_tangle:
+    input: lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa']
+    output: gfa = 'gfa/gfa/{sample}_exploded.gfa',
+            ccs = 'gfa/ccs/{sample}_exploded_ccs.tsv'
+    params:
+        segment_length_threshold = segment_length_threshold,
+        script = get_script_path('R','explode_largest_component.R')
+    conda: 'envs/env_Renv.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 4 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/remove_acrocentric_tangle_{sample}.log"
+    shell:
+        '''
+        (Rscript --vanilla {params.script} \\
+        --gfa {input} \\
+        --output-gfa {output.gfa} \\
+        --output-ccs {output.ccs} \\
+        --segment-length-threshold {params.segment_length_threshold}) > {log} 2>&1
+        '''
+
+
+#######################################
+############ Phase Unitigs ############
+#######################################
+
+# Copying the assembly to the working directory is a convenience to get around having to manage paths related to the singularity environment
 
 rule copy_assembly_to_wd:
     input:
@@ -299,158 +345,83 @@ rule copy_assembly_to_wd:
         temp("{sample}/assembly.gfa")
     shell: 'cp {input} {output}'
 
-rule clust_orient_strand_state:
+
+
+
+
+def sample2mem(wildcards, ext='bam'):
+
+    out = expand("bwa_alignments/mem/{{sample}}/{lib}.mdup."+ext,
+        lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs'])
+    return out
+
+def sample2fastmap(wildcards):
+    out = expand("bwa_alignments/fastmap/{{sample}}/{lib}_maximal_unique_exact_match.tsv",
+        lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs'])
+    return out
+
+rule phase_unitigs:
     input:
-        bam=lambda wildcards: expand("unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{{sample}}/{lib}.mdup.bam", lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs']), # mark_duplicates
-        bai=lambda wildcards: expand("unmerged_bwa_ss_unitigs/unmerged_compressed_ss/{{sample}}/{lib}.mdup.bam.bai", lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs']), # bwa_index
-        gfa="{sample}/assembly.gfa",
+        bam=lambda wildcards: sample2mem(wildcards, 'bam'),
+        bai=lambda wildcards: sample2mem(wildcards, 'bam.bai'),
+        fastmap=sample2fastmap,
+        connected_components='gfa/ccs/{sample}_exploded_ccs.tsv',
         homology="mashmap/{sample}_mashmap_unitig-matches.tsv"
     output:
-        ML_clust="clustering_orientation_strandstate/{sample}/unitig_clusters.tsv", # ~ MLclust.data ~ unitig_clusters.tsv
-        clust_pairs="clustering_orientation_strandstate/{sample}/clust_partners.tsv", # clust_partners.txt ~ clust_partners.tsv
-        wc_cells_clusters="clustering_orientation_strandstate/{sample}/wc_libraries.tsv", # wc_cells_clusters.data ~ wc_libraries.tsv
-        unclustered='clustering_orientation_strandstate/{sample}/excluded_unitigs.tsv'
+        "haplotype_marker_counts/{sample}_haplotype_marker_counts.csv"
     params:
-        prefix = lambda wildcards: expand("clustering_orientation_strandstate/{sample}/", sample=wildcards.sample),
         segment_length_threshold=segment_length_threshold,
         script = get_script_path('R','clustering_orient_strandstate.snakemake.R')
     singularity: singularity_r_env
     conda: conda_r_env
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-    threads: 8 # 24
-    log: "log/cos_{sample}.log"
+    threads: 2 # 24
+    log: "log/phase_unitigs_{sample}.log"
     shell:
         '''
-        Rscript --vanilla {params.script} \\
-        --bam {input.bam} \\
-        --gfa {input.gfa} \\
+        (Rscript --vanilla {params.script} \\
+        --mem-alignment-bams {input.bam} \\
+        --fastmap-alignments {input.fastmap} \\
         --homology {input.homology} \\
-        --output-prefix {params.prefix} \\
-        --threads {threads} \\
+        --connected-components {input.connected_components} \\
         --segment-length-threshold {params.segment_length_threshold} \\
-        --log {log}
+        --output {output}) > {log} 2>&1
         '''
 
 
 ##########################################
 ############ Bubble Detection ############
 ##########################################
-
-rule simplify_assembly:
-    input:
-        assembly=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa'],
-        clusters="clustering_orientation_strandstate/{sample}/unitig_clusters.tsv"
-    output: "graph_components/{sample}/simplified_assembly.gfa"
-    params:
-        script=get_script_path('python','simplify_gfa.py')
-    conda:'envs/env_gfa.yaml'
-    resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-    log: "log/simplify_assembly_{sample}.log"
-    shell:
-        '''
-        (python3 {params.script} \\
-        --input {input.assembly} \\
-        --output {output} \\
-        --clusters {input.clusters}) > {log} 2>&1
-        '''
-
-rule detect_bubbles:
-    input: "graph_components/{sample}/simplified_assembly.gfa"
-    output: "graph_components/{sample}/simplified_assembly.gfa.json"
-    conda:'envs/env_bubblegun.yaml'
-    resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-        walltime = lambda wildcards, attempt: f'{1 + attempt*attempt:02}:59:00'
-    log: "log/detect_bubbles_assembly_{sample}.log"
-    shell: "(time BubbleGun -g {input} bchains --only_simple --bubble_json {output})> {log} 2>&1"
-
-
-
-#############################################################
-############ FastMapping merged Strand-seq reads ############
-#############################################################
-
-rule fastmap_ss_reads_to_unitigs:
-	input:
-		unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
-		unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
-		SSreads="ss/merged/{sample}/{lib}.combined.homopolymer-compressed.fasta",
-	output: "exact_match/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
-	threads: 2
-	conda: 'envs/env_cl.yaml'
-	resources:
-		mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
-		walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
-	log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
-	shell: "(bwa fastmap -w 1 -l 75 {input.unitigs} {input.SSreads} > {output}) > {log} 2>&1"
-
-
-#############################################################
-############ Identifying Phase-Informative Reads ############
-#############################################################
-
-
-# This script extracts extracts reads with unique alignments, and labels if the alignment is to a bubble contig.
-# TODO This script can likely be hugely simplified by taking the blocks that only indicate a match of length 1
-# EG under an SQ or //SQ row, a single "EM XX YY 1"
-rule output_valid_maps:
-    input:
-        map="exact_match/{sample}/{lib}_maximal_unique_exact_match.tsv", # map_ss_reads_to_unitigs
-        bubbles="graph_components/{sample}/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
-    output: "valid_exact_match/{sample}/{lib}_valid_maximal_unique_exact_match.tsv" # valid_{component}_maximal_unique_exact_match.data"
-    params:
-        script=get_script_path('python','output_valid_maps.snakemake.py')
-    conda:'envs/env_pyenv.yaml'
-    # resources:
-    #     mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-    #     walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-    log: "log/output_valid_maps_{sample}_{lib}.log"
-    shell:
-        '''
-        (python3 {params.script} \\
-                --bubbles {input.bubbles} \\
-                --map {input.map} \\
-                --output {output}) > {log} 2>&1
-        '''
-#################################
-############ Phasing ############
-#################################
-
-def sample2maps(wildcards):
-    out = expand("valid_exact_match/{{sample}}/{lib}_valid_maximal_unique_exact_match.tsv",
-        lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs'])
-    return out
-
-rule phase_unitigs:
-    input:
-        unitigs_clust="clustering_orientation_strandstate/{sample}/unitig_clusters.tsv", # COS
-        clust_pairs="clustering_orientation_strandstate/{sample}/clust_partners.tsv", # COS
-        map=sample2maps, # output_valid_maps
-        bubbles="graph_components/{sample}/simplified_assembly.gfa.json", # detect_bubbles_overlap_graph
-        wc_cell_clust="clustering_orientation_strandstate/{sample}/wc_libraries.tsv", # COS
-    output:"phasing/{sample}_phased_unitigs.tsv",
-    params:
-        script=get_script_path('R', 'phase_bubbles.snakemake.R')
-    singularity: singularity_r_env
-    conda: conda_r_env
-    resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-    log: "log/phase_unitigs_{sample}.log"
-    shell:
-        '''
-        Rscript --vanilla {params.script} \\
-        --clust-pairs {input.clust_pairs} \\
-        --wc-cell-clust {input.wc_cell_clust} \\
-        --unitig-clust {input.unitigs_clust} \\
-        --map {input.map} \\
-        --bubbles {input.bubbles} \\
-        --sample {wildcards.sample} \\
-        --output {output} \\
-        --log {log}
-           '''
-
+#
+# rule simplify_assembly:
+#     input:
+#         assembly=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa'],
+#         clusters="clustering_orientation_strandstate/{sample}/unitig_clusters.tsv"
+#     output: "graph_components/{sample}/simplified_assembly.gfa"
+#     params:
+#         script=get_script_path('python','simplify_gfa.py')
+#     conda:'envs/env_gfa.yaml'
+#     resources:
+#         mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+#         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+#     log: "log/simplify_assembly_{sample}.log"
+#     shell:
+#         '''
+#         (python3 {params.script} \\
+#         --input {input.assembly} \\
+#         --output {output} \\
+#         --clusters {input.clusters}) > {log} 2>&1
+#         '''
+#
+# rule detect_bubbles:
+#     input: "graph_components/{sample}/simplified_assembly.gfa"
+#     output: "graph_components/{sample}/simplified_assembly.gfa.json"
+#     conda:'envs/env_bubblegun.yaml'
+#     resources:
+#         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+#         walltime = lambda wildcards, attempt: f'{1 + attempt*attempt:02}:59:00'
+#     log: "log/detect_bubbles_assembly_{sample}.log"
+#     shell: "(time BubbleGun -g {input} bchains --only_simple --bubble_json {output})> {log} 2>&1"
+#

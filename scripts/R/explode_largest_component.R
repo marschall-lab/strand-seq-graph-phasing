@@ -1,97 +1,5 @@
-# Library -----------------------------------------------------------------
 
-library(dplyr)
-library(purrr)
-library(igraph)
-
-# Import ------------------------------------------------------------------
-
-extract_links_from_gfa <- function(filepath) {
-  con <- file(filepath, "r")
-  out <- character()
-
-  while ( TRUE ) {
-    line <- readLines(con, n = 1)
-    if ( length(line) == 0 ) {
-      break
-    }
-
-    if(stringr::str_starts(line, 'L')){
-      out <- c(out, line)
-    }
-  }
-  
-  close(con)
-  return(out)
-}
-
-
-extract_segment_sizes_from_gfa <- function(filepath) {
-  con <- file(filepath, "r")
-  out <- integer()
-  
-  while ( TRUE ) {
-    line <- readLines(con, n = 1)
-    if ( length(line) == 0 ) {
-      break
-    }
-    
-    if(stringr::str_starts(line, 'S')){
-      line <- strsplit(line, '\t')[[1]]
-      segment_name <- line[2]
-      segment_length <- nchar(line[3])
-      out <- c(out, set_names(segment_length, segment_name))
-    }
-  }
-  
-  close(con)
-  return(out)
-}
-
-gfa <- 'NA24385_good_frac-50_rep-1_test/assembly.gfa'
-links_df <- extract_links_from_gfa(gfa)
-
-links_df <-
-  links_df %>%
-  strsplit("\t") %>%
-  map(as.list) %>%
-  map(set_names,
-      c('RecordType', 'From', 'FromOrient', 'To', 'ToOrient', 'Overlap')) %>%
-  map(as_tibble) %>%
-  bind_rows()
-
-# Segment Lengths ---------------------------------------------------------
-
-segment_sizes <-
-  extract_segment_sizes_from_gfa(gfa)
-
-# Graph Formatting --------------------------------------------------------
-
-
-graph <-
-  graph_from_data_frame(
-    select(links_df, From, To, everything()),
-    directed = FALSE,
-    vertices = tibble::enframe(segment_sizes, value =
-                                 'size')
-  )
-
-# Remove Small Isolated ---------------------------------------------------
-
-small_nodes <-
-  names(segment_sizes)[segment_sizes < segment_length_threshold]
-
-isolated_small_nodes <-
-  degree(graph, v = unname(small_nodes)) %>%
-  keep( ~ .x == 0) %>%
-  names()
-
-graph <-
-  graph %>%
-  delete_vertices(isolated_small_nodes)
-
-
-# Explode Largest Component -----------------------------------------------
+# Functions ---------------------------------------------------------------
 
 get_nodes_in_largest_component <- function(graph) {
   ccs <- components(graph)
@@ -104,23 +12,6 @@ get_nodes_in_largest_component <- function(graph) {
   
   return(out)
 }
-
-acrocentric_nodes <- get_nodes_in_largest_component(graph)
-
-acrocentric_small_nodes <-
-  intersect(small_nodes, acrocentric_nodes)
-
-largest_tangle_nodes <-
-  get_nodes_in_largest_component(subgraph(graph, acrocentric_small_nodes))
-
-graph <-
-  graph %>%
-  delete_vertices(largest_tangle_nodes)
-
-
-# Export ------------------------------------------------------------------
-
-deleted_nodes <- setdiff(names(segment_sizes), names(V(graph)))
 
 remove_nodes_from_gfa <- function(inpath, outpath, nodes_to_remove) {
   in_gfa <- file(inpath, "r")
@@ -143,7 +34,6 @@ remove_nodes_from_gfa <- function(inpath, outpath, nodes_to_remove) {
         next
       }
     } else {
-      browser()
       stop('error lol')
     }
     
@@ -155,7 +45,146 @@ remove_nodes_from_gfa <- function(inpath, outpath, nodes_to_remove) {
   return(TRUE)
 }
 
-remove_nodes_from_gfa(gfa, 'NA24385_good_frac-50_rep-1_test/exploded.gfa', deleted_nodes)
+# Args --------------------------------------------------------------------
+
+
+args <- commandArgs(trailingOnly = FALSE)
+
+## Parsing Helper ----------------------------------------------------------
+## Expected Args
+expected_args <-
+  c(
+    ## Input
+    '--gfa',
+    ## Output
+    '--output-gfa',
+    '--output-ccs',
+    ## params
+    '--segment-length-threshold'
+    
+  )
+
+# Have to handle multiple inputs per tag
+arg_idx <- sort(which(args %in% expected_args))
+arg_idx <- c(arg_idx, length(args) + 1) # edge case of last tag
+
+get_values <- function(arg, singular=TRUE){
+  idx <- which(args == arg)
+  stopifnot(length(idx) == 1)
+  
+  next_idx <- arg_idx[which.max(arg_idx > idx)]
+  values <- args[(idx + 1):(next_idx - 1)]
+  
+  # More than one value? return list. One value ~ remove from list structure. It
+  # is probably bad practice to return two different types like that, but most
+  # arguments have single values and it makes the code less annoying to look at.
+  if(singular) {
+    stopifnot(length(values)==1)
+    values <- values[[1]]
+  } else {
+    # stopifnot(length(values)>1)
+  }
+  
+  return(values)
+}
+
+
+get_script_dir <- function() {
+  needle <- '--file='
+  script_path <- gsub(needle, '',  args[grepl(needle, args)])
+  return(dirname(script_path))
+}
+
+
+print(args)
+
+# Library -----------------------------------------------------------------
+
+library(dplyr)
+library(purrr)
+library(igraph)
+
+source(file.path(get_script_dir(), "module_utils/utils.R"))
+# Parsing -----------------------------------------------------------------
+
+gfa <- get_values("--gfa", singular=TRUE)
+output_gfa <- get_values("--output-gfa", singular=TRUE) 
+output_components <- get_values("--output-ccs", singular=TRUE) 
+segment_length_threshold <- as.integer(get_values("--segment-length-threshold", singular=TRUE))
+# Import ------------------------------------------------------------------
+# gfa <- 'assembly.homopolymer-compressed.gfa'
+# cat('Importing gfa:', gfa, '\n')
+
+
+links_df <-
+  read_links_from_gfa(gfa) %>%
+  strsplit("\t") %>%
+  map(as.list) %>%
+  map(set_names,
+      c('RecordType', 'From', 'FromOrient', 'To', 'ToOrient', 'Overlap')) %>%
+  map(as_tibble) %>%
+  bind_rows()
+
+# Segment Lengths ---------------------------------------------------------
+
+segment_sizes <-
+  read_segment_sizes_from_gfa(gfa)
+
+# Graph Formatting --------------------------------------------------------
+
+
+vertex_information <-
+  tibble(unitig = names(segment_sizes), size = segment_sizes)
+
+graph <-
+  graph_from_data_frame(
+    select(links_df, From, To, everything()),
+    directed = FALSE,
+    vertices = vertex_information
+  )
+
+
+# Remove Small Isolated ---------------------------------------------------
+
+small_nodes <-
+  names(segment_sizes)[segment_sizes < segment_length_threshold]
+
+
+isolated_nodes <-
+  degree(graph) %>%
+  keep( ~ .x == 0) %>%
+  names()
+#v = unname(small_nodes)
+
+isolated_small_nodes <-
+  intersect(small_nodes, isolated_nodes)
+
+graph <-
+  graph %>%
+  delete_vertices(isolated_small_nodes)
+
+
+# Remove Largest Component -----------------------------------------------
+
+
+acrocentric_nodes <- get_nodes_in_largest_component(graph)
+
+acrocentric_small_nodes <-
+  intersect(small_nodes, acrocentric_nodes)
+
+largest_tangle_nodes <-
+  get_nodes_in_largest_component(subgraph(graph, acrocentric_small_nodes))
+
+graph <-
+  graph %>%
+  delete_vertices(largest_tangle_nodes)
+
+
+# Export ------------------------------------------------------------------
+
+deleted_nodes <- setdiff(names(segment_sizes), names(V(graph)))
+
+remove_nodes_from_gfa(gfa, output_gfa, deleted_nodes)
 
 # Connected Components in Exploded Graph ----------------------------------
 
@@ -164,78 +193,4 @@ components_df <-
        tibble(unitig = names(membership), component = membership)) %>% 
   mutate(member_largest_component = unitig %in% acrocentric_nodes)
 
-
-
-# Scratch -----------------------------------------------------------------
-
-# 
-# 
-# cluster_df <-
-#   set_names(clust@.Data, clust@names) %>% 
-#   map(~tibble(unitig = .x)) %>% 
-#   bind_rows(.id = 'cluster')
-# 
-# cluster_df <- 
-#   cluster_df %>% 
-#   mutate(unitig = strip_range(unitig))
-# 
-# # components_df <-
-# #   components_df %>% 
-# #   left_join(cluster_df, by = c('unitig')) %>% 
-# #   left_join(rlengths_df, by=c('unitig' = 'rname')) %>% 
-# #   left_join(reference, by=c('unitig' = 'qname'))
-# 
-# 
-# library(ggfortify)
-# 
-# 
-# tmp_wf <-
-#   wfrac.matrix
-# 
-# rownames(tmp_wf) <- strip_range(rownames(tmp_wf))
-# 
-# 
-# info_df <-
-#   counts %>% 
-#   ungroup() %>% 
-#   mutate(rname = strip_range(rname)) %>% 
-#   left_join(reference,  by = c('rname' = 'qname')) %>% 
-#   left_join(components_df, by=c('rname' = 'unitig')) %>% 
-#   left_join(cluster_df, by=c('rname' = 'unitig'))
-# 
-# 
-# tmp_ulist <-info_df %>% filter(component == 32) %>% filter(qlen >= segment_length_threshold) %>%  pull(rname) 
-# # highwc <- as.character(strand.states$AWCcontigs@seqnames)
-# # tmp_ulist <- setdiff(tmp_ulist, highwc)
-# 
-# # dbs <- dbscan::hdbscan(tmp_wf[rownames(tmp_wf) %in% tmp_ulist, ], minPts = 10)
-# # 
-# # dbs_df 
-# 
-# autoplot(prcomp(abs(tmp_wf[rownames(tmp_wf) %in% tmp_ulist, ])),
-#          data = info_df %>% filter(rname %in% tmp_ulist),
-#          colour = 'cluster',
-#          shape='tname',
-#          x=1, y=2)   
-# 
-# 
-# 
-# bandage_colors <-
-#   info_df %>% 
-#   select(-lib, -c, -w) %>% 
-#   distinct()
-#   
-# palette <-
-#   bandage_colors %>% 
-#   distinct(cluster) %>% 
-#   mutate(Color = rainbow((n()))) %>% 
-#   mutate(Color = ifelse(is.na(cluster), 'black', Color))
-# 
-# 
-# bandage_colors <-
-#   bandage_colors %>% 
-#   left_join(palette)
-# 
-# readr::write_csv(bandage_colors, 'NA24385_good_frac-50_rep-1_test/colors.csv')
-# 
-# 
+readr::write_tsv(components_df, output_components)

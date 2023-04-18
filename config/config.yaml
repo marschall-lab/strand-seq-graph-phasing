@@ -1,4 +1,4 @@
-samples: /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing_testing/config/samples.tsv
+samples: /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing/config/samples.tsv
 # modify this to be some sort of num alignments?
 segmentLengthThreshold: 250000
 
@@ -7,7 +7,7 @@ deploy_offline: True
 singularity_Renv: /gpfs/project/projects/medbioinf/projects/mihen108/env_Renv2.sif
 
 # scripts
-scripts_dir: /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing_testing/scripts/
+scripts_dir: /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing/scripts/
 
 # evaluation
 ## reference fasta
