@@ -16,6 +16,8 @@ ref_out = 'reference/'+ref_name+'.homopolymer-compressed.fasta'
 rule homopolymer_compress_ref:
 	input: reference
 	output: ref_out
+	params:
+		script=get_script_path('python','homopolymer_compress_fasta.py')
 	conda:'../envs/env_pyenv.yaml'
 	resources:
 		mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
@@ -24,9 +26,9 @@ rule homopolymer_compress_ref:
 	benchmark: "benchmark/homopolymer_compress_ref.benchmark"
 	shell:
 		'''
-		python3 scripts/python/homopolymer_compress_fasta.py \\
+		(python3 {params.script} \\
 		--input {input} \\
-		--output {output}
+		--output {output}) > {log} 2>&1
 		'''
 
 # ##########################################################################################################################
@@ -37,7 +39,7 @@ rule homopolymer_compress_ref:
 rule map_unitigs_to_ref:
 	input:
 		ref=ref_out,
-		unitigs="fasta/{sample}/{sample}_assembly.fa"
+		unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta"
 	output: "reference_alignments/{ref_name}/{sample}_{ref_name}_ref-aln.paf"
 	conda: '../envs/env_cl.yaml'
 	resources:

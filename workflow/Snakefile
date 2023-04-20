@@ -36,8 +36,8 @@ def get_script_path(*args):
 
 include: 'rules/sample_table.smk'
 
-if reference:
-    include: 'rules/evaluate.smk'
+# if reference:
+include: 'rules/evaluate.smk'
 
 
 #####################################
@@ -56,10 +56,14 @@ else:
 ###############################
 ############ All ##############
 ###############################
+all_output = [expand("haplotype_marker_counts/{sample}_haplotype_marker_counts.csv", sample=SAMPLES)]
+
+if reference:
+    all_output.append(expand("reference_alignments/{ref_name}/{sample}_{ref_name}_ref-aln.paf", sample=SAMPLES, ref_name=ref_name))
 
 rule all:
-    input:
-        phased_unitigs = expand("haplotype_marker_counts/{sample}_haplotype_marker_counts.csv", sample=SAMPLES)
+    input: all_output
+        # phased_unitigs = expand("haplotype_marker_counts/{sample}_haplotype_marker_counts.csv", sample=SAMPLES)
 
 ################################################
 ############ Unmerged SS Processing ############
