@@ -38,34 +38,52 @@ make_wc_matrix <- function(watson, crick, lib, unitig) {
 }
 
 extract_exact_matches <- function(fastmap_file) {
-  lines <- readLines(fastmap_file)
+
+  # SQ tags designate a particular read and the read length. 
+  # SQ - Read Name - Read Length
+  
+  # EM tags designate an exact match for a segment of the read
+  # EM - Start pos on read - End pos on Read - Number of matches - Matched unitig(s).
+  
+  # The number of matched unitigs that are printed in the output is controlled
+  # by the -w parameter. A '*' in the matched unitigs position indicates that
+  # there are more matches than the -w value used in the fastmap call.
+  # Otherwise, up to -w matches are printed.
+  
+  # A read may have multiple exact matches to different unitigs, if different
+  # parts of the read each uniquely match to a different unitig. EG: the lines:
+  
+  # EM
+  # SQ ending in *
+  # SQ not ending in asterisk
+  
+  #indicates two different sections of the read aligned, the first section
+  #aligned to more than one  location, and therefore ended in *, while a
+  #different section of the read had a unique alignment.
+  
+  lines <-
+    readr::read_lines(
+      fastmap_file
+    )
   
   # There is a weird thing where all SQ tags following the first are preceded
-  # by a '//'. No idea why
+  # by a '//'. No idea why. The last line is also often just '//'
+  is_header_line <- grepl('^(//)?SQ', lines)
+  is_match_line <-  grepl('^EM', lines)
   
-  # Filter valid lines. There are some line(s) that are just rogue '//'
-  lines <-
-    lines %>% 
-    stringr::str_replace('^//SQ', 'SQ')
   
-  is_header_line <- stringr::str_starts(lines,'SQ') 
-  is_match_line <- stringr::str_starts(lines,'EM')
-  
-  valid_lines <-
-    is_header_line | is_match_line
-  
-  lines <- lines[valid_lines]
+  lines <- lines[is_header_line | is_match_line]
   
   # Filter Exact Matches
   groupings <-
-    cumsum(stringr::str_starts(lines,'SQ'))
+    cumsum(grepl('^(//)?SQ', lines)) 
   
   lines <- 
     split(lines, groupings)
   
   lines <-
     lines %>% 
-    keep(function(fastmap_file) length(fastmap_file) == 2) # one header and one match line
+    keep(function(x) length(x) == 2) # one header and one match line
   
   # SQ tags designate a particular read and the read length. 
   # SQ - Read Name - Read Length
@@ -114,14 +132,14 @@ extract_exact_matches <- function(fastmap_file) {
     matches %>%
     tidyr::separate(
       col = map_info,
-      into = c('unitig', 'strand_info'),
+      into = c('unitig', 'more_info'),
       sep = ':'
     ) %>%
     tidyr::separate(
-      strand_info,
+      more_info,
       into = c(
         'strand',
-        "I don't know this field's meaning fastmap is poorly documented"
+        "I don't know this value's meaning fastmap is poorly documented"
       ),
       sep = 1
     ) %>%
@@ -655,14 +673,14 @@ contibait_cluster_df <-
 
 
 # clusters that are contained on only one component
-one_component_clusters <-
-  contibait_cluster_df %>% 
-  left_join(components_df, by='unitig') %>% 
-  filter(!is.na(cluster)) %>% 
-  distinct(component, cluster) %>% 
-  count(cluster) %>% 
-  filter(n == 1) %>% 
-  pull(cluster) 
+# one_component_clusters <-
+#   contibait_cluster_df %>% 
+#   left_join(components_df, by='unitig') %>% 
+#   filter(!is.na(cluster)) %>% 
+#   distinct(component, cluster) %>% 
+#   count(cluster) %>% 
+#   filter(n == 1) %>% 
+#   pull(cluster) 
 
 cluster_component_fractions <-
   components_df %>% 
@@ -678,24 +696,29 @@ cluster_component_fractions <-
   ungroup()
 
 # Arbitrary threshold
-component_fraction_threshold <- 0.05
+component_fraction_threshold <- 0.01
 
 # TODO filter to only components with multiple clusters? What about a
 # component consisting of only micro clusters? Worry about this stuff later if
 # things start breaking lol. One case maybe to worry about: the PAR taking
 # over both X/Y chromosomes, if no haploid chromosomes detected?
 
-isolated_micro_clusters <-
+micro_component_cluster_df <-
   cluster_component_fractions %>%
   filter(!is.na(cluster)) %>%
   # filter(!(component %in% haploid_components))  %>% # Don't want to accidentally remove the PAR
-  filter(cluster %in% one_component_clusters) %>% 
-  filter(perc_length <= component_fraction_threshold) %>% 
-  pull(cluster)
+  # filter(cluster %in% one_component_clusters) %>% 
+  filter(perc_length <= component_fraction_threshold)# %>% 
+  # pull(cluster)
+
+micro_component_cluster_unitigs <-
+  left_join(components_df, contibait_cluster_df, by='unitig') %>% 
+  semi_join(micro_component_cluster_df, by = c('component', 'cluster')) %>% 
+  pull(unitig)
 
 contibait_cluster_df <-
   contibait_cluster_df  %>% 
-  mutate(cluster = ifelse(cluster %in% isolated_micro_clusters, NA, cluster))
+  mutate(cluster = ifelse(unitig %in% micro_component_cluster_unitigs, NA, cluster))
 
 ### Propagate One-Cluster-Component Clusters --------------------------------
 
