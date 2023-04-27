@@ -500,62 +500,6 @@ exact_match_counts_df <-
 # 
 # # readr::write_csv(cluster_df, 'cluster_df.csv')
 # 
-# # Homology Linking --------------------------------------------------------
-# 
-# bubble_components <-
-#   components_df %>% 
-#   left_join(homology_df, by='unitig') %>% 
-#   filter(!is.na(bubble)) %>% 
-#   pull(component)
-# 
-# solo_components <-
-#   components_df %>% 
-#   count(component) %>% 
-#   filter(n == 1) %>% 
-#   pull(component)
-# 
-# solo_bubble_components <-
-#   intersect(bubble_components, solo_components)
-# 
-# for(cmp in solo_bubble_components) {
-#   solo_bubble_unitig <-
-#     components_df %>% 
-#     filter(component == cmp) %>% 
-#     pull(unitig)
-# 
-#   other_bubble_unitig <- 
-#     homology_df %>% 
-#     group_by(bubble) %>% 
-#     filter(any(unitig == solo_bubble_unitig)) %>% 
-#     filter(unitig != solo_bubble_unitig) %>% 
-#     pull(unitig)
-#   
-#   target_cluster <-
-#     cluster_df %>% 
-#     filter(unitig == other_bubble_unitig) %>% 
-#     pull(cluster)
-#   
-#   cluster_df <-
-#     cluster_df %>% 
-#     mutate(cluster = ifelse(unitig == solo_bubble_unitig, target_cluster, cluster))
-#     
-# }
-#   
-  
-# TODO what about non-isolated bubble unitigs?
-# bubbles_across_clusters <-
-#   cluster_df %>% 
-#   left_join(homology_df, by='unitig') %>% 
-#   group_by(bubble) %>% 
-#   filter(length(unique(cluster)) == length(cluster)) %>% 
-#   ungroup() %>% 
-#   pull(bubble) %>% 
-#   unique()
-# 
-# for(bub in bubbles_across_clusters) {
-#   
-# }
-
 
 # contiBait Linking ----------------------------------------------------
 
@@ -931,6 +875,64 @@ cluster_df <-
 #   cluster_df %>% 
 #   filter(cluster %in% par_clusters) %>% 
 #   pull(unitig)
+
+# Homology Linking --------------------------------------------------------
+
+bubble_components <-
+  components_df %>%
+  left_join(homology_df, by='unitig') %>%
+  filter(!is.na(bubble)) %>%
+  pull(component)
+
+solo_components <-
+  components_df %>%
+  count(component) %>%
+  filter(n == 1) %>%
+  pull(component)
+
+solo_bubble_components <-
+  intersect(bubble_components, solo_components)
+
+for(cmp in solo_bubble_components) {
+  solo_bubble_unitig <-
+    components_df %>%
+    filter(component == cmp) %>%
+    pull(unitig)
+
+  other_bubble_unitig <-
+    homology_df %>%
+    group_by(bubble) %>%
+    filter(any(unitig == solo_bubble_unitig)) %>%
+    filter(unitig != solo_bubble_unitig) %>%
+    pull(unitig)
+
+  target_cluster <-
+    cluster_df %>%
+    filter(unitig == other_bubble_unitig) %>%
+    pull(cluster)
+
+  cluster_df <-
+    cluster_df %>%
+    mutate(cluster = ifelse(unitig == solo_bubble_unitig, target_cluster, cluster))
+
+}
+
+
+# TODO what about non-isolated bubble unitigs?
+# bubbles_across_clusters <-
+#   cluster_df %>%
+#   left_join(homology_df, by='unitig') %>%
+#   group_by(bubble) %>%
+#   filter(length(unique(cluster)) == length(cluster)) %>%
+#   ungroup() %>%
+#   pull(bubble) %>%
+#   unique()
+#
+# for(bub in bubbles_across_clusters) {
+#
+# }
+
+
 
 # Call WC Libraries -------------------------------------------------------
 
