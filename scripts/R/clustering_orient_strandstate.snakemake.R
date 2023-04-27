@@ -1,212 +1,40 @@
 # Functions ---------------------------------------------------------------
 
-strip_range <-
-  function(x) {
-    stringr::str_remove(x, ':.*$')
-  }
+# Spoofing for contibait functions to work
+spoof_range <- function(x) {
+  return(paste0(x, ':0-0'))
+}
 
-make_wc_matrix <- function(watson, crick, lib, unitig) {
-  stopifnot(length(unique(lengths(list(watson, crick, lib, unitig))))==1)
-  
-  # factors can cause issue ~ is the integer index or name used? When making
-  # dimnames, it appears the name, when filling the matrix, it appears the
-  # integer index is used.
-  stopifnot(is.character(lib), is.character(unitig)) 
-  stopifnot(is.integer(watson), is.integer(crick)) 
-  stopifnot(!is_duplicate_pair(lib, unitig))
-  
-  w_frac <- (watson - crick) / (watson + crick)
-  
-  dimnames <-
-    list(sort(unique(unitig)), sort(unique(lib)))
-  
-  mat <-
-    matrix(
-      nrow = length(dimnames[[1]]),
-      ncol = length(dimnames[[2]]),
-      dimnames = dimnames
-    )
-  
-  for (i in seq_along(w_frac)) {
-    mat[unitig[i], lib[i]] <- w_frac[i]
-  }
-  
-  mat[is.na(mat)] <- 0
-  
+spoof_rownames <- function(mat) {
+  rownames(mat) <- spoof_range(rownames(mat))
   return(mat)
-  
 }
 
-extract_exact_matches <- function(fastmap_file) {
-
-  # SQ tags designate a particular read and the read length. 
-  # SQ - Read Name - Read Length
-  
-  # EM tags designate an exact match for a segment of the read
-  # EM - Start pos on read - End pos on Read - Number of matches - Matched unitig(s).
-  
-  # The number of matched unitigs that are printed in the output is controlled
-  # by the -w parameter. A '*' in the matched unitigs position indicates that
-  # there are more matches than the -w value used in the fastmap call.
-  # Otherwise, up to -w matches are printed.
-  
-  # A read may have multiple exact matches to different unitigs, if different
-  # parts of the read each uniquely match to a different unitig. EG: the lines:
-  
-  # EM
-  # SQ ending in *
-  # SQ not ending in asterisk
-  
-  #indicates two different sections of the read aligned, the first section
-  #aligned to more than one  location, and therefore ended in *, while a
-  #different section of the read had a unique alignment.
-  
-  lines <-
-    readr::read_lines(
-      fastmap_file
-    )
-  
-  # There is a weird thing where all SQ tags following the first are preceded
-  # by a '//'. No idea why. The last line is also often just '//'
-  is_header_line <- grepl('^(//)?SQ', lines)
-  is_match_line <-  grepl('^EM', lines)
-  
-  
-  lines <- lines[is_header_line | is_match_line]
-  
-  # Filter Exact Matches
-  groupings <-
-    cumsum(grepl('^(//)?SQ', lines)) 
-  
-  lines <- 
-    split(lines, groupings)
-  
-  lines <-
-    lines %>% 
-    keep(function(x) length(x) == 2) # one header and one match line
-  
-  # SQ tags designate a particular read and the read length. 
-  # SQ - Read Name - Read Length
-  
-  # EM tags designate an exact match for a segment of the read
-  # EM - Start pos on read - End pos on Read - Number of matches - Matched unitig(s).
-  
-  # The number of matched unitigs that are printed in the output is controlled
-  # by the -w parameter. A '*' in the matched unitigs position indicates that
-  # there are more matches than the -w value used in the fastmap call.
-  # Otherwise, up to -w matches are printed.
-  
-  # Dataframes
-  
-  header <-
-    lines %>%
-    map_chr(1)
-  
-  header <-
-    readr::read_tsv(I(header),
-                    col_names = c('tag', 'qname', 'qlen'),
-                    col_types = '_c_')
-  
-  header <-
-    header %>%
-    mutate(group = names(lines))
-  
-  matches <-
-    lines %>%
-    map_chr(2)
-  
-  matches <-
-    readr::read_tsv(
-      I(matches),
-      col_names = c('tag', 'lpos', 'rpos', 'n_matches', 'map_info'),
-      col_types = '___ic'
-    )
-  
-  matches <-
-    matches %>%
-    mutate(group = names(lines)) %>% 
-    filter(n_matches == 1)
-  
-  # Tidy map info
-  matches <-
-    matches %>%
-    tidyr::separate(
-      col = map_info,
-      into = c('unitig', 'more_info'),
-      sep = ':'
-    ) %>%
-    tidyr::separate(
-      more_info,
-      into = c(
-        'strand',
-        "I don't know this value's meaning fastmap is poorly documented"
-      ),
-      sep = 1
-    ) %>%
-    select(unitig, strand, group)
-  
-  out <-
-    inner_join(header,  matches, by='group') %>% 
-    select(-group)
-  
-  return(out)
-  
+strip_range <- function(x) {
+  return(stringr::str_remove(x, ':.*$'))
 }
 
-calc_concensus_margin <- function(x, ...) {
-  if(all(is.na(x))) {
+strip_bin <- function(x) {
+  return(stringr::str_remove(x, '_bin[0-9]+'))
+}
+
+whats_covered <- function(crick_coverage_ratio, coverage_ratio_threshold=0.75) {
+  
+  if(is.na(crick_coverage_ratio)) {
     return(NA)
   }
-  # lower is better
-  counts <- table(x, ...)
-  return(sum(counts) - max(counts)) # if no names(counts) %in% values, then warning and function returns Inf
-}
-
-swap_bubbles <- function(phaser_array, ix) {
-  tmp <- phaser_array[ix, , 'watson']
-  phaser_array[ix, , 'watson'] <- phaser_array[ix, , 'crick']
-  phaser_array[ix, , 'crick'] <- tmp
   
-  return(phaser_array)
-}
-
-strandphaser_sort_array <- function(phaser_array) {
-  # x[lib, bubble, watson/crick] <- unitig
-  n_libs <-
-    dim(phaser_array)[1]
-  
-  lib_swapped <- 
-    logical(length = n_libs) %>% 
-    set_names(dimnames(phaser_array)[[1]])
-  
-  for(i in seq_len(n_libs)){
-    
-    concensus_score <-
-      phaser_array %>% 
-      apply(c(2,3), calc_concensus_margin) %>% 
-      sum(na.rm = TRUE)
-    
-    swapped_concensus_score <-
-      swap_bubbles(phaser_array, i) %>% 
-      apply(c(2,3), calc_concensus_margin) %>% 
-      sum(na.rm = TRUE)
-    
-    if(swapped_concensus_score < concensus_score) {
-      # print(swapped_concensus_score)
-      phaser_array <- swap_bubbles(phaser_array, i)
-      lib_swapped[i] <- TRUE
-    } else{
-      # print(concensus_score)
-    }
-    
+  if(crick_coverage_ratio >= coverage_ratio_threshold) {
+    return('crick')
   }
   
-  return(lib_swapped)
+  if(crick_coverage_ratio <= 1-coverage_ratio_threshold) {
+    return('watson')
+  }
   
+  return(NA)
   
 }
-
-
 make_bandage_colors <- function(color_hex, counts_1, counts_2) {
   
   stopifnot(length(color_hex) == 1)
@@ -221,11 +49,11 @@ make_bandage_colors <- function(color_hex, counts_1, counts_2) {
   
   if(counts_1 == 0 & counts_2 == 0) {
     rgb_color <- pal_f(0.5)
-    alpha <- round(0.1 * 255)
+    # alpha <- round(0.1 * 255)
   } else {
     ratio <- counts_1/(counts_1+counts_2)
     rgb_color <- pal_f(ratio)
-    alpha <- round(ratio * 255)
+    # alpha <- round(ratio * 255)
   }
   
   color <- rgb(rgb_color[1], rgb_color[2], rgb_color[3], maxColorValue=255)
@@ -240,6 +68,13 @@ make_bandage_colors <- function(color_hex, counts_1, counts_2) {
 ## Args --------------------------------------------------------------------
 
 args <- commandArgs(trailingOnly = FALSE)
+
+#TODO make these a passable argument
+import_parallel <- FALSE
+n_threads <- 8
+furrr_plan <- 'multisession'
+
+# source('/Users/henglinm/Documents/GitHub/strand-seq-graph-phasing/scripts/R/module_utils/phasing_test_args.R')
 
 ## Parsing Helper ----------------------------------------------------------
 ## Expected Args
@@ -300,14 +135,14 @@ library(Rsamtools)
 library(contiBAIT)
 
 source(file.path(get_script_dir(), "module_utils/utils.R"))
-
+source(file.path(get_script_dir(), "module_utils/phasing_utils.R"))
 # Parsing -----------------------------------------------------------------
 
 ## Input
 
 mem_alignment_files <- get_values("--mem-alignment-bams", singular=FALSE)
 fastmap_alignment_files <- get_values("--fastmap-alignments", singular=FALSE)
-mashmap <- get_values("--homology", singular=TRUE)
+homology <- get_values("--homology", singular=TRUE)
 connected_components <- get_values('--connected-components', singular=TRUE)
 
 ## Parameters
@@ -318,9 +153,6 @@ output <- get_values('--output')
 
 # Import ------------------------------------------------------------------
 
-## Exploded Graph ---------------------------------------------------------
-
-components_df <- readr::read_tsv(connected_components)
 
 ## Load Headers ------------------------------------------------------------
 
@@ -333,64 +165,46 @@ long_unitigs_df <-
   filter(length >= segment_length_threshold) %>% 
   select(unitig)
 
-# Concatenate unitig with its length. Necessary for contiBAIT functions to not break.
-contibait_names_df <- 
-  unitig_lengths_df %>% 
-  mutate(unitig_range = paste0(unitig, ':1-', length)) %>% 
-  select(-length)
+## Connected Components in Exploded Graph ----------------------------------
+
+components_df <- 
+  readr::read_tsv(connected_components)
 
 
-## Load Mashmap ------------------------------------------------------------
-homology_df <- readr::read_delim(mashmap, delim='\t', col_names = c('unitig_1', 'unitig_2'))
 
-# filter out identical pairs, just with unitig_1 and unitig_2 switched
-homology_df <-
-  homology_df %>%
-  filter(!is_duplicate_pair(unitig_1, unitig_2))
+## Homology ----------------------------------------------------------------
 
-# tidy
-homology_df <-
-  homology_df %>% 
-  mutate(bubble = paste0('bubble_', 1:n())) %>% 
-  tidyr::pivot_longer(cols = c('unitig_1', 'unitig_2'), names_to = 'bubble_arm', values_to ='unitig') %>% 
-  mutate(bubble_arm = stringr::str_replace(bubble_arm, '^unitig_', 'arm_'))
-
-# Remove unititgs that are homologous to more than one other unitig.
-homology_df <-
-  homology_df %>% 
-  group_by(unitig) %>% 
-  filter(n() == 1) %>% 
-  ungroup()
-
-homology_df <-
-  homology_df %>% 
-  group_by(bubble) %>% 
-  filter(n() == 2) %>% 
-  ungroup()
+homology_df <- readr::read_tsv(homology)
 
 ## Count Alignments ---------------------------------------------------------
 
-# library(furrr)
-# plan('multisession', workers=8)
-# plan('sequential')
+if(import_parallel) {
+  library(furrr)
+  plan(furrr_plan, workers=n_threads)
+  import_mapper <- furrr::future_map  
+} else {
+  import_mapper <- purrr::map
+}
+
 ### Count mem Alignments ------------------------------------------------------
 lib_names <- map_chr(mem_alignment_files, function(x) gsub('.mdup.bam$', '', basename(x)))
 
+n_bins <- 3
 
-counts_df <- map(mem_alignment_files, function(bam){
+binned_counts_df <- import_mapper(mem_alignment_files, function(bam){
   cat(paste('counting bwa-mem alignments in', basename(bam), '\n'))
   aln <- scanBam(file = bam,
-                param = ScanBamParam(
-                  what = c('qname', 'rname', 'strand', 'pos', 'qwidth', 'mrnm', 'isize', 'mapq'),
-                  flag = scanBamFlag(
-                    isSupplementaryAlignment = FALSE,
-                    isSecondaryAlignment = FALSE,
-                    isDuplicate = FALSE,
-                    # for the purpose of determining qname/direction mapping, having both mates simply provides redundant information?
-                    isFirstMateRead = TRUE,
-                    isProperPair = TRUE
-                  )
-                ))
+                 param = ScanBamParam(
+                   what = c('qname', 'rname', 'strand', 'pos', 'qwidth', 'mrnm', 'isize', 'mapq'),
+                   flag = scanBamFlag(
+                     isSupplementaryAlignment = FALSE,
+                     isSecondaryAlignment = FALSE,
+                     isDuplicate = FALSE,
+                     # for the purpose of determining qname/direction mapping, having both mates simply provides redundant information?
+                     isFirstMateRead = TRUE,
+                     isProperPair = TRUE
+                   )
+                 ))
   
   aln <- as_tibble(aln[[1]])
   
@@ -422,11 +236,18 @@ counts_df <- map(mem_alignment_files, function(bam){
     aln %>% 
     filter(rname == mrnm)
   
+  # Binned Counts
+  aln <-
+    aln %>% 
+    left_join(unitig_lengths_df, by = c('rname' = 'unitig')) %>% 
+    group_by(rname) %>% 
+    mutate(bin = cut_range_n(pos, n_bins, max_value = unique(length)))
+  
   # Counting
   out <-
     aln %>%
     # filter(mapq > 0) %>% 
-    group_by(rname) %>%
+    group_by(rname, bin) %>%
     summarise(c = sum(strand == '+'), w = sum(strand == '-')) %>%
     ungroup()
   
@@ -435,23 +256,30 @@ counts_df <- map(mem_alignment_files, function(bam){
   
 })
 
-
-# TODO experiment with filtering on the total/average/something number of
-# alignments?
-counts_df <-
-  counts_df %>%
+binned_counts_df <-
+  binned_counts_df %>%
   set_names(lib_names) %>% 
   bind_rows(.id = 'lib') %>%
   dplyr::rename(unitig = rname) 
 
-counts_df <-
-  counts_df %>%
-  tidyr::complete(lib, unitig, fill=list(c=0, w=0))
+binned_counts_df <-
+  binned_counts_df %>%
+  tidyr::complete(lib, unitig, bin, fill=list(c=0, w=0))
+
+binned_counts_df <-
+  binned_counts_df %>% 
+  mutate(n = c+w)
+
+binned_counts_df <-
+  binned_counts_df %>% 
+  mutate(unitig_bin = paste0(unitig, '_bin', bin))
+
+#FIXME The binned counts currently aren't being used.
 
 counts_df <-
-  counts_df %>% 
-  mutate(n = c+w)
- 
+  marginalize_wc_counts(binned_counts_df)
+
+
 ### Count fastmap Alignments ------------------------------------------------
 
 lib_names <-
@@ -460,93 +288,72 @@ lib_names <-
 
 # There is a common warning stating "incomplete final line found on". I
 # think it is connected to the source of the extra // that appear in the files
-exact_match_counts_df <- map(fastmap_alignment_files, function(x) {
+exact_match_counts_df <- import_mapper(fastmap_alignment_files, function(x) {
   cat(paste('counting bwa-fastmap alignments in', basename(x), '\n'))
   out <- extract_exact_matches(x)
-  
+
   out <-
     out %>%
-    filter(unitig %in% long_unitigs_df$unitig) %>% 
+    filter(unitig %in% long_unitigs_df$unitig) %>%
     group_by(unitig) %>%
     summarise(c = sum(strand == '+'), w = sum(strand == '-')) %>%
     ungroup()
-  
+
   return(out)
 })
 
+
 exact_match_counts_df <-
   exact_match_counts_df %>%
-  set_names(lib_names) %>% 
+  set_names(lib_names) %>%
   bind_rows(.id = 'lib') %>%
   tidyr::complete(lib, unitig, fill=list(c=0, w=0))
 
 exact_match_counts_df <-
-  exact_match_counts_df %>% 
+  exact_match_counts_df %>%
   mutate(n = c+w)
 
-# 
-# # Component Clustering ----------------------------------------------------
-# 
-# # As an observation, the chromosome clusters generated purely via contibait
-# # clustering w/ strand-seq alignments are not-uncommonly less accurate than
-# # those generated by simply assigning each non-acrocentric component to its own
-# # cluster. This step essentailly puts a lot of faith in verkko to not
-# # missassemble the non-acrocentric chromosomes.
-# cluster_df <-
-#   components_df %>%
-#   semi_join(long_unitigs_df, by = 'unitig') %>%
-#   mutate(cluster = ifelse(member_largest_component, NA, paste0('cluster_', component))) %>% 
-#   select(unitig, cluster)
-# 
-# # readr::write_csv(cluster_df, 'cluster_df.csv')
-# 
+if(import_parallel) {
+  # close workers
+  plan(sequential)
+}
 
-# contiBait Linking ----------------------------------------------------
+# contiBait Clustering ----------------------------------------------------
 
 ## W Fraction Matrix -------------------------------------------------------
 
 
 wfrac.matrix <-
   counts_df %>% 
-  left_join(contibait_names_df, by='unitig') %>% 
-  with(make_wc_matrix(w, c, lib, unitig_range))
+  # binned_counts_df %>% 
+  # marginalize_wc_counts() %>% 
+  with(make_wc_matrix(w, c, lib, unitig))
 
 
 ## ContiBAIT QC ------------------------------------------------------------
 
-strand.freq <- StrandFreqMatrix(wfrac.matrix)
+strand.freq <- 
+  wfrac.matrix %>% 
+  spoof_rownames() %>% 
+  StrandFreqMatrix()
 
 
 # getMethod(plotWCdistribution, "StrandFreqMatrix")
 # debugonce(plotWCdistribution, signature = "StrandFreqMatrix")
 plotWCdistribution(strand.freq)
 # 
-
-
 # debugonce(preprocessStrandTable, signature = 'StrandFreqMatrix')
-strand.states <- preprocessStrandTable(strand.freq, filterThreshold = 0.7)
-
-# filterThreshold = 0.7 is a stricter values than the default (filterThreshold =
-# 0.8) because, with larger, higher quality initial assemblies, I expected that
-# more unitigs will be more well behaved
-
-# TODO experiment with setting filterThreshold even more strictly (maybe ~ .65,
-# .6) and splitting large unitigs that fail QC to see if segments will pass WC
-
-# TODO consider setting filter threshold according to the data. EG, given the
-# distribution of aligned counts per unitig, what is the expected variance in
-# unitig fraction when the strand state is WC? Set the parameter according to
-# that variance.
-
-# TODO The counts for watson and crick following binomial distribution for when
-# the state is WC appears to be underdispered. Experiment with overdispersed
-# binomials (beta binomials?) to account for things like degeneracy, strand
-# state changes, and incorrect assembles?
-
+strand.states <-
+  preprocessStrandTable(
+    strand.freq,
+    filterThreshold = 0.7,
+    lowQualThreshold = 0.8,
+    minLib = 20
+  )
 
 ## Contibait Chromosome Clustering -----------------------------------------
 
-# TODO incorporate  mapping quality as well? Maybe not, filtering based on
+# TODO incorporate mapping quality as well? Maybe not, filtering based on
 # read quality seems to produce weird results with contiBAIT, so maybe
 # clustering with read quality is also not a good idea
 
@@ -554,13 +361,17 @@ strand.states <- preprocessStrandTable(strand.freq, filterThreshold = 0.7)
 # selected earlier by the contiBAIT clustering algorithm.
 mean_coverage <- 
   counts_df %>% 
+  # binned_counts_df %>% 
+  # marginalize_wc_counts() %>% 
+  tidyr::complete(lib, unitig, fill=list(c=0, w=0)) %>% 
   group_by(unitig) %>% 
-  summarise(coverage = mean(w+c))
+  summarise(coverage = mean(w+c)) %>% 
+  ungroup()
 
 weights <-
   mean_coverage %>% 
-  left_join(contibait_names_df, by='unitig') %>% 
-  with(setNames(coverage, unitig_range))
+  mutate(unitig_range = spoof_range(unitig)) %>% 
+  with(set_names(coverage, unitig_range))
 
 # arrange weights by order in wfrac matrix
 weights <- weights[rownames(strand.states$strandMatrix)]
@@ -573,11 +384,11 @@ clust <-
                  randomWeight = weights,
                  clusterBy = 'hetero',
                  verbose = FALSE)
-# 
-# ## Detect Haploid Chromosomes ----------------------------------------------
-# 
+ 
+## Detect Haploid Clusters ----------------------------------------------
+ 
 # debugonce(findSexGroups, signature = c('LinkageGroupList', 'StrandStateMatrix'))
-clust <- findSexGroups(clust, strand.states$strandMatrix)
+clust <- findSexGroups(clust, strand.states$strandMatrix) 
 
 if(length(grep('^sex', names(clust), value = TRUE)) > 1) {
   # TODO what if multiple groups of haploid detected chromosomes?
@@ -587,38 +398,39 @@ if(length(grep('^sex', names(clust), value = TRUE)) > 1) {
 
 ## Enframe -----------------------------------------------------------------
 
-contibait_cluster_df <-
+cluster_df <-
   set_names(clust@.Data, clust@names) %>% 
   map(~tibble(unitig = strip_range(.x))) %>% 
   bind_rows(.id = 'cluster')
 
-contibait_cluster_df <-
-  contibait_cluster_df %>% 
+cluster_df <-
+  cluster_df %>% 
+  distinct(cluster, unitig)
+
+# binned unitigs grouped into multiple clusters
+# bad_clustering_unitigs <-
+#   cluster_df %>% 
+#   group_by(cluster, unitig) %>% 
+#   filter(n() > 1) %>% 
+#   distinct(unitig) %>% 
+#   pull()
+#   
+# cluster_df <-
+#   cluster_df %>% 
+#   mutate(cluster = ifelse(unitig %in% bad_clustering_unitigs, NA, cluster))
+
+cluster_df <-
+  cluster_df %>% 
   right_join(long_unitigs_df, by='unitig')
 
-## Label Propagation -------------------------------------------------------
+# Cluster Refinement ------------------------------------------------------
 
-# TODO add a check on the proportion of a component that is clustered? EG. A
-# comopnent with only one small node clustered. Can that one node cluster the
-# whole component? Or should a component be "mostly clustered" in order too add
-# to the cluster in this way?
-
-# TODO, on a related note, if there is a very small cluster attached to a very
-# large one, should the largest one take over the smaller ones? Is this better
-# handled with some sort of counts threshold, to better control rogue clusters
-# in the telomeres and centromeres? ---  I have taken a look and unfortunately a
-# countsfilter  is unlikely to work, as some cases will have > 200 alignments
-# for many libraries and still cluster separately. 
-
-# TODO What to do about components that are both large and have unassigned
-# unitigs? Should I still attempt to assign them somehow? Probably yes
-
-### Remove Micro Clusters ---------------------------------------------------
+## Remove Micro Clusters ---------------------------------------------------
 
 
 # clusters that are contained on only one component
 # one_component_clusters <-
-#   contibait_cluster_df %>% 
+#   cluster_df %>% 
 #   left_join(components_df, by='unitig') %>% 
 #   filter(!is.na(cluster)) %>% 
 #   distinct(component, cluster) %>% 
@@ -628,7 +440,7 @@ contibait_cluster_df <-
 
 cluster_component_fractions <-
   components_df %>% 
-  left_join(contibait_cluster_df, by='unitig') %>% 
+  left_join(cluster_df, by='unitig') %>% 
   left_join(unitig_lengths_df, by = 'unitig')
 
 cluster_component_fractions <-
@@ -640,298 +452,259 @@ cluster_component_fractions <-
   ungroup()
 
 # Arbitrary threshold
-component_fraction_threshold <- 0.01
-
-# TODO filter to only components with multiple clusters? What about a
-# component consisting of only micro clusters? Worry about this stuff later if
-# things start breaking lol. One case maybe to worry about: the PAR taking
-# over both X/Y chromosomes, if no haploid chromosomes detected?
+component_fraction_threshold <- 0.02
 
 micro_component_cluster_df <-
   cluster_component_fractions %>%
   filter(!is.na(cluster)) %>%
-  # filter(!(component %in% haploid_components))  %>% # Don't want to accidentally remove the PAR
   # filter(cluster %in% one_component_clusters) %>% 
-  filter(perc_length <= component_fraction_threshold)# %>% 
-  # pull(cluster)
+  filter(perc_length <= component_fraction_threshold)
 
 micro_component_cluster_unitigs <-
-  left_join(components_df, contibait_cluster_df, by='unitig') %>% 
+  left_join(components_df, cluster_df, by='unitig') %>% 
   semi_join(micro_component_cluster_df, by = c('component', 'cluster')) %>% 
   pull(unitig)
 
-contibait_cluster_df <-
-  contibait_cluster_df  %>% 
+cluster_df <-
+  cluster_df  %>% 
   mutate(cluster = ifelse(unitig %in% micro_component_cluster_unitigs, NA, cluster))
 
-### Propagate One-Cluster-Component Clusters --------------------------------
-
-one_cluster_components_df <-
-  contibait_cluster_df %>%
-  left_join(components_df, by = 'unitig') %>%
-  # filter(!(component %in% haploid_components)) %>%
-  filter(!is.na(cluster))
-
-one_cluster_components_df <-
-  one_cluster_components_df %>%
-  distinct(component, cluster) %>%
-  group_by(component) %>%
-  filter(n() == 1) %>%
-  ungroup()
-
-one_cluster_component_unitigs <-
-  components_df %>%
-  inner_join(one_cluster_components_df, by='component')
-
-# lookup vector
-one_cluster_component_unitigs <-
-  with(one_cluster_component_unitigs, set_names(cluster, unitig))
-
-contibait_cluster_df <-
-  contibait_cluster_df %>%
-  mutate(cluster = ifelse(
-    unitig %in% names(one_cluster_component_unitigs),
-    one_cluster_component_unitigs[unitig],
-    cluster
-  ))
 
 
-
-## Cluster-Component Linking -------------------------------------------------
-
+## Cosine Cluster Merging ----------------------------------------------------
 
 
-largest_component_components <- 
-  contibait_cluster_df %>% 
-  left_join(components_df, by = 'unitig') %>% 
-  filter(member_largest_component) %>% 
-  # filter(!is.na(cluster)) %>% 
-  pull(component) %>% 
-  unique()
-
-acrocentric_contibait_clusters <-
-  contibait_cluster_df %>% 
-  left_join(components_df, by = 'unitig') %>% 
-  filter(component %in% largest_component_components) %>% 
-  filter(!is.na(cluster)) %>% 
-  pull(cluster) %>% 
-  unique()
-
-acrocentric_contibait_cluster_components <- 
-  components_df %>% 
-  left_join(contibait_cluster_df, by = 'unitig') %>% 
-  filter(!is.na(cluster)) %>% 
-  filter(cluster %in% acrocentric_contibait_clusters) %>% 
-  pull(component) %>% 
-  unique()
-
-cluster_df <-
-  contibait_cluster_df %>% 
-  # left_join(
-  #   dplyr::rename(contibait_cluster_df, contibait_cluster = cluster),
-  #   by = 'unitig'
-  # ) %>% 
-  left_join(components_df, by='unitig') %>% 
-  dplyr::rename(contibait_cluster = cluster) 
-
-cluster_df <-
-  cluster_df %>%
-  mutate(cluster = ifelse(
-    component %in% acrocentric_contibait_cluster_components,
-    NA,
-    paste0('cluster_', component)
-  ))
-
-
-### Link Non-Acrocentrics ---------------------------------------------------
-
-# one_cluster_components <-
-#   one_cluster_components_df %>% 
-#   # left_join(components_df, by='component') %>% 
-#   # filter(!member_largest_component) %>% 
-#   pull(component) %>% 
-#   sort()
-
-# one_cluster_components_df <-
-#   cluster_df %>%
-#   filter(!is.na(contibait_cluster)) %>%
-#   distinct(component, contibait_cluster) %>%
-#   group_by(component) %>%
-#   filter(n() == 1) %>%
-#   ungroup()
-
-one_cluster_components <-
-  one_cluster_components_df %>% 
-  pull(component) %>% 
-  setdiff(acrocentric_contibait_cluster_components) %>% 
-  sort()
-
-# I fusking hate this linking code it sucks right now
-none_merged <- FALSE
-while(!none_merged) {
+any_merged <- TRUE
+while(any_merged) {
+  any_merged <- FALSE
   
-  none_merged <- TRUE
-  
+  components_with_multiple_clusters <-
+    components_df %>% 
+    left_join(cluster_df, by='unitig') %>%
+    filter(!is.na(cluster)) %>% 
+    group_by(component) %>% 
+    filter(length(unique(cluster)) > 1) %>% 
+    pull_distinct(component)
 
   
-  for(cmp in one_cluster_components) {
-    
-    # if(cmp == 313) {
-    #   break
-    # }
-    contibait_cluster_to_link <-
-      cluster_df %>% 
+  for(cmp in components_with_multiple_clusters) {
+    cmp_clusters <-
+      components_df %>% 
+      left_join(cluster_df, by='unitig') %>% 
       filter(component == cmp) %>% 
-      distinct(contibait_cluster) %>% 
-      filter(!is.na(contibait_cluster)) %>% 
-      pull()
+      filter(!is.na(cluster)) %>% 
+      pull_distinct(cluster)
     
-    stopifnot(length(contibait_cluster_to_link) == 1)# only 1
+    cluster_unitigs <-
+      cmp_clusters %>%
+      set_names() %>%
+      map(function(x) {
+        cluster_df %>%
+          filter(cluster == x) %>%
+          pull(unitig)
+      })
     
-    old_cluster_label <-
-      cluster_df %>%
-      filter(contibait_cluster == contibait_cluster_to_link) %>% 
-      filter(component == cmp) %>% 
-      distinct(cluster) %>% 
-      pull()
+    # TODO weighted by vector length?
+    component_similarities <-
+      wfrac.matrix[flatten_chr(cluster_unitigs), ] %>% 
+      cosine_similarity() %>% 
+      abs()
     
-    stopifnot(length(old_cluster_label) == 1)
     
-    new_cluster_label <-
-      cluster_df %>%
-      filter(contibait_cluster == contibait_cluster_to_link) %>% 
-      filter(component != cmp) %>% 
-      filter(cluster != old_cluster_label)
+    # Average within and between clusters
+    n_clusters <- length(cmp_clusters)
     
-    if(nrow(new_cluster_label) > 0) {
-
+    clust_sim <- matrix(nrow=n_clusters, ncol=n_clusters)
+    dimnames(clust_sim) <- list(cmp_clusters, cmp_clusters)
+    
+    for(i in cmp_clusters) {
+      for(j in cmp_clusters) {
+        i_unitigs <- cluster_unitigs[[i]]
+        j_unitigs <- cluster_unitigs[[j]]
+        #TODO NA handling of values? What if all NA?
+        val <- mean(component_similarities[i_unitigs, j_unitigs], na.rm = TRUE)
+        clust_sim[i,j] <- clust_sim[j,i] <- val
+      }
+    }
+    
+    # print(clust_sim)
+    #TODO NA handling of values? What if all NA
+    max_sim <- max(clust_sim[upper.tri(clust_sim)], na.rm=TRUE)
+    
+    similarity_threshold <- 0.6 # arbitratily chosen value
+    if(max_sim > similarity_threshold) {
+      any_merged <- TRUE
+      max_ix <-
+        which(clust_sim == max_sim, arr.ind = TRUE)
       
-      new_cluster_label <- 
-        new_cluster_label %>% 
-        arrange(desc(component)) %>% 
-        slice_head(n=1) %>% # arbitrary selection
-        pull(cluster)
-      
-
-      if(new_cluster_label == old_cluster_label) next
-      
-      cat('joining cluster', old_cluster_label, 'to cluster', new_cluster_label, '\n' )
+      clust_1 <- cmp_clusters[max_ix[1,1]]
+      clust_2 <- cmp_clusters[max_ix[1,2]]
       
       cluster_df <-
         cluster_df %>% 
-        mutate(cluster = ifelse(cluster == old_cluster_label, new_cluster_label, cluster))
-      
-      none_merged <- FALSE
-    } else {
-      # cat('cluster', old_cluster_label, 'stands alone', '\n' )
+        mutate(cluster = ifelse(cluster == clust_1, clust_2, cluster))
     }
-    
-    
   }
 }
 
-### Coalesce Acrocentrics------------------------------------------------------
+## Propagate One-Cluster-Component Clusters --------------------------------
 
-cluster_df <-
+cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
+
+## Unassigned Untigs -------------------------------------------------------
+
+unclustered_unitigs <-
   cluster_df %>% 
-  mutate(cluster = coalesce(cluster, contibait_cluster)) 
+  filter(is.na(cluster)) %>% 
+  pull(unitig)
 
-
-### Clean up ----------------------------------------------------------------
-
-cluster_df <-
+unitigs_on_components_with_clusters <-
   cluster_df %>% 
-  select(unitig, cluster)
-# 
-# 
-# # PAR Detection -----------------------------------------------------------
-# 
-# haploid_components <-
-#   cluster_df %>%
-#   left_join(components_df, by='unitig') %>% 
-#   group_by(component) %>% 
-#   filter(any(grepl('^sex', cluster))) %>% 
-#   pull(component) %>% 
-#   unique()
-# 
-# haploid_component_unititgs <-
-#   components_df %>% 
-#   filter(component %in% haploid_components) %>% 
-#   pull(unitig)
-# 
-# par_clusters <- 
-#   cluster_df %>% 
-#   filter(unitig %in% haploid_component_unititgs) %>% 
-#   filter(!grepl('^sex', cluster)) %>% 
-#   filter(!is.na(cluster)) %>%
-#   pull(cluster) %>% 
-#   unique()
-# 
-# if(length(par_clusters) > 1) {
-#   warning("more than 1 PAR cluster, haven't thought about what will happen in this case")
-# }
-# 
-# par_unitigs <-
-#   cluster_df %>% 
-#   filter(cluster %in% par_clusters) %>% 
-#   pull(unitig)
+  left_join(components_df, by='unitig') %>% 
+  group_by(component) %>% 
+  filter(!all(is.na(cluster))) %>% 
+  pull_distinct(unitig)
 
-# Homology Linking --------------------------------------------------------
 
-bubble_components <-
-  components_df %>%
-  left_join(homology_df, by='unitig') %>%
-  filter(!is.na(bubble)) %>%
-  pull(component)
+# TODO sort by size? Which may be important if doing iteratively? So that the
+# most confidently assignable unitigs are first?
+target_unitigs <- 
+  intersect(unclustered_unitigs, unitigs_on_components_with_clusters)
 
-solo_components <-
-  components_df %>%
-  count(component) %>%
-  filter(n == 1) %>%
-  pull(component)
+#TODO assign all at once? or iteratively update clusters each time?
+assignments <- list()
 
-solo_bubble_components <-
-  intersect(bubble_components, solo_components)
-
-for(cmp in solo_bubble_components) {
-  solo_bubble_unitig <-
-    components_df %>%
-    filter(component == cmp) %>%
+for(tu in target_unitigs) {
+  
+  target_component <-
+    components_df %>% 
+    filter(unitig == tu) %>% 
+    pull(component)
+  
+  target_component_unitigs <-
+    components_df %>% 
+    filter(component == target_component) %>% 
     pull(unitig)
-
-  other_bubble_unitig <-
-    homology_df %>%
-    group_by(bubble) %>%
-    filter(any(unitig == solo_bubble_unitig)) %>%
-    filter(unitig != solo_bubble_unitig) %>%
-    pull(unitig)
-
-  target_cluster <-
+  
+  #TODO make this parameter more visible. Explain why only 5
+  min_n <- 5
+  
+  #TODO NA handling of values? What if all NA
+  similarities <- 
+    counts_df %>% 
+    # binned_counts_df %>% 
+    # marginalize_wc_counts() %>%
+    filter(unitig %in% target_component_unitigs) %>% 
+    with(make_wc_matrix(w, c, lib, unitig, min_n=min_n)) %>% 
+    cosine_similarity()
+  
+  candidate_cluster_unitigs <-
     cluster_df %>%
-    filter(unitig == other_bubble_unitig) %>%
-    pull(cluster)
+    left_join(components_df, by='unitig') %>%
+    filter(component == target_component) %>%
+    filter(!is.na(cluster)) %>% 
+    with(split(unitig, cluster))
+  
+  scores <-
+    map(candidate_cluster_unitigs, function(x) {
+      mean(abs(similarities[tu, x]), na.rm=TRUE)
+    })
 
-  cluster_df <-
-    cluster_df %>%
-    mutate(cluster = ifelse(unitig == solo_bubble_unitig, target_cluster, cluster))
-
+  
+  # TODO should a minimum threshold be established? To hedge against occasions
+  # where, EG, an acrocentric chromosome recieves no initial assignments from
+  # contiBAIT? to avoid inappropriately assigning out of chromosome unitigs to a
+  # chromosome?
+  
+  #TODO NA handling of values? What if all NA
+  assignments[[tu]] <- names(scores)[which.max(scores)]
+  
 }
 
 
-# TODO what about non-isolated bubble unitigs?
-# bubbles_across_clusters <-
-#   cluster_df %>%
-#   left_join(homology_df, by='unitig') %>%
-#   group_by(bubble) %>%
-#   filter(length(unique(cluster)) == length(cluster)) %>%
-#   ungroup() %>%
-#   pull(bubble) %>%
-#   unique()
-#
-# for(bub in bubbles_across_clusters) {
-#
-# }
+iwalk(assignments, function(clst, utg) {
+  cluster_df <<-
+    cluster_df %>% 
+    mutate(cluster = ifelse(unitig == utg, clst, cluster))
+}) 
 
+
+## Link Homology -----------------------------------------------------------
+
+ 
+cluster_df <- link_homology(cluster_df, homology_df, components_df)
+cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
+
+## Haploid Propagation------------------------------------------------------
+
+haploid_components <-
+  cluster_df %>%
+  left_join(components_df, by='unitig') %>% 
+  group_by(component) %>% 
+  filter(any(grepl('^sex', cluster))) %>% 
+  pull_distinct(component) 
+
+haploid_component_unititgs <-
+  components_df %>% 
+  filter(component %in% haploid_components) %>% 
+  semi_join(long_unitigs_df, by='unitig') %>% 
+  pull(unitig)
+
+par_clusters <- 
+  cluster_df %>% 
+  filter(unitig %in% haploid_component_unititgs) %>% 
+  filter(!grepl('^sex', cluster)) %>% 
+  filter(!is.na(cluster)) %>%
+  pull_distinct(cluster) 
+
+if(length(par_clusters) > 1) {
+  warning("more than 1 PAR cluster, haven't thought about what will happen in this case")
+}
+
+
+par_unitigs <-
+  cluster_df %>% 
+  filter(cluster %in% par_clusters) %>% 
+  pull(unitig)
+
+cluster_df <-
+  cluster_df %>% 
+  mutate(cluster = ifelse(cluster %in% par_clusters | grepl('^sex', cluster), 'LGXY', cluster))
+
+## Bare Components ---------------------------------------------------------
+
+# Assign bare components w/ at least one bubble to its own cluster
+bare_components <-
+  components_df %>% 
+  left_join(cluster_df, by='unitig') %>% 
+  group_by(component) %>% 
+  filter(all(is.na(cluster))) %>% 
+  ungroup() %>% 
+  pull_distinct(component) 
+
+components_with_whole_bubbles <-
+  homology_df %>% 
+  left_join(components_df, by='unitig') %>% 
+  group_by(bubble) %>% 
+  filter(!anyNA(component) & all_are_identical(component)) %>% 
+  ungroup() %>% 
+  pull_distinct(component) 
+
+bare_bubble_components <- intersect(bare_components, components_with_whole_bubbles)
+
+i <- 0
+for(bbc in bare_bubble_components) {
+  i <- i+1
+  bbc_unitigs <- 
+    components_df %>% 
+    filter(component == bbc) %>% 
+    pull(unitig)
+  
+  label <- paste0('LG Bare ', i)
+  cluster_df <-
+    cluster_df %>% 
+    mutate(cluster = ifelse(unitig %in% bbc_unitigs, label, cluster))
+}
 
 
 # Call WC Libraries -------------------------------------------------------
@@ -947,11 +720,12 @@ high_wc_unitigs <-
   as.character()
 
 low_wc_unitigs <-
-  contibait_cluster_df %>% 
-  filter(grepl('^sex', cluster)) %>% 
-  pull(unitig)
+  clust[grepl('^sex', names(clust))] %>% 
+  flatten_chr() %>% 
+  strip_range()
 
-## Calls -------------------------------------------------------------------
+
+## Call Library State  -------------------------------------------------------
 
 strand_state_df <-
   strand.states$strandMatrix@.Data %>% 
@@ -971,7 +745,7 @@ het_fracs <-
   strand_state_df %>% 
   group_by(cluster, lib, .drop=FALSE) %>% 
   filter(!(unitig %in% c(low_wc_unitigs, high_wc_unitigs))) %>% 
-  summarise(het_frac = mean(state==2)) %>%  
+  summarise(het_frac = mean(state==2, na.rm=TRUE)) %>%  
   ungroup()
 
 # TODO, check that all clusters have at least one unitig to call strand states
@@ -989,180 +763,6 @@ ww_libraries_df <-
   anti_join(wc_libraries_df, by=c('cluster', 'lib'))
 
 
-
-# ## Propagate PAR -----------------------------------------------------------
-# 
-# # This step allows the hapoid XY to be phased like a diploid chromosome.
-# xy_cluster_label <- 'LGXY'
-# 
-# if (length(par_clusters) > 0) {
-#   cluster_df <-
-#     cluster_df %>%
-#     mutate(cluster = ifelse(
-#       unitig %in% c(haploid_component_unititgs, par_unitigs), xy_cluster_label, cluster))
-#   
-#   wc_libraries_df <-
-#     wc_libraries_df %>% 
-#     mutate(cluster = ifelse(cluster %in% par_clusters, xy_cluster_label, cluster))
-#   
-#   ww_libraries_df <-
-#     ww_libraries_df %>% 
-#     mutate(cluster = ifelse(cluster %in% par_clusters, xy_cluster_label, cluster))
-# }
-# 
-# 
-# 
-
-# 
-# 
-# # # Assign Rest? ------------------------------------------------------------
-# 
-# 
-# 
-# 
-# 
-# 
-# 
-# # chr15
-# cluster_df %>%
-#   filter(unitig == 'utig4-2934')
-# 
-# cluster_df %>%
-#   filter(unitig == 'utig4-2459')
-# 
-# cluster_df %>%
-#   filter(unitig == 'utig4-3364')
-# 
-# 
-# cluster_df %>%
-#   filter(unitig == 'utig4-7136')
-# 
-# 
-# chr13 <-
-#   cluster_df %>%
-#   filter(cluster =='LG16 (57)' | unitig %in% c('utig4-7285', 'utig4-7304', 'utig4-6650'))
-# 
-# chr14 <-
-#   cluster_df %>%
-#   filter(cluster =='LG14 (64)')
-# 
-# chr15 <-
-#   cluster_df %>%
-#   filter(cluster == 'LG15 (62)' | unitig %in% c('utig4-2021', 'utig4-15', 'utig4-1412', 'utig4-1807'))
-# 
-# chr21 <-
-#   cluster_df %>%
-#   filter(cluster =='LG21 (28)'| unitig %in% c('utig4-6651', 'utig4-7047','utig4-2456', 'utig4-2457', 'utig4-2566'))
-# 
-# chr22 <-
-#   cluster_df %>%
-#   filter(cluster =='LG22 (14)'  | unitig %in% c('utig4-1814', 'utig4-7447', 'utig4-4170', 'utig4-4715'))
-# 
-# 
-# # using inverted exact matches appears to be promising?
-# 
-# # wc_df <- 
-# #   counts_df %>% 
-# #   mutate(wfrac = ifelse(n > 0, (w-c)/(w+c), 0)) 
-# 
-# 
-# wc_vec_df <-
-#   counts_df %>% 
-#   mutate(wfrac = ifelse(n > 0, (w-c)/(w+c), 0)) 
-# 
-# # %>% 
-# #   group_by(lib, unitig) %>%
-# #   arrange(unitig_dir) %>%
-# #   summarise(wfrac_vec = wfrac[1] - wfrac[2]) %>% 
-# #   ungroup()
-# 
-# 
-# scale_vector <- function(x) {x / sqrt(sum(x^2))}
-# 
-# wc_vec_df <-
-#   wc_vec_df %>% 
-#   group_by(unitig_dir) %>% 
-#   mutate(wfrac = scale_vector(wfrac)) %>% 
-#   ungroup()
-# 
-# 
-# wc_vec_mat <- 
-#   wc_vec_df %>% 
-#   left_join(components_df) %>%
-#   filter(component == 32) %>%
-#   select(lib, unitig_dir, wfrac) %>% 
-#   tidyr::pivot_wider(names_from = 'lib', values_from = 'wfrac') 
-# 
-# rnms <- wc_vec_mat$unitig_dir
-# 
-# wc_vec_mat <-
-#   as.matrix(wc_vec_mat[, -1])
-# 
-# dimnames(wc_vec_mat) <- list(unitig_dir = rnms, lib = colnames(wc_vec_mat))
-# 
-# 
-# cosine_similarity <- function(mat) {
-#   sim <- mat / sqrt(rowSums(mat * mat))
-#   sim <- sim %*% t(sim)
-#   return(sim)
-# }
-# 
-# cosine_distance <- function(mat) {
-#   cos_sim <- cosine_similarity(mat)
-#   cos_dist <- as.dist(1 - cos_sim)
-#   return(cos_dist)
-# }
-# 
-# cos_sim <- cosine_similarity(wc_vec_mat)
-# 
-# which_unitig <-
-#   rownames(wc_vec_mat)
-# 
-# which_unitig <- which_unitig[!grepl('inverted', which_unitig)]
-#   
-# cos_sim[which_unitig, which_unitig] %>% 
-#   abs() %>% 
-#   {as.dist(1-.)} %>% 
-# hclust() %>% plot
-# pca <-
-#   prcomp(abs(cos_sim))
-# 
-# pca$x[which_unitig, 1:2] %>% 
-#   dist() %>% 
-#   hclust(method='single') %>% 
-#   plot()
-# 
-# # # 
-# # pca <-
-# #   counts_df %>%
-# #   #counts_df %>%
-# #   left_join(components_df) %>%
-# #   left_join(cluster_df) %>%
-# #   # filter(component == 32 | is.na(cluster) | unitig %in% chr15$unitig) %>%
-# #   # filter(lib %in% these_libs) %>%
-# #   # filter(!grepl('_inverted', unitig_dir)) %>%
-# #   #semi_join(bind_rows(chr21, chr15)) %>%
-# #   with(make_wc_matrix(w,c,lib,unitig_dir)) %>%
-# #   dist() %>%
-# #   prcomp()
-# 
-# get_prcomp_plotdata(pca, 'unitig_dir') %>%
-#   mutate(unitig = stringr::str_remove(unitig_dir, '_inverted')) %>%
-#   left_join(cluster_df) %>%
-#   left_join(components_df) %>% 
-#   # filter(component == 32) %>% 
-#   #filter(!(!is.na(cluster) & grepl('inverted', unitig_dir))) %>%
-#   filter(!grepl('inverted', unitig_dir)) %>%
-#   ggplot(aes(x=PC1, y=PC2, color=cluster)) +
-#   geom_point() +
-#   geom_text(aes(label = ifelse(is.na(cluster), unitig_dir, NA)), size=3)
-
-## Split and recluster if any low quality? -------------------------------_
-
-# TODO, EG ala makeChrTable(splitBy = 1e6), though this would be tiresome to
-# implement...
-
-
 # Orientation Detection w/ Inverted Unitigs -------------------------------
 
 # Add inverted version of every unitig to dataset. Guarantees that there will
@@ -1174,18 +774,22 @@ ww_libraries_df <-
 
 ## Invert Unitigs ----------------------------------------------------------
 
-counts_df <-
-  counts_df %>% 
-  mutate(unitig_dir = unitig)
-
-counts_df <-
-  counts_df %>% 
-  bind_rows(
+bind_with_inverted_unitigs <- function(counts_df) {
+  counts_df <-
     counts_df %>% 
-      mutate(unitig_dir = paste0(unitig, '_inverted'),
-             c = n-c,
-             w = n-w)
-  )
+    # binned_counts_df %>% 
+    # marginalize_wc_counts %>% 
+    mutate(n=c+w, unitig_dir = unitig)
+  
+  counts_df <-
+    counts_df %>% 
+    bind_rows(
+      counts_df %>% 
+        mutate(unitig_dir = paste0(unitig, '_inverted'),
+               c = n-c,
+               w = n-w)
+    )
+}
 
 ## Orientation Detection -------------------------------------------------
 
@@ -1201,18 +805,25 @@ counts_df <-
 # instead of a discretized space (eg, k-modes clustering on strand states)
 # better for tasks when there are strong prior assumptions?
 
+
 prcomps <-
   counts_df %>% 
+  bind_with_inverted_unitigs() %>% 
   left_join(cluster_df, by='unitig') %>% 
   semi_join(ww_libraries_df, by=c('lib', 'cluster')) %>% 
   split(.$cluster) %>% 
-  map(function(x) with(x, make_wc_matrix(w,c,lib,unitig_dir))) %>% 
+  map(function(x) with(x, make_wc_matrix(w,c,lib,unitig_dir)))  %>% 
+  # filling with 0s doesn't seem to affect first PC too much, compared to
+  # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
+  map(function(x) {
+    x[is.na(x)] <- 0 
+    return(x)
+  }) %>% 
   map(prcomp)
 
-
 # It appears that I need to do clustering only on the first PC, which
-# corresponds to orientation, as otherwise, other PCs can influence the results
-# and lead to grouping of a unitig and its inversion together.
+# corresponds to orientation, as otherwise, other dimensions can influence the
+# results and lead to grouping of a unitig and its inversion together.
 
 strand_orientation_clusters_df <-
   map(prcomps, 'x') %>%
@@ -1235,29 +846,15 @@ if(any(bad)) {
   warning('A warning about inversions clustered together or something')
 }
 
-
-
+ 
 # Phase Chromosomes -------------------------------------------------------
-
-
+ 
 ## Orient Fastmap Counts --------------------------------------------------
+
 # concatenate with inverted, then filter based on strand orientation
-
-exact_match_counts_df <-
-  exact_match_counts_df %>% 
-  mutate(unitig_dir = unitig)
-
-exact_match_counts_df <-
-  exact_match_counts_df %>% 
-  bind_rows(
-    exact_match_counts_df %>% 
-      mutate(unitig_dir = paste0(unitig, '_inverted'),
-             c = n-c,
-             w = n-w)
-  )
-
 exact_match_counts_df <-
   exact_match_counts_df %>%
+  bind_with_inverted_unitigs() %>% 
   semi_join(
     filter(strand_orientation_clusters_df, strand_cluster == 1),
     by = c('unitig', 'unitig_dir')
@@ -1278,10 +875,6 @@ bubble_coverage <-
   # homology? Maybe make cluster a factor to handle this or something?
   inner_join(homology_df, by='unitig')
 
-bubble_coverage <-
-  bubble_coverage %>% 
-  filter(stringr::str_detect(cluster, '^sex', negate=TRUE))
-
 ## Count Exact Alignments to Bubbles ---------------------------------------
 
 coverage_minimum <- 5
@@ -1290,25 +883,7 @@ bubble_coverage <-
   bubble_coverage %>%
   mutate(crick_coverage_ratio = ifelse(n >= coverage_minimum, c / n, NA)) 
 
-# coverage_ratio_threshold <- 0.75
-
-whats_covered <- function(crick_coverage_ratio, coverage_ratio_threshold=0.75) {
-  
-  if(is.na(crick_coverage_ratio)) {
-    return(NA)
-  }
-  
-  if(crick_coverage_ratio >= coverage_ratio_threshold) {
-    return('crick')
-  }
-  
-  if(crick_coverage_ratio <= 1-coverage_ratio_threshold) {
-    return('watson')
-  }
-  
-  return(NA)
-  
-}
+print(bubble_coverage)
 
 bubble_coverage <-
   bubble_coverage %>%
@@ -1392,14 +967,14 @@ marker_counts <-
 ## Join in Excluded Unitigs ------------------------------------------------
 all_unitigs <- unitig_lengths_df$unitig
 
-short_unitigs_df <- 
+short_unitigs <- 
   unitig_lengths_df %>% 
   anti_join(long_unitigs_df, by='unitig') %>% 
   pull(unitig)
 
 short_unitigs_df <-
   tibble(
-    unitig = short_unitigs_df,
+    unitig = short_unitigs,
     exclusion = paste('Length less than threshold:', segment_length_threshold)
   )
 
@@ -1407,20 +982,25 @@ failed_qc_unitigs_df <-
   tibble(unitig = high_wc_unitigs,
          exclusion = 'Too many WC Libraries')
 
+haploid_unitigs_df <-
+  tibble(unitig = low_wc_unitigs,
+         exclusion = 'Too few WC Libraries')
+
 accounted_unitigs <- 
   c(marker_counts$unitig,
     short_unitigs_df$unitig,
-    failed_qc_unitigs_df$unitig)
+    failed_qc_unitigs_df$unitig,
+    haploid_unitigs_df$unitig)
 
 unaccounted_unitigs_df <-
   tibble(unitig = setdiff(all_unitigs, accounted_unitigs),
          exclusion = 'other')
 
 exclusions_df <-
-  bind_rows(short_unitigs_df, failed_qc_unitigs_df, unaccounted_unitigs_df)
+  bind_rows(short_unitigs_df, failed_qc_unitigs_df, haploid_unitigs_df, unaccounted_unitigs_df)
 
 # Make sure no unitig is double listed
-stopifnot(length(unique(exclusions_df$unitig)) == length(exclusions_df$unitig))
+stopifnot(all_are_unique(exclusions_df$unitig))
 
 # Make sure all unitigs are included
 stopifnot(setequal(all_unitigs, c(exclusions_df$unitig, marker_counts$unitig)))
@@ -1428,13 +1008,11 @@ stopifnot(setequal(all_unitigs, c(exclusions_df$unitig, marker_counts$unitig)))
 marker_counts <-
   full_join(marker_counts, exclusions_df, by='unitig')
 
-
 ## Additional Information --------------------------------------------------
 
 marker_counts <-
   marker_counts %>% 
-  left_join(cluster_df, by='unitig') %>% 
-  left_join(dplyr::rename(contibait_cluster_df, contibait_cluster = cluster), by='unitig')
+  left_join(cluster_df, by='unitig') 
 
 marker_counts <-
   marker_counts %>% 
@@ -1460,14 +1038,22 @@ marker_counts <-
 cluster_palette <-
   marker_counts %>%
   distinct(cluster) %>%
-  mutate(Color = rainbow(n(), start=0.7, end=0.1))
+  mutate(Color = rainbow(n()))
 
 marker_counts <-
   marker_counts %>% 
   left_join(cluster_palette, by='cluster') %>% 
   mutate(Color = pmap_chr(list(Color, hap_1_counts, hap_2_counts), make_bandage_colors))
 
+# fill NA with 0 for rukki?
+marker_counts <-
+  marker_counts %>%
+  mutate(hap_1_counts = ifelse(is.na(hap_1_counts), 0, hap_1_counts),
+         hap_2_counts = ifelse(is.na(hap_2_counts), 0, hap_2_counts))
 
+stopifnot(nrow(marker_counts) == length(all_unitigs))
+stopifnot(setequal(all_unitigs, marker_counts$unitig))
 ## CSV ---------------------------------------------------------------------
 
 readr::write_csv(marker_counts, output)
+

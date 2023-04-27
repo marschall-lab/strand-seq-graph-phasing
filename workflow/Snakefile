@@ -278,43 +278,18 @@ rule fastmap_ss_reads_to_unitigs:
 	log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
 	shell: "(bwa fastmap -w 1 -l 75 {input.unitigs} {input.SSreads} > {output}) > {log} 2>&1"
 
-
-###############################################################
-####################### Mashmap Homology ######################
-###############################################################
-
-rule mashmap_assembly_to_self:
-    input:  "fasta/{sample}/{sample}_unitigs-hpc.fasta"
-    output: "mashmap/{sample}_mashmap.mashssv"
-    params:
-        percent_identity=95,
-        min_alignment_size=10000,
-        kmer_size=19, #too small?
-    conda:'envs/env_mashmap.yaml'
-    resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-    threads: 8
-    log: "log/mashmap_{sample}.log"
-    benchmark: "benchmark/mashmap_{sample}.benchmark"
-    shell:
-        '''
-        mashmap -r {input} -q {input} -t {threads} -f none --pi {params.percent_identity} -s {params.min_alignment_size} -k {params.kmer_size} -o {output} > {log} 2>&1
-        '''
-
-rule filter_mashmap:
-    input:  "mashmap/{sample}_mashmap.mashssv"
-    output: "mashmap/{sample}_mashmap_unitig-matches.tsv"
-    conda:'envs/env_cl.yaml'
-    # log: "log/mashmap_filter_{sample}.log"
-    shell:
-        '''
-        cat {input} |awk '{{if ($NF > 99 && $4-$3 > 500000 && $1 != $6) print $1"\t"$6}}'|sort |uniq > {output}
-        '''
-
 ###################################################
 ############ Acrocentric Tangle Removal ###########
 ###################################################
+
+# Copying the assembly to the working directory is a convenience to get around having to manage paths related to the singularity environment
+
+# rule copy_assembly_to_wd:
+#     input:
+#         lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa']
+#     output:
+#         temp("{sample}/assembly.gfa")
+#     shell: 'cp {input} {output}'
 
 rule remove_acrocentric_tangle:
     input: lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa']
@@ -338,21 +313,103 @@ rule remove_acrocentric_tangle:
         '''
 
 
+###############################################################
+####################### Mashmap Homology ######################
+###############################################################
+
+rule mashmap_assembly_to_self:
+    input:  "fasta/{sample}/{sample}_unitigs-hpc.fasta"
+    output: "homology/{sample}/{sample}_mashmap.mashssv"
+    params:
+        percent_identity=95,
+        min_alignment_size=10000,
+        kmer_size=19, #too small?
+    conda:'envs/env_mashmap.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    threads: 8
+    log: "log/mashmap_{sample}.log"
+    benchmark: "benchmark/mashmap_{sample}.benchmark"
+    shell:
+        '''
+        mashmap -r {input} -q {input} -t {threads} -f none --pi {params.percent_identity} -s {params.min_alignment_size} -k {params.kmer_size} -o {output} > {log} 2>&1
+        '''
+
+rule filter_mashmap:
+    input:  "homology/{sample}/{sample}_mashmap.mashssv"
+    output: "homology/{sample}/{sample}_mashmap_unitig-matches.tsv"
+    conda:'envs/env_cl.yaml'
+    # log: "log/mashmap_filter_{sample}.log"
+    shell:
+        '''
+        cat {input} |awk '{{if ($NF > 99 && $4-$3 > 500000 && $1 != $6) print $1"\t"$6}}'|sort |uniq > {output}
+        '''
+
+
+################################################
+############ bubbleGun Homology ############
+################################################
+
+rule simplify_assembly:
+    input:
+        assembly="gfa/gfa/{sample}_exploded.gfa",
+        # clusters="clustering_orientation_strandstate/{sample}/unitig_clusters.tsv"
+    output: "gfa/gfa/{sample}_exploded_simplified.gfa"
+    params:
+        segment_length_threshold = segment_length_threshold,
+        script=get_script_path('python','simplify_gfa.py')
+    conda:'envs/env_gfa.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/simplify_assembly_{sample}.log"
+    shell:
+        '''
+        (python3 {params.script} \\
+        --input {input.assembly} \\
+        --output {output} \\
+        --segment-length-threshold {params.segment_length_threshold}) > {log} 2>&1
+        '''
+
+rule detect_bubbles:
+    input: "gfa/gfa/{sample}_exploded_simplified.gfa"
+    output: "homology/{sample}/{sample}_exploded_simplified_bubblegun.json"
+    conda:'envs/env_bubblegun.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime = lambda wildcards, attempt: f'{1 + attempt*attempt:02}:59:00'
+    log: "log/detect_bubbles_assembly_{sample}.log"
+    shell: "(time BubbleGun -g {input} bchains --only_simple --bubble_json {output})> {log} 2>&1"
+
+
+################################################
+############ combine Homology ############
+################################################
+
+rule combine_homology:
+    input:
+        mashmap="homology/{sample}/{sample}_mashmap_unitig-matches.tsv",
+        bubblegun="homology/{sample}/{sample}_exploded_simplified_bubblegun.json"
+    output: "homology/{sample}/{sample}_combined_mashmap_bubblegun_homology.tsv"
+    params:
+        script = get_script_path('R','combine_homology.R')
+    conda: 'envs/env_Renv.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 4 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+    log: "log/combine_homology_{sample}.log"
+    shell:
+        '''
+        (Rscript --vanilla {params.script} \\
+        --mashmap {input.mashmap} \\
+        --bubblegun {input.bubblegun} \\
+        --output {output}) > {log} 2>&1
+        '''
+
 #######################################
 ############ Phase Unitigs ############
 #######################################
-
-# Copying the assembly to the working directory is a convenience to get around having to manage paths related to the singularity environment
-
-rule copy_assembly_to_wd:
-    input:
-        lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa']
-    output:
-        temp("{sample}/assembly.gfa")
-    shell: 'cp {input} {output}'
-
-
-
 
 
 def sample2mem(wildcards, ext='bam'):
@@ -372,7 +429,7 @@ rule phase_unitigs:
         bai=lambda wildcards: sample2mem(wildcards, 'bam.bai'),
         fastmap=sample2fastmap,
         connected_components='gfa/ccs/{sample}_exploded_ccs.tsv',
-        homology="mashmap/{sample}_mashmap_unitig-matches.tsv"
+        homology="homology/{sample}/{sample}_combined_mashmap_bubblegun_homology.tsv"
     output:
         "haplotype_marker_counts/{sample}_haplotype_marker_counts.csv"
     params:
@@ -396,38 +453,3 @@ rule phase_unitigs:
         --output {output}) > {log} 2>&1
         '''
 
-
-##########################################
-############ Bubble Detection ############
-##########################################
-#
-# rule simplify_assembly:
-#     input:
-#         assembly=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa'],
-#         clusters="clustering_orientation_strandstate/{sample}/unitig_clusters.tsv"
-#     output: "graph_components/{sample}/simplified_assembly.gfa"
-#     params:
-#         script=get_script_path('python','simplify_gfa.py')
-#     conda:'envs/env_gfa.yaml'
-#     resources:
-#         mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
-#         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-#     log: "log/simplify_assembly_{sample}.log"
-#     shell:
-#         '''
-#         (python3 {params.script} \\
-#         --input {input.assembly} \\
-#         --output {output} \\
-#         --clusters {input.clusters}) > {log} 2>&1
-#         '''
-#
-# rule detect_bubbles:
-#     input: "graph_components/{sample}/simplified_assembly.gfa"
-#     output: "graph_components/{sample}/simplified_assembly.gfa.json"
-#     conda:'envs/env_bubblegun.yaml'
-#     resources:
-#         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-#         walltime = lambda wildcards, attempt: f'{1 + attempt*attempt:02}:59:00'
-#     log: "log/detect_bubbles_assembly_{sample}.log"
-#     shell: "(time BubbleGun -g {input} bchains --only_simple --bubble_json {output})> {log} 2>&1"
-#
