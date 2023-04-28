@@ -288,16 +288,18 @@ rule mashmap_assembly_to_self:
     output: "mashmap/{sample}_mashmap.mashssv"
     params:
         percent_identity=95,
-        min_alignment_size=10000
-    conda:'envs/env_cl.yaml'
+        min_alignment_size=10000,
+        kmer_size=19, #too small?
+    conda:'envs/env_mashmap.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     threads: 8
     log: "log/mashmap_{sample}.log"
+    benchmark: "benchmark/mashmap_{sample}.benchmark"
     shell:
         '''
-        mashmap -r {input} -q {input} -t {threads} -f none --pi {params.percent_identity} -s {params.min_alignment_size} -o {output} > {log} 2>&1
+        mashmap -r {input} -q {input} -t {threads} -f none --pi {params.percent_identity} -s {params.min_alignment_size} -k {params.kmer_size} -o {output} > {log} 2>&1
         '''
 
 rule filter_mashmap:
