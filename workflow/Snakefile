@@ -319,14 +319,14 @@ rule remove_acrocentric_tangle:
 
 rule mashmap_assembly_to_self:
     input:  "fasta/{sample}/{sample}_unitigs-hpc.fasta"
-    output: "homology/{sample}/{sample}_mashmap.mashssv"
+    output: "homology/{sample}/{sample}_mashmap.paf"
     params:
         percent_identity=95,
         min_alignment_size=10000,
-        kmer_size=19, #too small?
+        kmer_size=19 #current default
     conda:'envs/env_mashmap.yaml'
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
+        mem_mb = lambda wildcards, attempt: 1024 * 24 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     threads: 8
     log: "log/mashmap_{sample}.log"
@@ -336,16 +336,16 @@ rule mashmap_assembly_to_self:
         mashmap -r {input} -q {input} -t {threads} -f none --pi {params.percent_identity} -s {params.min_alignment_size} -k {params.kmer_size} -o {output} > {log} 2>&1
         '''
 
-rule filter_mashmap:
-    input:  "homology/{sample}/{sample}_mashmap.mashssv"
-    output: "homology/{sample}/{sample}_mashmap_unitig-matches.tsv"
-    conda:'envs/env_cl.yaml'
-    # log: "log/mashmap_filter_{sample}.log"
-    shell:
-        '''
-        cat {input} |awk '{{if ($NF > 99 && $4-$3 > 500000 && $1 != $6) print $1"\t"$6}}'|sort |uniq > {output}
-        '''
-
+# rule filter_mashmap:
+#     input:  "homology/{sample}/{sample}_mashmap.paf"
+#     output: "homology/{sample}/{sample}_mashmap_unitig-matches.tsv"
+#     conda:'envs/env_cl.yaml'
+#     # log: "log/mashmap_filter_{sample}.log"
+#     shell:
+#         '''
+#         cat {input} |awk '{{if ($NF > 99 && $4-$3 > 500000 && $1 != $6) print $1"\t"$6}}'|sort |uniq > {output}
+#         '''
+#
 
 ################################################
 ############ bubbleGun Homology ############
@@ -389,7 +389,7 @@ rule detect_bubbles:
 
 rule combine_homology:
     input:
-        mashmap="homology/{sample}/{sample}_mashmap_unitig-matches.tsv",
+        mashmap="homology/{sample}/{sample}_mashmap.paf",
         bubblegun="homology/{sample}/{sample}_exploded_simplified_bubblegun.json"
     output: "homology/{sample}/{sample}_combined_mashmap_bubblegun_homology.tsv"
     params:

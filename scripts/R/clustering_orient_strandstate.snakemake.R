@@ -573,7 +573,7 @@ target_unitigs <-
 
 #TODO assign all at once? or iteratively update clusters each time?
 assignments <- list()
-
+  
 for(tu in target_unitigs) {
   
   target_component <-
@@ -629,10 +629,11 @@ iwalk(assignments, function(clst, utg) {
 }) 
 
 
+
 ## Link Homology -----------------------------------------------------------
 
  
-cluster_df <- link_homology(cluster_df, homology_df, components_df)
+cluster_df <- link_mashmap_homology(cluster_df, homology_df, components_df)
 cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
 
 ## Haploid Propagation------------------------------------------------------
@@ -690,7 +691,14 @@ components_with_whole_bubbles <-
   ungroup() %>% 
   pull_distinct(component) 
 
-bare_bubble_components <- intersect(bare_components, components_with_whole_bubbles)
+acrocentric_components <-
+  components_df %>% 
+  filter(member_largest_component) %>% 
+  pull_distinct(component)
+
+bare_bubble_components <- 
+  intersect(bare_components, components_with_whole_bubbles) %>%
+  setdiff(acrocentric_components)
 
 i <- 0
 for(bbc in bare_bubble_components) {
@@ -705,6 +713,7 @@ for(bbc in bare_bubble_components) {
     cluster_df %>% 
     mutate(cluster = ifelse(unitig %in% bbc_unitigs, label, cluster))
 }
+
 
 
 # Call WC Libraries -------------------------------------------------------
@@ -999,7 +1008,8 @@ unaccounted_unitigs_df <-
 exclusions_df <-
   bind_rows(short_unitigs_df, failed_qc_unitigs_df, haploid_unitigs_df, unaccounted_unitigs_df)
 
-# Make sure no unitig is double listed
+# Make sure no unitig is double listed. This will also catch if a unitig is
+# listed in multiple bubbles (which may be desired in some future iteration)
 stopifnot(all_are_unique(exclusions_df$unitig))
 
 # Make sure all unitigs are included
@@ -1007,6 +1017,7 @@ stopifnot(setequal(all_unitigs, c(exclusions_df$unitig, marker_counts$unitig)))
 
 marker_counts <-
   full_join(marker_counts, exclusions_df, by='unitig')
+
 
 ## Additional Information --------------------------------------------------
 

@@ -232,10 +232,11 @@ propagate_one_cluster_components <- function(cluster_df, components_df) {
   
 }
 
-link_homology <- function(cluster_df, homology_df, components_df) {
+link_mashmap_homology <- function(cluster_df, homology_df, components_df) {
   
-  multi_cluster_bubbles <-
+  multi_cluster_mashmap_bubbles <-
     homology_df %>%
+    filter(grepl('mashmap', bubble)) %>% 
     left_join(components_df, by='unitig') %>% 
     left_join(cluster_df, by='unitig') %>% 
     group_by(bubble) %>% 
@@ -245,7 +246,7 @@ link_homology <- function(cluster_df, homology_df, components_df) {
     distinct(bubble) %>% 
     pull()
   
-  for(bub in multi_cluster_bubbles) {
+  for(bub in multi_cluster_mashmap_bubbles) {
     
     # This is a fairly aggressive strategy, that puts a lot of faith in the
     # homology detection by mashmap.
