@@ -843,6 +843,14 @@ strand_orientation_clusters_df <-
   strand_orientation_clusters_df %>% 
   mutate(unitig = stringr::str_remove(unitig_dir, '_inverted$'))
 
+#TODO I have discovered that some points are located truly at the origin (for all PCs), and
+#therefore do not separate on the first PC. What lol. Figure out what leads to
+#this. (HG03456)
+
+strand_orientation_clusters_df <- 
+  strand_orientation_clusters_df %>% 
+  mutate(strand_cluster = ifelse(strand_cluster != 0, strand_cluster, ifelse(grepl('_inverted', unitig_dir), -1, 1)))
+
 # Warning that checks that every unitig and its invert are in opposite clusters
  bad <-
   strand_orientation_clusters_df %>% 
@@ -850,7 +858,7 @@ strand_orientation_clusters_df <-
   filter(n() != 1)
 
  # TODO, gather warnings in a log somewhere or something?
-if(any(bad)) {
+if(nrow(bad) > 0) {
   warning('A warning about inversions clustered together or something')
 }
 
