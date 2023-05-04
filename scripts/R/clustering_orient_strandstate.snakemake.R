@@ -69,11 +69,6 @@ make_bandage_colors <- function(color_hex, counts_1, counts_2) {
 
 args <- commandArgs(trailingOnly = FALSE)
 
-#TODO make these a passable argument
-import_parallel <- FALSE
-n_threads <- 8
-furrr_plan <- 'multisession'
-
 # source('/Users/henglinm/Documents/GitHub/strand-seq-graph-phasing/scripts/R/module_utils/phasing_test_args.R')
 
 ## Parsing Helper ----------------------------------------------------------
@@ -89,7 +84,8 @@ expected_args <-
     '--output',
     
     ## Params
-    '--segment-length-threshold'
+    '--segment-length-threshold',
+    '--threads'
   )
 
 # Have to handle multiple inputs per tag
@@ -148,6 +144,9 @@ connected_components <- get_values('--connected-components', singular=TRUE)
 ## Parameters
 segment_length_threshold <- as.numeric(get_values('--segment-length-threshold'))
 
+n_threads <- as.numeric(get_values('--threads'))
+stopifnot(n_threads >= 1)
+
 ## Output
 output <- get_values('--output')
 
@@ -178,9 +177,9 @@ homology_df <- readr::read_tsv(homology)
 
 ## Count Alignments ---------------------------------------------------------
 
-if(import_parallel) {
+if(n_threads > 1) {
   library(furrr)
-  plan(furrr_plan, workers=n_threads)
+  plan(multisession, workers=n_threads)
   import_mapper <- furrr::future_map  
 } else {
   import_mapper <- purrr::map
@@ -313,7 +312,7 @@ exact_match_counts_df <-
   exact_match_counts_df %>%
   mutate(n = c+w)
 
-if(import_parallel) {
+if(n_threads > 1) {
   # close workers
   plan(sequential)
 }

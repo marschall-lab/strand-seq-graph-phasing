@@ -440,7 +440,7 @@ rule phase_unitigs:
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-    threads: 2 # 24
+    threads: 1
     log: "log/phase_unitigs_{sample}.log"
     shell:
         '''
@@ -450,6 +450,7 @@ rule phase_unitigs:
         --homology {input.homology} \\
         --connected-components {input.connected_components} \\
         --segment-length-threshold {params.segment_length_threshold} \\
+        --threads {threads} \\
         --output {output}) > {log} 2>&1
         '''
 
