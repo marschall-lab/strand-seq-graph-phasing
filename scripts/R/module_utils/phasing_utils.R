@@ -166,8 +166,7 @@ marginalize_wc_counts <-
     marginalized_df <-
       df %>%
       group_by(lib, unitig) %>%
-      summarise(c = sum(c), w = sum(w)) %>%
-      ungroup() %>%
+      summarise(c = sum(c), w = sum(w), .groups="drop") %>%
       filter(!(unitig %in% do_not_marginalize))
     
     df <-
@@ -232,21 +231,17 @@ propagate_one_cluster_components <- function(cluster_df, components_df) {
   
 }
 
-link_mashmap_homology <- function(cluster_df, homology_df, components_df) {
+link_homology <- function(cluster_df, homology_df, components_df) {
   
-  multi_cluster_mashmap_bubbles <-
+  multi_cluster_bubbles <-
     homology_df %>%
-    filter(grepl('mashmap', bubble)) %>% 
-    left_join(components_df, by='unitig') %>% 
     left_join(cluster_df, by='unitig') %>% 
     group_by(bubble) %>% 
-    # filter(all_are_unique(component)) %>% 
     filter(all_are_unique(cluster)) %>% 
     ungroup() %>% 
-    distinct(bubble) %>% 
-    pull()
+    pull_distinct(bubble)
   
-  for(bub in multi_cluster_mashmap_bubbles) {
+  for(bub in multi_cluster_bubbles) {
     
     # This is a fairly aggressive strategy, that puts a lot of faith in the
     # homology detection by mashmap.
@@ -274,15 +269,41 @@ link_mashmap_homology <- function(cluster_df, homology_df, components_df) {
         filter(is.na(cluster)) %>% 
         pull(unitig)
       
+      partner_unitig <- 
+        bubble_clusters_df %>% 
+        filter(!is.na(cluster)) %>% 
+        pull(unitig)
+      
+      
       target_cluster <- 
         bubble_clusters_df %>% 
         filter(!is.na(cluster)) %>% 
         pull(cluster)
       
+      cat(
+        'joining NA unitig: ',
+        na_unitig,
+        ' to cluster:',
+        target_cluster,
+        'via partner: ',
+        partner_unitig, 
+        '\n'
+      )
       cluster_df <-
         cluster_df %>% 
         mutate(cluster = ifelse(unitig == na_unitig, target_cluster, cluster))
     } else {
+      
+      cat(
+        'joining clusters: ',
+        bubble_clusters[1],
+        ' and ',
+        bubble_clusters[2],
+        ' via unitigs: ',
+        bubble_clusters_df$unitig,
+        '\n'
+      )
+      
       cluster_df <-
         cluster_df %>% 
         mutate(cluster = ifelse(cluster == bubble_clusters[1], bubble_clusters[2], cluster))

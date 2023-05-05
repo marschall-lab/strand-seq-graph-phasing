@@ -156,7 +156,7 @@ scale_vector <- function(x) {x / sqrt(sum(x^2))}
 pull_distinct <- function(x, col) {
   x %>% 
     distinct({{col}}) %>% 
-    pull()
+    pull({{col}})
 }
 
 cut_range_n <- function(x, n_bins, max_value=max(x)) {

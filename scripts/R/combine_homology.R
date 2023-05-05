@@ -99,7 +99,7 @@ output <- get_values('--output')
 # TODO check if the above is still true or just due to the filtering bug when
 # mashmap was updated to 3.0 (paf format).
 
-# mashmap <- 'homology/NA18989/NA18989_mashmap.paf'
+# mashmap <- 'homology/NA24385/NA24385_mashmap.paf'
 
 mashmap_df <-
   pafr::read_paf(mashmap, tibble=TRUE, include_tags = TRUE)
@@ -158,7 +158,7 @@ mashmap_df <-
 
 # Bubblegun ---------------------------------------------------------------
 
-# bubblegun <- 'homology/NA18989/NA18989_exploded_simplified_bubblegun.json'
+# bubblegun <- 'homology/NA24385/NA24385_exploded_simplified_bubblegun.json'
 
 bubblegun_chains_json <- jsonlite::read_json(bubblegun)
 
@@ -200,6 +200,14 @@ bubblegun_df <-
 
 homology_df <-
   bind_rows(mashmap_df, bubblegun_df)
+
+#bubble double  check
+unitigs_per_bubble <-
+  homology_df %>% 
+  count(bubble) %>% 
+  pull()
+
+stopifnot(all(unitigs_per_bubble == 2))
 
 # output <- 'homology/NA18989/NA18989_combined_homology.tsv'
 readr::write_tsv(homology_df, output)
