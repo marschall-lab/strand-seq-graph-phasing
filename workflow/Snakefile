@@ -73,7 +73,7 @@ rule all:
 # used for the initial clustering step which assigns
 # unitig chromosome and orientation, and calls library strand state
 def sample2ss(wildcards):
-    out = MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_dir'] + "/{lib}_{pair}" + MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_suffix']
+    out = MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_pairs'][wildcards.lib][wildcards.pair]
     return out
 
 rule unzip_ss:
@@ -125,8 +125,8 @@ rule homopolymer_compress_unmerged_ss:
 
 rule pear_merge_mates:
     input:
-        fq1=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_dir']+"/{lib}_1"+MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_suffix'],
-        fq2=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_dir']+"/{lib}_2"+MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_suffix'],
+        fq1=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_pairs'][wildcards.lib]['file1'],
+        fq2=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_pairs'][wildcards.lib]['file2']
     output:
         "ss/merged/{sample}/{lib}.assembled.fastq",
         "ss/merged/{sample}/{lib}.discarded.fastq",
@@ -165,7 +165,6 @@ rule homopolymer_compress_merged_ss:
         script=get_script_path('python','homopolymer_compress_fasta.py')
     conda:'envs/env_pyenv.yaml'
     # log: "log/compress_ss_{sample}_{lib}.log"
-
     shell:
         '''
         python3 {params.script} \\
@@ -204,8 +203,8 @@ rule bwa_align_unmerged_compressed_ss_to_unitigs:
     input:
         unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta", # gfa_to_fasta
         unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices), # bwa_index_unitigs
-        mate1="ss/unmerged/{sample}/{lib}_1.homopolymer-compressed.fasta",
-        mate2="ss/unmerged/{sample}/{lib}_2.homopolymer-compressed.fasta"
+        mate1="ss/unmerged/{sample}/{lib}_file1.homopolymer-compressed.fasta",
+        mate2="ss/unmerged/{sample}/{lib}_file2.homopolymer-compressed.fasta"
     output: temp("temp_bwa_alignments/mem/{sample}/{lib}.bam")
     threads: 6
     conda:'envs/env_cl.yaml'
