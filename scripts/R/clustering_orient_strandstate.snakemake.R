@@ -851,18 +851,20 @@ het_fracs <-
   summarise(het_frac = mean(state==2, na.rm=TRUE), .groups="drop") 
 
 # TODO, check that all clusters have at least one unitig to call strand states
-# with.
+# with. Current fall through: If a cluster consists of only unusual unitigs (no
+# unitigs in het_fracs) then all libraries will be called WC
 
 # Threshold chosen based on looking at a plot
 wc_threshold <- 0.9
 
-wc_libraries_df <-
-  het_fracs %>% 
-  dplyr::filter(het_frac >= wc_threshold) 
-
 ww_libraries_df <-
   het_fracs %>% 
-  anti_join(wc_libraries_df, by=c('cluster', 'lib'))
+  dplyr::filter(het_frac < wc_threshold) 
+
+wc_libraries_df <-
+  het_fracs %>% 
+  anti_join(ww_libraries_df, by=c('cluster', 'lib'))
+
 
 
 # Orientation Detection w/ Inverted Unitigs -------------------------------
