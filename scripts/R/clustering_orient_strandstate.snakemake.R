@@ -297,7 +297,22 @@ binned_counts_df <-
   binned_counts_df %>% 
   mutate(unitig_bin = paste0(unitig, '_bin', bin))
 
-#FIXME The binned counts currently aren't being used.
+#FIXME The binned counts currently aren't being used. Why? Experimentation was
+#carried out, with using binned counts for unitigs that fail contiBAIT qc, to
+#try to recover signal from those unitigs. this was inspired by cases where, eg
+#chr 18 appeared as a large X in the bandage plot, but every arm of the X failed
+#QC Suspected that the centromeric and telomeric regions included in thise
+#unitigs were causing it to fail QC ~ so use the binned counts to discard those
+#regions. This ran into problems with unitigs that contained purely degnerate
+#sequence ~ purely centromeric and telomeric unitigs. Those unitigs had bins
+#that would pass WC, but displayed very strange clustering behaviour, and they
+#would often form a separate contiBAIT cluster unitigs across chromosomes. This
+#clustering of degenrate unitigs was resistant to corrective heuristics, eg
+#cosine cluster merging. In order to use a binned counts strategy, I would want
+#a way to distiguish purely degenerate unitigs from unitigs containing lots of
+#degenerate regions, but are not purely degenerate, and I don't have that right
+#now lol. Maybe a better cutting method, eg breakpointR could work? ButI have
+#my doubts.
 
 counts_df <-
   marginalize_wc_counts(binned_counts_df)
