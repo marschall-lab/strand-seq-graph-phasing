@@ -15,6 +15,48 @@ tidy_bubble_chain_ <- function(l) {
   return(out)
 }
 
+tidy_multibubble_ <- function(bubble_name, arm_1_unitigs, arm_2_unitigs) {
+  arm_1_unitigs <- strsplit(arm_1_unitigs, '_')[[1]]
+  arm_2_unitigs <- strsplit(arm_2_unitigs, '_')[[1]]
+  
+  # Sort by size
+  arm_1_unitigs <-
+    unitig_lengths_df %>%
+    filter(unitig %in% arm_1_unitigs) %>%
+    arrange(desc(length)) %>%
+    pull(unitig)
+  
+  arm_2_unitigs <-
+    unitig_lengths_df %>%
+    filter(unitig %in% arm_2_unitigs) %>%
+    arrange(desc(length)) %>%
+    pull(unitig)
+  
+  n_pairs <- min(length(arm_1_unitigs), length(arm_2_unitigs))
+  
+  out_df <-
+    tibble(bubble = character(),
+           bubble_arm = character(),
+           unitig = character())
+  ix <- 0
+  for (i in seq_len(n_pairs)) {
+    ix <- ix + 1
+    bub_df <- tibble(
+      bubble = paste0(bubble_name, '_merged_', ix),
+      bubble_arm = c('arm_1', 'arm_2'),
+      unitig = c(arm_1_unitigs[i], arm_2_unitigs[i])
+    )
+    
+    out_df <- bind_rows(out_df, bub_df)
+  }
+  
+  return(out_df)
+}
+
+renumber_bubble <- function(bubble, prefix='bubble_') {
+  paste0(prefix, as.integer(as.factor(bubble)))
+}
+
 # Command Line ------------------------------------------------------------
 ## Args --------------------------------------------------------------------
 
@@ -27,6 +69,7 @@ expected_args <-
     ## Input
     '--mashmap',
     '--bubblegun',
+    '--gfa',
     '--output'
   )
 
@@ -74,7 +117,10 @@ source(file.path(get_script_dir(), "module_utils/utils.R"))
 
 mashmap <- get_values("--mashmap", singular=TRUE)
 bubblegun <- get_values('--bubblegun', singular=TRUE)
-output <- get_values('--output')
+gfa <- get_values('--gfa', singular=TRUE)
+output <- get_values('--output', singular=TRUE)
+
+
 
 # Mashmap -----------------------------------------------------------------
 
@@ -138,7 +184,6 @@ mashmap_df <-
   tidyr::pivot_longer(cols = c('unitig_1', 'unitig_2'), names_to = 'bubble_arm', values_to ='unitig') %>% 
   mutate(bubble_arm = stringr::str_replace(bubble_arm, '^unitig_', 'arm_'))
 
-
 # filter out bubbles that contain unitigs in multiple bubbles
 
 # only unitigs that appear once
@@ -158,7 +203,19 @@ mashmap_df <-
 
 # Bubblegun ---------------------------------------------------------------
 
-# bubblegun <- 'homology/NA24385/NA24385_exploded_simplified_bubblegun.json'
+## Read Unitig Lengths -----------------------------------------------------
+
+# gfa <- '../wd/gfa/gfa/NA19705_exploded.gfa'
+unitig_lengths_df <-
+  tibble::enframe(
+    read_segment_sizes_from_gfa(gfa),
+    name = 'unitig',
+    value = 'length'
+  )
+
+
+## Read Bubbles ------------------------------------------------------------
+# bubblegun <- 'linear_simplified_bubbles.json'
 
 bubblegun_chains_json <- jsonlite::read_json(bubblegun)
 
@@ -170,6 +227,30 @@ bubblegun_df <-
   select(bubble,bubble_arm,unitig)
 
 
+## Merged Bubble Handling --------------------------------------------------
+
+# The graph simplification process now merges linear paths! That should recover
+# some more homology! Need to decide how to handle many-to-many unitig
+# homologies as (for now) each unitig is only appearing in one bubble.
+# Currently, pair biggest unitig with biggest possible partner.
+
+
+bubbles_with_merged_unitigs <- 
+  bubblegun_df %>% 
+  filter(grepl('_', unitig)) %>% 
+  pull_distinct(bubble)
+
+merged_bubble_df <- 
+  bubblegun_df %>% 
+  filter(bubble %in% bubbles_with_merged_unitigs) %>% 
+  tidyr::pivot_wider(names_from = bubble_arm, values_from = unitig) %>% 
+  pmap_dfr(tidy_multibubble_)
+
+bubblegun_df <-
+  bubblegun_df %>% 
+  filter(!(bubble %in% bubbles_with_merged_unitigs)) %>% 
+  bind_rows(merged_bubble_df) %>% 
+  mutate(bubble = renumber_bubble(bubble))
 # Deduplicate Bubbles -----------------------------------------------------
 
 mashmap_df <-
@@ -182,7 +263,7 @@ mashmap_df <-
 # renumber 
 mashmap_df <-
   mashmap_df %>% 
-  mutate(bubble = paste0('bubble_', as.integer(as.factor(bubble)))) %>% 
+  mutate(bubble = renumber_bubble(bubble)) %>% 
   arrange(bubble, bubble_arm)
 
 # Rename Bubbles ----------------------------------------------------------

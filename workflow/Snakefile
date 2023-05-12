@@ -389,7 +389,8 @@ rule detect_bubbles:
 rule combine_homology:
     input:
         mashmap="homology/{sample}/{sample}_mashmap.paf",
-        bubblegun="homology/{sample}/{sample}_exploded_simplified_bubblegun.json"
+        bubblegun="homology/{sample}/{sample}_exploded_simplified_bubblegun.json",
+        gfa="gfa/gfa/{sample}_exploded_simplified.gfa"
     output: "homology/{sample}/{sample}_combined_mashmap_bubblegun_homology.tsv"
     params:
         script = get_script_path('R','combine_homology.R')
@@ -403,6 +404,7 @@ rule combine_homology:
         (Rscript --vanilla {params.script} \\
         --mashmap {input.mashmap} \\
         --bubblegun {input.bubblegun} \\
+        --gfa {input.gfa} \\
         --output {output}) > {log} 2>&1
         '''
 
