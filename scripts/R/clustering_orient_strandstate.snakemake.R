@@ -250,6 +250,7 @@ binned_counts_df <- import_mapper(mem_alignment_files, function(bam){
     with(aln, qname[duplicated(qname)])
   
   if(any(duplicated_qnames)) {
+    cat('Duplicated qnames found in:', basename(bam), '\n')
     aln <-
       aln %>%
       filter(!(qname %in% duplicated_qnames))
@@ -736,21 +737,56 @@ for(tu in target_unitigs) {
     })
 
   
+
+  
+  max_ix <- which.max(scores)
+  if(length(max_ix) == 0) {
+    # this means all scores were NA ~ not enough library overlap to calculate
+    # simlarity scores
+    cat(
+      'Unable to assign unitig:',
+      tu,
+      'to any cluster; not enough library overlap.',
+      '\n'
+    )
+    
+    next
+  }
+  
+  
   # TODO should a minimum threshold be established? To hedge against occasions
   # where, EG, an acrocentric chromosome recieves no initial assignments from
   # contiBAIT? to avoid inappropriately assigning out of chromosome unitigs to a
-  # chromosome?
+  # chromosome? Should a new cluster be created for that highly dissimilar
+  # unitig in that case?
   
-  #TODO NA handling of values? What if all NA
-
-  clst <- names(scores)[which.max(scores)]
+  
+  clst <- names(scores)[max_ix]
+  max_score <- scores[[max_ix]]
+  
+  sim_score_threshold <- 0.15
+  
+  if(max_score < sim_score_threshold) {
+    cat(
+      'Unable to assign unitig:',
+      tu,
+      'to any cluster; max similarity is:',
+      max_score,
+      'to cluster:',
+      clst,
+      '\n'
+    )
+    
+    next
+  }
+  
   cat(
     'assigning unitig:',
     tu,
     'to cluster: ',
     clst,
     'with cos similarity:',
-    scores[[which.max(scores)]],
+    max_score,
     '\n'
   )
   
