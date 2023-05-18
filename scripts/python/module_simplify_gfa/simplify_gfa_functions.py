@@ -352,7 +352,7 @@ def macro_simplify(
 def refresh_graph(graph, removed_segment_names):
     # removing or disconnecting a segment isn't clean: Sometimes (Generally) it
     # fails to properly remove the segment and its associated edges, leaving
-    # improper nodes that should have been deleted and duplicated eges. This is
+    # improper nodes that should have been deleted and duplicated edges. This is
     # not fixed by a simple IO step, unfortunately.
     graph2 = gfapy.Gfa(vlevel=3)
     for segment in graph.segments:
