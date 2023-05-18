@@ -232,6 +232,9 @@ binned_counts_df <- import_mapper(mem_alignment_files, function(bam){
   
   aln <- as_tibble(aln[[1]])
   
+  #TODO add check for nrow() > 0. nrow() = 0 can happen with meme alignments if
+  #one of the Strand-seq files is malformed.
+  
   # filter out alignments to short unitigs
   aln <- 
     aln %>%  
@@ -471,14 +474,45 @@ cat('Refining Clusters\n')
 
 
 ### PAR Detection -----------------------------------------------------------
-
 cat('Detecting PAR\n')
 
-haploid_components <-
+# TODO, add a percentage check to declare a PAR cluster. EG the sex cluster must
+# take up at least X% of the cluster on a component or something like that.
+
+haploid_component_fractions_df <-
   cluster_df %>%
   left_join(components_df, by='unitig') %>% 
+  left_join(unitig_lengths_df, b='unitig') %>% 
   group_by(component) %>% 
   filter(any(grepl('^sex', cluster))) %>% 
+  ungroup()
+
+haploid_component_fractions_df <-
+  haploid_component_fractions_df %>% 
+  group_by(component, cluster) %>% 
+  summarise(length = sum(length), .groups="drop") %>% 
+  group_by(component) %>% 
+  mutate(perc = length/sum(length)) %>% 
+  ungroup()
+
+# TODO
+# Only a haploid component if x% of the             unitigs on a component are haploid clustered?
+# Only a haploid component if x% of the *clustered* unitigs on a component are haploid clustered?
+
+perc_threshold <- 0.05
+
+# Haploid unititgs sometimes appear in the degenerate regions of other
+# chromosomes (i've noticed them in the big circular tangle on Chr1 a couple
+# times) so there needs to be a little logic before calling a cluster a PAR
+# cluster. Here a genuine haploid unitig is only called if it is the largest
+# cluster among clustered unitigs, and occupies more than `perc_threshold`
+# percent of a component
+haploid_components <-
+  haploid_component_fractions_df %>% 
+  filter(!is.na(cluster)) %>% 
+  group_by(component) %>% 
+  filter(perc == max(perc) & grepl('^sex', cluster) & perc >= perc_threshold) %>% 
+  ungroup() %>% 
   pull_distinct(component) 
 
 haploid_component_unititgs <-
