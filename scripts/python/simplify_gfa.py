@@ -45,7 +45,7 @@ if thresh is None and clust_file is None:
 # merge_linear_paths() works.
 
 graph = gfapy.Gfa.from_file(args.input[0], vlevel=2)
-# graph = gfapy.Gfa.from_file('/Users/henglinm/Documents/wd/gfa/gfa/NA19705_exploded.gfa', vlevel = 2)
+# graph = gfapy.Gfa.from_file('/Users/henglinm/Documents/wd/gfa/gfa/HG04036_exploded.gfa', vlevel = 2)
 
 def simplify_graph(graph, thresh=None, segments_to_keep_names=None):
     # remove self links is probably called more than necessary, but it fixed bugs.
@@ -72,7 +72,17 @@ def simplify_graph(graph, thresh=None, segments_to_keep_names=None):
 
 def simplify_and_crimp_graph(graph, thresh=None, segments_to_keep_names=None):
     simplified_graph = simplify_graph(graph, thresh, segments_to_keep_names)
+
+    print('Merging linear paths')
     simplified_graph = simplified_graph.merge_linear_paths()
+
+    # Cleanup doesn't always work (of course, with this library), so some manual cleanup
+    merged_unitigs = [s for s in simplified_graph.segment_names if '_' in s]
+    merged_unitigs = [s.split('_') for s in merged_unitigs]
+    # flatten list of lists
+    merged_unitigs = [item for sublist in merged_unitigs for item in sublist]
+    simplified_graph = refresh_graph(simplified_graph, merged_unitigs)
+
     simplified_graph = crimp(simplified_graph)
 
     return simplified_graph
