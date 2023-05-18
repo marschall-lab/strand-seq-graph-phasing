@@ -655,6 +655,12 @@ while(any_merged) {
       cluster_df <-
         cluster_df %>% 
         mutate(cluster = ifelse(cluster == clust_1, clust_2, cluster))
+      
+      # a cheap fix for a bug that can occur if a cluster exists on two
+      # components, and after merging due to one component, the second component
+      # no longer has multiple clusters
+      break
+      
     } else {
       cat(
         'Not merging',
