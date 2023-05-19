@@ -46,7 +46,7 @@ rule map_unitigs_to_ref:
 		mem_mb=lambda wildcards, attempt: 1024 * 96 * attempt,
 		walltime=lambda wildcards, attempt: f'{8 + attempt * attempt:02}:59:00'
 	log: "log/map_unitigs_to_ref_{sample}_{ref_name}.log"
-	threads: 46
+	threads: 12
 	shell:
 		"(time minimap2 -t {threads} --secondary=no --eqx -x asm20 {input.ref} {input.unitigs} > {output}) > {log} 2>&1"
 
