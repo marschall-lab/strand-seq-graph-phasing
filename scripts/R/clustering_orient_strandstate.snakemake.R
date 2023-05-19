@@ -472,7 +472,6 @@ cluster_df <-
 
 cat('Refining Clusters\n')
 
-
 ### PAR Detection -----------------------------------------------------------
 cat('Detecting PAR\n')
 
@@ -719,6 +718,12 @@ cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
 
 ## Unassigned Untigs -------------------------------------------------------
 
+# On component cluster -~ threshold is lower
+# Off component cluster ~ higher threshold
+
+#### Unassigned on Component -------------------------------------------------
+
+
 cat('Assigning unitigs on components with clusters\n')
 
 unclustered_unitigs <-
@@ -768,7 +773,7 @@ for(tu in target_unitigs) {
     cluster_df %>%
     left_join(components_df, by='unitig') %>%
     filter(component == target_component) %>%
-    filter(!is.na(cluster)) %>% 
+    filter(!is.na(cluster)) %>%
     with(split(unitig, cluster))
   
   scores <-
@@ -835,6 +840,88 @@ for(tu in target_unitigs) {
     mutate(cluster = ifelse(unitig == tu, clst, cluster))
 
   
+}
+
+
+#### Floating Unassigned -----------------------------------------------------
+
+cat('Assigning unitigs on components without clusters \n')
+
+
+
+#TODO make this parameter more visible. Explain why only 5
+min_n <- 5
+
+#TODO NA handling of values? What if all NA
+similarities <- 
+  counts_df %>% 
+  with(make_wc_matrix(w, c, lib, unitig, min_n=min_n)) %>% 
+  cosine_similarity()
+
+# TODO
+any_assigned <- TRUE
+while(any_assigned) {
+  any_assigned <- FALSE
+  
+  unclustered_unitigs <-
+    cluster_df %>% 
+    filter(is.na(cluster)) %>% 
+    pull(unitig)
+  
+  if(length(unclustered_unitigs) == 0) {
+    break
+  }
+  
+  candidate_cluster_unitigs <-
+    cluster_df %>%
+    left_join(components_df, by='unitig') %>%
+    filter(!is.na(cluster)) %>%
+    with(split(unitig, cluster))
+  
+  scores <-
+    map(candidate_cluster_unitigs, function(x) {
+      apply(abs(similarities[unclustered_unitigs, x, drop=FALSE]), 1, mean, na.rm=TRUE)
+    })
+  
+  # convert to df
+  scores_df <-
+    scores %>% 
+    map(tibble::enframe, name='unitig', value='score') %>% 
+    bind_rows(.id='cluster')
+  
+  
+  # TODO what if all NA
+  max_score <-
+    scores_df %>% 
+    filter(score == max(score, na.rm = TRUE)) %>% 
+    slice_head(n=1) # break ties
+    
+  score_thresh <- 0.5
+  if(max_score$score > score_thresh) {
+    any_assigned <- TRUE
+    
+    cat(
+      'Assigning unitig:',
+      max_score$unitig,
+      'to cluster:',
+      max_score$cluster,
+      'similarity score:',
+      max_score$score,
+      '\n'
+    )
+    
+    cluster_df <-
+      cluster_df %>%
+      mutate(cluster = ifelse(unitig == max_score$unitig, max_score$cluster, cluster))
+  } else {
+    cat(
+      'No unitig similarity grater than threshold:',
+      score_thresh,
+      '\n'
+    )
+  }
+  
+
 }
 
 ## Link Homology -----------------------------------------------------------
