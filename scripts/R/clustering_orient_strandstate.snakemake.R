@@ -185,7 +185,7 @@ long_unitigs_df <-
 cat('Assembly Statistics\n')
 print(summary(unitig_lengths_df))
 
-cat('No. Unitigs >= ', segment_length_threshold, ': ', nrow(long_unitigs_df))
+cat('No. Unitigs >= ', segment_length_threshold, ': ', nrow(long_unitigs_df), '\n')
 
 ## Connected Components in Exploded Graph ----------------------------------
 
@@ -674,7 +674,7 @@ while(any_merged) {
     # while those from the same have similarity >0.5 there was one case where an
     # X and  chromosome had similarity ~ 0.447. However, will stay at 0.5 as
     # buffer for precision?
-    similarity_threshold <- 0.44 
+    similarity_threshold <- 0.40 
     if(max_sim > similarity_threshold) {
       any_merged <- TRUE
       
