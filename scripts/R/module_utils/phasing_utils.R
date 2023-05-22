@@ -294,19 +294,28 @@ link_homology <- function(cluster_df, homology_df, components_df) {
         mutate(cluster = ifelse(unitig == na_unitig, target_cluster, cluster))
     } else {
       
-      cat(
-        'joining clusters: ',
-        bubble_clusters[1],
-        ' and ',
-        bubble_clusters[2],
-        ' via unitigs: ',
-        bubble_clusters_df$unitig,
-        '\n'
-      )
+      next 
       
-      cluster_df <-
-        cluster_df %>% 
-        mutate(cluster = ifelse(cluster == bubble_clusters[1], bubble_clusters[2], cluster))
+      # This rule is currently really brittle, and not-uncommonly to sometimes
+      # entirely separate clusters to be merged, because two small telomeric
+      # unitigs that appear homologous are clustered separately. Currently
+      # refraining from merging clusters, relying on cosine similarity instead.
+      
+      # cat(
+      #   'joining clusters: ',
+      #   bubble_clusters[1],
+      #   ' and ',
+      #   bubble_clusters[2],
+      #   ' via unitigs: ',
+      #   bubble_clusters_df$unitig,
+      #   '\n'
+      # )
+      # 
+      # cluster_df <-
+      #   cluster_df %>% 
+      #   mutate(cluster = ifelse(cluster == bubble_clusters[1], bubble_clusters[2], cluster))
+      
+      
     }
     
   }

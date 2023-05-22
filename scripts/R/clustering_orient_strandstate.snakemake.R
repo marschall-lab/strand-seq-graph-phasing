@@ -926,6 +926,47 @@ while(any_assigned) {
 
 ## Link Homology -----------------------------------------------------------
 
+
+
+#### Remove multi cluster bubbles --------------------------------------------
+
+multi_cluster_bubbles <-
+  homology_df %>%
+  left_join(cluster_df, by='unitig') %>% 
+  group_by(bubble) %>% 
+  filter(all_are_unique(cluster)) %>% 
+  ungroup() %>% 
+  pull_distinct(bubble)
+
+for(bub in multi_cluster_bubbles) {
+  bubble_clusters_df <-
+    homology_df %>% 
+    left_join(cluster_df, by = 'unitig') %>% 
+    filter(bubble %in% bub) 
+  
+  bubble_clusters <-
+    bubble_clusters_df %>% 
+    pull(cluster) 
+  
+  warning(
+    'clusters: ',
+    bubble_clusters[1],
+    ' and ',
+    bubble_clusters[2],
+    ' share homology via unitigs: ',
+    bubble_clusters_df$unitig,
+    '\n'
+  )
+    
+}
+
+homology_df <-
+  homology_df %>% 
+  filter(!(bubble %in% multi_cluster_bubbles))
+
+#### Link --------------------------------------------------------------------
+
+
 cat('Linking clusters sharing homology\n')
 
 # TODO make this step a filter rule I guess? so a generic link homology with
