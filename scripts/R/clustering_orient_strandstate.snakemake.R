@@ -709,12 +709,12 @@ while(any_merged) {
     }
   }
 }
-
-## Propagate One-Cluster-Component Clusters --------------------------------
-
-cat('Propagating one-cluster-component-clusters\n')
-
-cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
+# 
+# ## Propagate One-Cluster-Component Clusters --------------------------------
+# 
+# cat('Propagating one-cluster-component-clusters\n')
+# 
+# cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
 
 ## Unassigned Untigs -------------------------------------------------------
 
@@ -722,126 +722,126 @@ cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
 # Off component cluster ~ higher threshold
 
 #### Unassigned on Component -------------------------------------------------
-
-
-cat('Assigning unitigs on components with clusters\n')
-
-unclustered_unitigs <-
-  cluster_df %>% 
-  filter(is.na(cluster)) %>% 
-  pull(unitig)
-
-unitigs_on_components_with_clusters <-
-  cluster_df %>% 
-  left_join(components_df, by='unitig') %>% 
-  group_by(component) %>% 
-  filter(!all(is.na(cluster))) %>% 
-  ungroup() %>% # always ungroup
-  pull_distinct(unitig)
-
-# TODO sort by size? Which may be important if doing iteratively? So that the
-# most confidently assignable unitigs are first?
-target_unitigs <- 
-  intersect(unclustered_unitigs, unitigs_on_components_with_clusters)
-
-#TODO assign all at once? or iteratively update clusters each time?
-for(tu in target_unitigs) {
-  
-  target_component <-
-    components_df %>% 
-    filter(unitig == tu) %>% 
-    pull(component)
-  
-  target_component_unitigs <-
-    components_df %>% 
-    filter(component == target_component) %>% 
-    pull(unitig)
-  
-  #TODO make this parameter more visible. Explain why only 5
-  min_n <- 5
-  
-  #TODO NA handling of values? What if all NA
-  similarities <- 
-    counts_df %>% 
-    # binned_counts_df %>% 
-    # marginalize_wc_counts() %>%
-    filter(unitig %in% target_component_unitigs) %>% 
-    with(make_wc_matrix(w, c, lib, unitig, min_n=min_n)) %>% 
-    cosine_similarity()
-  
-  candidate_cluster_unitigs <-
-    cluster_df %>%
-    left_join(components_df, by='unitig') %>%
-    filter(component == target_component) %>%
-    filter(!is.na(cluster)) %>%
-    with(split(unitig, cluster))
-  
-  scores <-
-    map(candidate_cluster_unitigs, function(x) {
-      mean(abs(similarities[tu, x]), na.rm=TRUE)
-    })
-
-  
-
-  
-  max_ix <- which.max(scores)
-  if(length(max_ix) == 0) {
-    # this means all scores were NA ~ not enough library overlap to calculate
-    # simlarity scores
-    cat(
-      'Unable to assign unitig:',
-      tu,
-      'to any cluster; not enough library overlap.',
-      '\n'
-    )
-    
-    next
-  }
-  
-  
-  # TODO should a minimum threshold be established? To hedge against occasions
-  # where, EG, an acrocentric chromosome recieves no initial assignments from
-  # contiBAIT? to avoid inappropriately assigning out of chromosome unitigs to a
-  # chromosome? Should a new cluster be created for that highly dissimilar
-  # unitig in that case?
-  
-  
-  clst <- names(scores)[max_ix]
-  max_score <- scores[[max_ix]]
-  
-  sim_score_threshold <- 0.15
-  
-  if(max_score < sim_score_threshold) {
-    cat(
-      'Unable to assign unitig:',
-      tu,
-      'to any cluster; max similarity is:',
-      max_score,
-      'to cluster:',
-      clst,
-      '\n'
-    )
-    
-    next
-  }
-  
-  cat(
-    'assigning unitig:',
-    tu,
-    'to cluster: ',
-    clst,
-    'with cos similarity:',
-    max_score,
-    '\n'
-  )
-  
-  cluster_df <-
-    cluster_df %>% 
-    mutate(cluster = ifelse(unitig == tu, clst, cluster))
-
-  
-}
-
+# 
+# 
+# cat('Assigning unitigs on components with clusters\n')
+# 
+# unclustered_unitigs <-
+#   cluster_df %>% 
+#   filter(is.na(cluster)) %>% 
+#   pull(unitig)
+# 
+# unitigs_on_components_with_clusters <-
+#   cluster_df %>% 
+#   left_join(components_df, by='unitig') %>% 
+#   group_by(component) %>% 
+#   filter(!all(is.na(cluster))) %>% 
+#   ungroup() %>% # always ungroup
+#   pull_distinct(unitig)
+# 
+# # TODO sort by size? Which may be important if doing iteratively? So that the
+# # most confidently assignable unitigs are first?
+# target_unitigs <- 
+#   intersect(unclustered_unitigs, unitigs_on_components_with_clusters)
+# 
+# #TODO assign all at once? or iteratively update clusters each time?
+# for(tu in target_unitigs) {
+#   
+#   target_component <-
+#     components_df %>% 
+#     filter(unitig == tu) %>% 
+#     pull(component)
+#   
+#   target_component_unitigs <-
+#     components_df %>% 
+#     filter(component == target_component) %>% 
+#     pull(unitig)
+#   
+#   #TODO make this parameter more visible. Explain why only 5
+#   min_n <- 5
+#   
+#   #TODO NA handling of values? What if all NA
+#   similarities <- 
+#     counts_df %>% 
+#     # binned_counts_df %>% 
+#     # marginalize_wc_counts() %>%
+#     filter(unitig %in% target_component_unitigs) %>% 
+#     with(make_wc_matrix(w, c, lib, unitig, min_n=min_n)) %>% 
+#     cosine_similarity()
+#   
+#   candidate_cluster_unitigs <-
+#     cluster_df %>%
+#     left_join(components_df, by='unitig') %>%
+#     filter(component == target_component) %>%
+#     filter(!is.na(cluster)) %>%
+#     with(split(unitig, cluster))
+#   
+#   scores <-
+#     map(candidate_cluster_unitigs, function(x) {
+#       mean(abs(similarities[tu, x]), na.rm=TRUE)
+#     })
+# 
+#   
+# 
+#   
+#   max_ix <- which.max(scores)
+#   if(length(max_ix) == 0) {
+#     # this means all scores were NA ~ not enough library overlap to calculate
+#     # simlarity scores
+#     cat(
+#       'Unable to assign unitig:',
+#       tu,
+#       'to any cluster; not enough library overlap.',
+#       '\n'
+#     )
+#     
+#     next
+#   }
+#   
+#   
+#   # TODO should a minimum threshold be established? To hedge against occasions
+#   # where, EG, an acrocentric chromosome recieves no initial assignments from
+#   # contiBAIT? to avoid inappropriately assigning out of chromosome unitigs to a
+#   # chromosome? Should a new cluster be created for that highly dissimilar
+#   # unitig in that case?
+#   
+#   
+#   clst <- names(scores)[max_ix]
+#   max_score <- scores[[max_ix]]
+#   
+#   sim_score_threshold <- 0.25
+#   
+#   if(max_score < sim_score_threshold) {
+#     cat(
+#       'Unable to assign unitig:',
+#       tu,
+#       'to any cluster; max similarity is:',
+#       max_score,
+#       'to cluster:',
+#       clst,
+#       '\n'
+#     )
+#     
+#     next
+#   }
+#   
+#   cat(
+#     'assigning unitig:',
+#     tu,
+#     'to cluster: ',
+#     clst,
+#     'with cos similarity:',
+#     max_score,
+#     '\n'
+#   )
+#   
+#   cluster_df <-
+#     cluster_df %>% 
+#     mutate(cluster = ifelse(unitig == tu, clst, cluster))
+# 
+#   
+# }
+# 
 
 #### Floating Unassigned -----------------------------------------------------
 
@@ -859,6 +859,7 @@ similarities <-
   cosine_similarity()
 
 # TODO
+new_cluster_ix <- 0
 any_assigned <- TRUE
 while(any_assigned) {
   any_assigned <- FALSE
@@ -890,13 +891,18 @@ while(any_assigned) {
     bind_rows(.id='cluster')
   
   
+  if(all(is.na(scores_df$score))) {
+    cat('No valid similarity scores')
+    break
+  }
+  
   # TODO what if all NA
   max_score <-
     scores_df %>% 
     filter(score == max(score, na.rm = TRUE)) %>% 
     slice_head(n=1) # break ties
     
-  score_thresh <- 0.5
+  score_thresh <- 0.4
   if(max_score$score > score_thresh) {
     any_assigned <- TRUE
     
@@ -919,6 +925,28 @@ while(any_assigned) {
       score_thresh,
       '\n'
     )
+    
+    length_threshold <- 1e6
+    long_unclustered_unitigs_df <- 
+      unitig_lengths_df %>% 
+      filter(unitig %in% unclustered_unitigs) %>% 
+      filter(length >= length_threshold)
+
+    
+    if(nrow(long_unclustered_unitigs_df) > 0) {
+      any_assigned <- TRUE
+      new_cluster_ix <- new_cluster_ix + 1
+      
+      new_cluster_unitig <- slice_max(long_unclustered_unitigs_df, length, n=1)
+      cat('creating new cluster with unitig:', new_cluster_unitig$unitig,
+          'with length:', new_cluster_unitig$length, 
+          'longer than threshold:', length_threshold,
+          '\n')
+      
+      cluster_df <-
+        cluster_df %>%
+        mutate(cluster = ifelse(unitig == new_cluster_unitig$unitig, paste0('LGcos', new_cluster_ix), cluster))
+    }
   }
   
 
