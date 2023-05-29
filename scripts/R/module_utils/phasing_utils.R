@@ -185,6 +185,120 @@ marginalize_wc_counts <-
 # Clustering --------------------------------------------------------------
 
 
+merge_similar_clusters_on_components <- function(cluster_df, components_df, similarity_threshold =0.40 ) {
+  # TODO
+  any_merged <- TRUE
+  while(any_merged) {
+    any_merged <- FALSE
+    
+    components_with_multiple_clusters <-
+      components_df %>% 
+      left_join(cluster_df, by='unitig') %>%
+      filter(!is.na(cluster)) %>% 
+      group_by(component) %>% 
+      filter(length(unique(cluster)) > 1) %>% 
+      pull_distinct(component)
+    
+    
+    for(cmp in components_with_multiple_clusters) {
+      cmp_clusters <-
+        components_df %>% 
+        left_join(cluster_df, by='unitig') %>% 
+        filter(component == cmp) %>% 
+        filter(!is.na(cluster)) %>% 
+        pull_distinct(cluster)
+      
+      cluster_unitigs <-
+        cmp_clusters %>%
+        set_names() %>%
+        map(function(x) {
+          cluster_df %>%
+            filter(cluster == x) %>%
+            pull(unitig)
+        })
+      
+      # TODO weighted by vector length?
+      component_similarities <-
+        wfrac.matrix[flatten_chr(cluster_unitigs), ] %>% 
+        cosine_similarity() %>% 
+        abs()
+      
+      
+      # Average within and between clusters
+      n_clusters <- length(cmp_clusters)
+      
+      clust_sim <- matrix(nrow=n_clusters, ncol=n_clusters)
+      dimnames(clust_sim) <- list(cmp_clusters, cmp_clusters)
+      
+      for(i in cmp_clusters) {
+        for(j in cmp_clusters) {
+          i_unitigs <- cluster_unitigs[[i]]
+          j_unitigs <- cluster_unitigs[[j]]
+          #TODO NA handling of values? What if all NA?
+          val <- mean(component_similarities[i_unitigs, j_unitigs], na.rm = TRUE)
+          clust_sim[i,j] <- clust_sim[j,i] <- val
+        }
+      }
+      
+      if(all(is.na(clust_sim[upper.tri(clust_sim)]))) {
+        cat('No valid similarity scores\n')
+        break
+      }
+      #TODO NA handling of values? What if all NA
+      max_sim <- max(clust_sim[upper.tri(clust_sim)], na.rm=TRUE)
+      
+      max_ix <-
+        which(clust_sim == max_sim, arr.ind = TRUE)
+      
+      clust_1 <- cmp_clusters[max_ix[1,1]]
+      clust_2 <- cmp_clusters[max_ix[1,2]]
+      
+      # similarity_threshold chosen by reviewing ~ 30 HGSVC assemblies. A value of
+      # 0.4 appears to also work, as there seems to be a sharp gulf where unitigs
+      # from different clusters tend to have similarity no more than ~ 0.21,
+      # while those from the same have similarity >0.5 there was one case where an
+      # X and  chromosome had similarity ~ 0.447. However, will stay at 0.5 as
+      # buffer for precision?
+      if(max_sim > similarity_threshold) {
+        any_merged <- TRUE
+        
+        cat('Merging ',
+            clust_1,
+            ', ',
+            clust_2,
+            ', cosine similarity: ',
+            max_sim,
+            '\n')
+        
+        cluster_df <-
+          cluster_df %>% 
+          mutate(cluster = ifelse(cluster == clust_1, clust_2, cluster))
+        
+        # a cheap fix for a bug that can occur if a cluster exists on two
+        # components, and after merging due to one component, the second component
+        # no longer has multiple clusters
+        break
+        
+      } else {
+        cat(
+          'Not merging',
+          cmp_clusters,
+          ' greatest similarity between',
+          clust_1,
+          ', ',
+          clust_2,
+          ', cosine similarity: ',
+          max_sim,
+          '\n'
+        )
+      }
+    }
+  }
+  
+  return(cluster_df)
+}
+
+
 propagate_one_cluster_components <- function(cluster_df, components_df) {
   
   # TODO add a check on the proportion of a component that is clustered? EG. A

@@ -1663,20 +1663,20 @@ export_clusters_test <- function() {
     mutate(Color = rainbow(n())) %>% 
     mutate(Color = ifelse(is.na(cluster), 'black', Color))
   
-  # ref <-  
-  #   pafr::read_paf(
-  #     'reference_alignments/T2Tv11_hg002Yv2_chm13/HG02818_T2Tv11_hg002Yv2_chm13_ref-aln.paf',
-  #     tibble = TRUE,
-  #     include_tags = FALSE) %>%
-  #   group_by(qname) %>%
-  #   slice_head(n = 1) %>%
-  #   ungroup() %>%
-  #   dplyr::rename(unitig = qname)
-  # 
+  ref <-
+    pafr::read_paf(
+      'reference_alignments/T2Tv11_hg002Yv2_chm13/NA20355_T2Tv11_hg002Yv2_chm13_ref-aln.paf',
+      tibble = TRUE,
+      include_tags = FALSE) %>%
+    group_by(qname) %>%
+    slice_head(n = 1) %>%
+    ungroup() %>%
+    dplyr::rename(unitig = qname)
+
   cluster_df %>%
     left_join(cluster_palette, by = 'cluster') %>%
     left_join(homology_df) %>%
-    # left_join(ref, by='unitig') %>%
+    left_join(ref, by='unitig') %>%
     select(unitig, everything()) %>%
     readr::write_csv('test_colors.csv')
   

@@ -322,7 +322,7 @@ rule mashmap_assembly_to_self:
     params:
         percent_identity=95,
         min_alignment_size=10000,
-        kmer_size=23 # 16 ~ mashmap2 default, 19 ~ mashmap3 default
+        kmer_size=16 # 16 ~ mashmap2 default, 19 ~ mashmap3 default
     conda:'envs/env_mashmap.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 24 * attempt,

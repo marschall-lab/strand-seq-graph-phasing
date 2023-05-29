@@ -604,253 +604,16 @@ cluster_df <-
 
 cat('Cosine cluster merging\n')
 
-# TODO
-any_merged <- TRUE
-while(any_merged) {
-  any_merged <- FALSE
-  
-  components_with_multiple_clusters <-
-    components_df %>% 
-    left_join(cluster_df, by='unitig') %>%
-    filter(!is.na(cluster)) %>% 
-    group_by(component) %>% 
-    filter(length(unique(cluster)) > 1) %>% 
-    pull_distinct(component)
+cluster_df <- merge_similar_clusters_on_components(cluster_df, components_df)
 
-  
-  for(cmp in components_with_multiple_clusters) {
-    cmp_clusters <-
-      components_df %>% 
-      left_join(cluster_df, by='unitig') %>% 
-      filter(component == cmp) %>% 
-      filter(!is.na(cluster)) %>% 
-      pull_distinct(cluster)
-    
-    cluster_unitigs <-
-      cmp_clusters %>%
-      set_names() %>%
-      map(function(x) {
-        cluster_df %>%
-          filter(cluster == x) %>%
-          pull(unitig)
-      })
-    
-    # TODO weighted by vector length?
-    component_similarities <-
-      wfrac.matrix[flatten_chr(cluster_unitigs), ] %>% 
-      cosine_similarity() %>% 
-      abs()
-    
-    
-    # Average within and between clusters
-    n_clusters <- length(cmp_clusters)
-    
-    clust_sim <- matrix(nrow=n_clusters, ncol=n_clusters)
-    dimnames(clust_sim) <- list(cmp_clusters, cmp_clusters)
-    
-    for(i in cmp_clusters) {
-      for(j in cmp_clusters) {
-        i_unitigs <- cluster_unitigs[[i]]
-        j_unitigs <- cluster_unitigs[[j]]
-        #TODO NA handling of values? What if all NA?
-        val <- mean(component_similarities[i_unitigs, j_unitigs], na.rm = TRUE)
-        clust_sim[i,j] <- clust_sim[j,i] <- val
-      }
-    }
-    
-    #TODO NA handling of values? What if all NA
-    max_sim <- max(clust_sim[upper.tri(clust_sim)], na.rm=TRUE)
-    
-    max_ix <-
-      which(clust_sim == max_sim, arr.ind = TRUE)
-    
-    clust_1 <- cmp_clusters[max_ix[1,1]]
-    clust_2 <- cmp_clusters[max_ix[1,2]]
-    
-    # similarity_threshold chosen by reviewing ~ 30 HGSVC assemblies. A value of
-    # 0.4 appears to also work, as there seems to be a sharp gulf where unitigs
-    # from different clusters tend to have similarity no more than ~ 0.21,
-    # while those from the same have similarity >0.5 there was one case where an
-    # X and  chromosome had similarity ~ 0.447. However, will stay at 0.5 as
-    # buffer for precision?
-    similarity_threshold <- 0.40 
-    if(max_sim > similarity_threshold) {
-      any_merged <- TRUE
-      
-      cat('Merging ',
-          clust_1,
-          ', ',
-          clust_2,
-          ', cosine similarity: ',
-          max_sim,
-          '\n')
-      
-      cluster_df <-
-        cluster_df %>% 
-        mutate(cluster = ifelse(cluster == clust_1, clust_2, cluster))
-      
-      # a cheap fix for a bug that can occur if a cluster exists on two
-      # components, and after merging due to one component, the second component
-      # no longer has multiple clusters
-      break
-      
-    } else {
-      cat(
-        'Not merging',
-        cmp_clusters,
-        ' greatest similarity between',
-        clust_1,
-        ', ',
-        clust_2,
-        ', cosine similarity: ',
-        max_sim,
-        '\n'
-      )
-    }
-  }
-}
-# 
-# ## Propagate One-Cluster-Component Clusters --------------------------------
-# 
-# cat('Propagating one-cluster-component-clusters\n')
-# 
-# cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
+### Cosine Unassigned -----------------------------------------------------
 
-## Unassigned Untigs -------------------------------------------------------
-
-# On component cluster -~ threshold is lower
-# Off component cluster ~ higher threshold
-
-#### Unassigned on Component -------------------------------------------------
-# 
-# 
-# cat('Assigning unitigs on components with clusters\n')
-# 
-# unclustered_unitigs <-
-#   cluster_df %>% 
-#   filter(is.na(cluster)) %>% 
-#   pull(unitig)
-# 
-# unitigs_on_components_with_clusters <-
-#   cluster_df %>% 
-#   left_join(components_df, by='unitig') %>% 
-#   group_by(component) %>% 
-#   filter(!all(is.na(cluster))) %>% 
-#   ungroup() %>% # always ungroup
-#   pull_distinct(unitig)
-# 
-# # TODO sort by size? Which may be important if doing iteratively? So that the
-# # most confidently assignable unitigs are first?
-# target_unitigs <- 
-#   intersect(unclustered_unitigs, unitigs_on_components_with_clusters)
-# 
-# #TODO assign all at once? or iteratively update clusters each time?
-# for(tu in target_unitigs) {
-#   
-#   target_component <-
-#     components_df %>% 
-#     filter(unitig == tu) %>% 
-#     pull(component)
-#   
-#   target_component_unitigs <-
-#     components_df %>% 
-#     filter(component == target_component) %>% 
-#     pull(unitig)
-#   
-#   #TODO make this parameter more visible. Explain why only 5
-#   min_n <- 5
-#   
-#   #TODO NA handling of values? What if all NA
-#   similarities <- 
-#     counts_df %>% 
-#     # binned_counts_df %>% 
-#     # marginalize_wc_counts() %>%
-#     filter(unitig %in% target_component_unitigs) %>% 
-#     with(make_wc_matrix(w, c, lib, unitig, min_n=min_n)) %>% 
-#     cosine_similarity()
-#   
-#   candidate_cluster_unitigs <-
-#     cluster_df %>%
-#     left_join(components_df, by='unitig') %>%
-#     filter(component == target_component) %>%
-#     filter(!is.na(cluster)) %>%
-#     with(split(unitig, cluster))
-#   
-#   scores <-
-#     map(candidate_cluster_unitigs, function(x) {
-#       mean(abs(similarities[tu, x]), na.rm=TRUE)
-#     })
-# 
-#   
-# 
-#   
-#   max_ix <- which.max(scores)
-#   if(length(max_ix) == 0) {
-#     # this means all scores were NA ~ not enough library overlap to calculate
-#     # simlarity scores
-#     cat(
-#       'Unable to assign unitig:',
-#       tu,
-#       'to any cluster; not enough library overlap.',
-#       '\n'
-#     )
-#     
-#     next
-#   }
-#   
-#   
-#   # TODO should a minimum threshold be established? To hedge against occasions
-#   # where, EG, an acrocentric chromosome recieves no initial assignments from
-#   # contiBAIT? to avoid inappropriately assigning out of chromosome unitigs to a
-#   # chromosome? Should a new cluster be created for that highly dissimilar
-#   # unitig in that case?
-#   
-#   
-#   clst <- names(scores)[max_ix]
-#   max_score <- scores[[max_ix]]
-#   
-#   sim_score_threshold <- 0.25
-#   
-#   if(max_score < sim_score_threshold) {
-#     cat(
-#       'Unable to assign unitig:',
-#       tu,
-#       'to any cluster; max similarity is:',
-#       max_score,
-#       'to cluster:',
-#       clst,
-#       '\n'
-#     )
-#     
-#     next
-#   }
-#   
-#   cat(
-#     'assigning unitig:',
-#     tu,
-#     'to cluster: ',
-#     clst,
-#     'with cos similarity:',
-#     max_score,
-#     '\n'
-#   )
-#   
-#   cluster_df <-
-#     cluster_df %>% 
-#     mutate(cluster = ifelse(unitig == tu, clst, cluster))
-# 
-#   
-# }
-# 
-
-#### Floating Unassigned -----------------------------------------------------
-
-cat('Assigning unitigs on components without clusters \n')
+cat('Assigning "high-noise" unitigs using coione similarity \n')
 
 
 
 #TODO make this parameter more visible. Explain why only 5
-min_n <- 5
+min_n <- 7
 
 #TODO NA handling of values? What if all NA
 similarities <- 
@@ -892,7 +655,7 @@ while(any_assigned) {
   
   
   if(all(is.na(scores_df$score))) {
-    cat('No valid similarity scores')
+    cat('No valid similarity scores\n')
     break
   }
   
@@ -902,7 +665,7 @@ while(any_assigned) {
     filter(score == max(score, na.rm = TRUE)) %>% 
     slice_head(n=1) # break ties
     
-  score_thresh <- 0.4
+  score_thresh <- 0.6
   if(max_score$score > score_thresh) {
     any_assigned <- TRUE
     
@@ -921,12 +684,12 @@ while(any_assigned) {
       mutate(cluster = ifelse(unitig == max_score$unitig, max_score$cluster, cluster))
   } else {
     cat(
-      'No unitig similarity grater than threshold:',
+      'No unitig similarity greater than threshold:',
       score_thresh,
       '\n'
     )
     
-    length_threshold <- 1e6
+    length_threshold <- 250000
     long_unclustered_unitigs_df <- 
       unitig_lengths_df %>% 
       filter(unitig %in% unclustered_unitigs) %>% 
@@ -951,6 +714,12 @@ while(any_assigned) {
   
 
 }
+
+## Cosine Cluster Merging ----------------------------------------------------
+
+cat('Cosine cluster merging\n')
+
+cluster_df <- merge_similar_clusters_on_components(cluster_df, components_df)
 
 ## Link Homology -----------------------------------------------------------
 
@@ -995,7 +764,7 @@ homology_df <-
 #### Link --------------------------------------------------------------------
 
 
-cat('Linking clusters sharing homology\n')
+cat('Linking nodes sharing homology\n')
 
 # TODO make this step a filter rule I guess? so a generic link homology with
 # filtered homology df?
@@ -1414,3 +1183,4 @@ readr::write_csv(marker_counts, output)
 for(w in WARNINGS) {
   warning(w)
 }
+
