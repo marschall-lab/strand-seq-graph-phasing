@@ -494,6 +494,8 @@ haploid_component_fractions_df <-
   mutate(perc = length/sum(length)) %>% 
   ungroup()
 
+# TODO handle warning when nrow(haploid_component_fractions_df) == 0
+
 # TODO
 # Only a haploid component if x% of the             unitigs on a component are haploid clustered?
 # Only a haploid component if x% of the *clustered* unitigs on a component are haploid clustered?
@@ -608,12 +610,12 @@ cluster_df <- merge_similar_clusters_on_components(cluster_df, components_df)
 
 ### Cosine Unassigned -----------------------------------------------------
 
-cat('Assigning "high-noise" unitigs using coione similarity \n')
+cat('Assigning "high-noise" unitigs using cosine similarity \n')
 
 
 
 #TODO make this parameter more visible. Explain why only 5
-min_n <- 7
+min_n <- 5
 
 #TODO NA handling of values? What if all NA
 similarities <- 
@@ -639,11 +641,13 @@ while(any_assigned) {
   candidate_cluster_unitigs <-
     cluster_df %>%
     left_join(components_df, by='unitig') %>%
-    filter(!is.na(cluster)) %>%
+    # mutate(cluster = coalesce(cluster, paste0('LGcos', seq_len(n())))) %>% 
+    # filter(!is.na(cluster)) %>%
     with(split(unitig, cluster))
   
   scores <-
     map(candidate_cluster_unitigs, function(x) {
+      unclustered_unitigs <- unclustered_unitigs[!(unclustered_unitigs %in% x)]
       apply(abs(similarities[unclustered_unitigs, x, drop=FALSE]), 1, mean, na.rm=TRUE)
     })
   
@@ -651,6 +655,7 @@ while(any_assigned) {
   scores_df <-
     scores %>% 
     map(tibble::enframe, name='unitig', value='score') %>% 
+    map(~mutate(.x, unitig = as.character(unitig))) %>% 
     bind_rows(.id='cluster')
   
   
@@ -708,7 +713,7 @@ while(any_assigned) {
       
       cluster_df <-
         cluster_df %>%
-        mutate(cluster = ifelse(unitig == new_cluster_unitig$unitig, paste0('LGcos', new_cluster_ix), cluster))
+        mutate(cluster = ifelse(unitig == new_cluster_unitig$unitig, paste0('LGcosLong', new_cluster_ix), cluster))
     }
   }
   
@@ -716,10 +721,10 @@ while(any_assigned) {
 }
 
 ## Cosine Cluster Merging ----------------------------------------------------
-
-cat('Cosine cluster merging\n')
-
-cluster_df <- merge_similar_clusters_on_components(cluster_df, components_df)
+# 
+# cat('Cosine cluster merging\n')
+# 
+# cluster_df <- merge_similar_clusters_on_components(cluster_df, components_df)
 
 ## Link Homology -----------------------------------------------------------
 
