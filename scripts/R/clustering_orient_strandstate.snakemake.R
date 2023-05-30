@@ -982,7 +982,155 @@ exact_match_counts_df <-
   select(-unitig_dir)
 
 
-## Filter to WC libraries for each cluster ---------------------------------
+## Homology Cluster Check --------------------------------------------------
+
+bubble_counts_df <-
+  full_join(cluster_df, homology_df, by = 'unitig') %>% 
+  distinct(cluster, bubble) %>% 
+  group_by(cluster) %>% 
+  summarise(n_bubbles=sum(!is.na(bubble)))
+
+
+no_bubble_clusters <-
+  bubble_counts_df %>% 
+  filter(n_bubbles == 0) %>% 
+  pull(cluster)
+
+## Phase Clusters Without Homology -----------------------------------------
+
+
+### Cosine Similarities  ------------------------------------------------
+
+
+# Filter out clusters with only 1 unitig.
+one_unitig_clusters <-
+  cluster_df %>% 
+  filter(cluster %in% no_bubble_clusters) %>% 
+  count(cluster) %>% 
+  filter(n == 1) %>% 
+  pull(cluster)
+
+# TODO what if all clusters have no bubbles?
+no_bubble_unitigs <-
+  cluster_df %>% 
+  filter(cluster %in% no_bubble_clusters) %>% 
+  filter(!cluster %in% one_unitig_clusters) %>% 
+  with(split(unitig, cluster))
+
+min_n_wc <- 1
+min_n_sim <- 2
+
+wc_mats <-
+  exact_match_counts_df %>% 
+  left_join(cluster_df, by='unitig') %>% 
+  semi_join(wc_libraries_df, by=c('lib', 'cluster')) %>%
+  filter(cluster %in% no_bubble_clusters) %>% 
+  filter(!cluster %in% one_unitig_clusters) %>% 
+  split(., .$cluster) %>% 
+  map(function(x) with(x, make_wc_matrix(c, w, lib, unitig, min_n=min_n_wc)))
+
+similarities <-
+  map(wc_mats, cosine_similarity, min_overlaps=min_n_sim)
+
+### Sort Unitigs ------------------------------------------------------------
+
+no_bubble_unitig_sorts <- 
+  map(similarities, function(x) {
+    ut <- x[upper.tri(x)]
+    if(all(is.na(ut))) {
+      return(tibble(unitig = rownames(x), sort = NA))
+    }
+    
+    if (!(1 %in% sign(ut) & -1 %in% sign(ut))) {
+      return(tibble(unitig = rownames(x), sort = 1))
+    } 
+    
+    x[is.na(x)] <- 0
+    
+    # TODO something about filtering out homozygous here?
+    clusters <-
+      as.dist(1-x) %>% 
+      hclust() %>% 
+      cutree(2)
+    
+    return(tibble::enframe(clusters, name='unitig', value='sort'))
+    
+    
+  })
+
+# unitig_sorts <- 
+#   unitig_sorts %>% 
+#   bind_rows(.id = 'cluster')
+
+
+### Library Swapping ------------------------------------------------------
+
+# TODO checks for all 1 and all NA
+no_bubble_lib_swaps <-
+  map(no_bubble_unitig_sorts, function(x) {
+    
+
+    sort_counts <- 
+      exact_match_counts_df %>% 
+      inner_join(x, by='unitig') %>% 
+      left_join(cluster_df, by='unitig') %>% 
+      semi_join(wc_libraries_df, by=c('lib', 'cluster'))
+    
+    sort_counts <-
+      sort_counts %>% 
+      group_by(lib, sort) %>% 
+      summarise(c = sum(c), w=sum(w), n=sum(n), .groups = 'drop')
+    
+  
+    
+    if(all(is.na(sort_counts$sort))) {
+      swaps <-
+        sort_counts %>%
+        distinct(lib) %>% 
+        mutate(swap = FALSE) %>% 
+        tibble::deframe()
+      
+      return(swaps)
+    }
+    
+    # Sort libraries so that sort 1  has more crick reads and sort 2 has more
+    # watson reads
+    sort_1_votes <- 
+      sort_counts %>% 
+      filter(sort == 1) %>% 
+      mutate(vote = w-c) %>% 
+      with(set_names(vote, lib))
+    
+    if(all_are_identical(sort_counts$sort)) {
+      swaps <- 
+        sign(sort_1_votes) == 1
+      
+      return(swaps)
+    }
+    
+
+    
+    sort_2_votes <-
+      sort_counts %>% 
+      filter(sort == 2) %>% 
+      mutate(vote = c-w) %>% 
+      with(set_names(vote, lib))
+    
+    swaps <- 
+      sign(sort_1_votes + sort_2_votes) == 1
+    
+    
+    return(swaps)
+    
+  })
+
+
+
+
+
+## Phase Clusters With Homology -----------------------------------------
+
+### Filter to WC libraries for each cluster ---------------------------------
 
 bubble_coverage <-
   exact_match_counts_df %>% 
@@ -992,7 +1140,7 @@ bubble_coverage <-
   # homology? Maybe make cluster a factor to handle this or something?
   inner_join(homology_df, by='unitig')
 
-## Count Exact Alignments to Bubbles ---------------------------------------
+### Count Exact Alignments to Bubbles ---------------------------------------
 
 cat('Counting fastmap alignments to bubbles\n')
 
@@ -1013,7 +1161,7 @@ bubble_coverage <-
   filter(!is.na(covered_by))
 
 
-## Create StrandphaseR Arrays --------------------------------------------
+### Create StrandphaseR Arrays --------------------------------------------
 cat('Creating StrandphaseR arrays\n')
 
 strandphaser_arrays <-
@@ -1042,12 +1190,20 @@ strandphaser_arrays <-
   })
 
 
-## Sorting StrandphaseR Arrays ---------------------------------------------
+### Sorting StrandphaseR Arrays ---------------------------------------------
 cat('Sorting StrandphaseR arrays\n')
 
 lib_swaps <- 
   strandphaser_arrays %>% 
   map(strandphaser_sort_array)
+
+
+
+## Combine Library Swaps ---------------------------------------------------
+
+stopifnot(all_are_unique(c(names(lib_swaps), names(no_bubble_lib_swaps))))
+
+lib_swaps <- c(lib_swaps, no_bubble_lib_swaps)
 
 ## Haplotype Marker Counts -------------------------------------------------
 
