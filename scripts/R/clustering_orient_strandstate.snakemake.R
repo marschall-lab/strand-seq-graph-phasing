@@ -670,7 +670,7 @@ while(any_assigned) {
     filter(score == max(score, na.rm = TRUE)) %>% 
     slice_head(n=1) # break ties
     
-  score_thresh <- 0.6
+  score_thresh <- 0.5
   if(max_score$score > score_thresh) {
     any_assigned <- TRUE
     
