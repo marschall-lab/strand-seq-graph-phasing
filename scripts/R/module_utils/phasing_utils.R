@@ -467,6 +467,36 @@ strandphaser_sort_array <- function(phaser_array) {
     logical(length = n_libs) %>% 
     set_names(dimnames(phaser_array)[[1]])
   
+  
+  n_bubbles <-
+    dim(phaser_array)[2]
+  
+  # This special case can sometimes lead to a weird behavior where no swaps
+  # occur, even when it should? See verkko 1.3.1 NA24385 X/Y Chromosome. It
+  # appears that the NAs and bubble arms were just so distributed such that the
+  # concensus score was the same before and after swapping for every row, and
+  # therefore no swaps were performed, even though there was an obviously better
+  # solution that involved swaps. Now I just force an arbitrary ordering in
+  # these cases.
+  if(n_bubbles == 1) {
+    min_value = min(phaser_array, na.rm = TRUE)
+    max_value = max(phaser_array, na.rm = TRUE)
+    
+    min_swap <- phaser_array[,,'watson'] == min_value
+    max_swap <- phaser_array[,,'crick'] == max_value
+    
+    min_swap[is.na(min_swap)] <- TRUE
+    max_swap[is.na(max_swap)] <- TRUE
+    
+    lib_swapped <- min_swap & max_swap
+    # for if there is only one library and one bubble:
+    if(is.null(names(lib_swapped))) {
+      names(lib_swapped) <- dimnames(phaser_array)$lib
+    }
+    return(lib_swapped)
+  }
+  
+  
   for(i in seq_len(n_libs)){
     
     concensus_score <-
