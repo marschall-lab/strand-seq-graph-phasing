@@ -17,7 +17,7 @@ def process_sample_sheet():
     if sample_sheet['sample'].duplicated().any():
         raise ValueError('Duplicated entries in "sample" column')
 
-    for col in ['gfa', 'strandseq_dir']:
+    for col in ['gfa', 'strandseq_dir', 'coverage']:
         sample_sheet[col] = sample_sheet[col].map(pathlib.Path)
 
     samples = set()
@@ -38,7 +38,8 @@ def process_sample_sheet():
         samples.add(row.sample)
         sample_input[row.sample] = dict(
             gfa=str(row.gfa.resolve(strict=True)),
-            # strandseq_dir=str(ss_dir),
+            # TODO make coverage optional, and run rukki variably depending on whether or not coverage is given?
+            coverage=str(row.coverage.resolve(strict=True)),
             strandseq_libs=list(sseq_pairs.keys()),
             strandseq_pairs=sseq_pairs
         )
