@@ -1144,7 +1144,7 @@ bubble_coverage <-
 
 cat('Counting fastmap alignments to bubbles\n')
 
-coverage_minimum <- 5
+coverage_minimum <- 3
 
 bubble_coverage <-
   bubble_coverage %>%
@@ -1219,7 +1219,7 @@ marker_counts <-
   exact_match_counts_df %>% 
   left_join(cluster_df, by='unitig') %>% 
   semi_join(wc_libraries_df, by=c('lib', 'cluster')) %>% 
-  left_join(lib_swaps_df, by=c('lib', 'cluster')) 
+  inner_join(lib_swaps_df, by=c('lib', 'cluster')) 
 
 # NA values indicate WC libraries that mapped to no bubbles, or clusters with no
 # bubbles. 
