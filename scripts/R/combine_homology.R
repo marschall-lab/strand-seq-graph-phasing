@@ -141,7 +141,7 @@ output <- get_values('--output', singular=TRUE)
 # TODO check if the above is still true or just due to the filtering bug when
 # mashmap was updated to 3.0 (paf format).
 
-# mashmap <- 'homology/HG04036/HG04036_mashmap.paf'
+# mashmap <- 'homology/NA19317/NA19317_mashmap.paf'
 
 mashmap_df <-
   pafr::read_paf(mashmap, tibble=TRUE, include_tags = TRUE)
@@ -202,7 +202,7 @@ mashmap_df <-
 
 ## Read Unitig Lengths -----------------------------------------------------
 
-# gfa <- '../wd/gfa/gfa/HG04036_exploded.gfa'
+# gfa <- '../wd/gfa/gfa/NA19317_exploded.gfa'
 unitig_lengths_df <-
   tibble::enframe(
     read_segment_sizes_from_gfa(gfa),
@@ -212,7 +212,7 @@ unitig_lengths_df <-
 
 
 ## Read Bubbles ------------------------------------------------------------
-# bubblegun <- 'homology/HG04036/HG04036_exploded_simplified_bubblegun.json'
+# bubblegun <- 'homology/NA19317/NA19317_exploded_simplified_bubblegun.json'
 
 bubblegun_chains_json <- jsonlite::read_json(bubblegun)
 
@@ -263,17 +263,17 @@ bubblegun_wide <-
 
 shared_bubbles <-
   inner_join(mashmap_wide, bubblegun_wide, by=c('arm_1', 'arm_2')) %>% 
-  mutate(bubble = paste0('mashgun_', 1:n()))
+  mutate(bubble = paste0('mashgun_', seq_len(n())))
 
 mashmap_unique <-
   mashmap_wide %>% 
   anti_join(shared_bubbles, by=c('arm_1', 'arm_2'))%>% 
-  mutate(bubble = paste0('mashmap_', 1:n()))
+  mutate(bubble = paste0('mashmap_',seq_len(n())))
 
 bubblegun_unique <-
   bubblegun_wide %>% 
   anti_join(shared_bubbles, by=c('arm_1', 'arm_2'))%>% 
-  mutate(bubble = paste0('bubblegun_', 1:n()))
+  mutate(bubble = paste0('bubblegun_', seq_len(n())))
 
 # 
 # mashmap_unique_df <-
