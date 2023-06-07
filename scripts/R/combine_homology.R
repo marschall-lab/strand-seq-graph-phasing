@@ -173,9 +173,9 @@ mashmap_df <-
 # sort bubble arms
 mashmap_df <-
   mashmap_df %>% 
-  transmute(unitig_1 = qname, unitig_2 = tname) %>% 
-  mutate(unitig_1 = map2_chr(unitig_1, unitig_2, min),
-         unitig_2 = map2_chr(unitig_1, unitig_2, max))
+  mutate(unitig_1 = map2_chr(qname, tname, min),
+         unitig_2 = map2_chr(qname, tname, max)) %>% 
+  select(unitig_1, unitig_2)
 
 # tidy
 mashmap_df <-
