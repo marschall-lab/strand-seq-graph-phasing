@@ -53,9 +53,7 @@ tidy_multibubble_ <- function(bubble_name, arm_1_unitigs, arm_2_unitigs) {
   return(out_df)
 }
 
-renumber_bubble <- function(bubble, prefix='bubble_') {
-  paste0(prefix, as.integer(as.factor(bubble)))
-}
+
 
 # Command Line ------------------------------------------------------------
 ## Args --------------------------------------------------------------------
@@ -120,8 +118,6 @@ bubblegun <- get_values('--bubblegun', singular=TRUE)
 gfa <- get_values('--gfa', singular=TRUE)
 output <- get_values('--output', singular=TRUE)
 
-
-
 # Mashmap -----------------------------------------------------------------
 
 # mashmap homolgy can be very useful, as it can be used to connect disconnected
@@ -145,7 +141,7 @@ output <- get_values('--output', singular=TRUE)
 # TODO check if the above is still true or just due to the filtering bug when
 # mashmap was updated to 3.0 (paf format).
 
-# mashmap <- 'homology/NA24385/NA24385_mashmap.paf'
+# mashmap <- 'homology/HG04036/HG04036_mashmap.paf'
 
 mashmap_df <-
   pafr::read_paf(mashmap, tibble=TRUE, include_tags = TRUE)
@@ -186,7 +182,8 @@ mashmap_df <-
 
 # filter out bubbles that contain unitigs in multiple bubbles
 
-# only unitigs that appear once
+# only unitigs that appear once. Is this step still needed given earlier
+# filtering?
 mashmap_df <-
   mashmap_df %>%
   group_by(unitig) %>%
@@ -205,7 +202,7 @@ mashmap_df <-
 
 ## Read Unitig Lengths -----------------------------------------------------
 
-# gfa <- '../wd/gfa/gfa/NA19705_exploded.gfa'
+# gfa <- '../wd/gfa/gfa/HG04036_exploded.gfa'
 unitig_lengths_df <-
   tibble::enframe(
     read_segment_sizes_from_gfa(gfa),
@@ -215,7 +212,7 @@ unitig_lengths_df <-
 
 
 ## Read Bubbles ------------------------------------------------------------
-# bubblegun <- 'linear_simplified_bubbles.json'
+# bubblegun <- 'homology/HG04036/HG04036_exploded_simplified_bubblegun.json'
 
 bubblegun_chains_json <- jsonlite::read_json(bubblegun)
 
@@ -249,38 +246,86 @@ merged_bubble_df <-
 bubblegun_df <-
   bubblegun_df %>% 
   filter(!(bubble %in% bubbles_with_merged_unitigs)) %>% 
-  bind_rows(merged_bubble_df) %>% 
-  mutate(bubble = renumber_bubble(bubble))
+  bind_rows(merged_bubble_df) 
 # Deduplicate Bubbles -----------------------------------------------------
 
-mashmap_df <-
-  mashmap_df %>% 
-  anti_join(bubblegun_df, by='unitig') %>%  
-  group_by(bubble) %>% 
-  filter(n() == 2) %>% 
-  ungroup()
+mashmap_wide <-
+  tidyr::pivot_wider(mashmap_df, names_from = 'bubble_arm', values_from = 'unitig') %>% 
+  arrange(arm_1) %>% 
+  select(-bubble)
+  
+bubblegun_wide <-
+  tidyr::pivot_wider(bubblegun_df, names_from = 'bubble_arm', values_from = 'unitig')%>% 
+  arrange(arm_1) %>% 
+  select(-bubble)
 
-# renumber 
-mashmap_df <-
-  mashmap_df %>% 
-  mutate(bubble = renumber_bubble(bubble)) %>% 
-  arrange(bubble, bubble_arm)
 
-# Rename Bubbles ----------------------------------------------------------
 
-mashmap_df <-
-  mashmap_df %>%
-  mutate(bubble = gsub('bubble_', 'mashmap_', bubble))
+shared_bubbles <-
+  inner_join(mashmap_wide, bubblegun_wide, by=c('arm_1', 'arm_2')) %>% 
+  mutate(bubble = paste0('mashgun_', 1:n()))
 
-bubblegun_df <-
-  bubblegun_df %>%
-  mutate(bubble = gsub('bubble_', 'bubblegun_', bubble))
+mashmap_unique <-
+  mashmap_wide %>% 
+  anti_join(shared_bubbles, by=c('arm_1', 'arm_2'))%>% 
+  mutate(bubble = paste0('mashmap_', 1:n()))
+
+bubblegun_unique <-
+  bubblegun_wide %>% 
+  anti_join(shared_bubbles, by=c('arm_1', 'arm_2'))%>% 
+  mutate(bubble = paste0('bubblegun_', 1:n()))
+
+# 
+# mashmap_unique_df <-
+#   mashmap_unique %>% 
+#   tidyr::pivot_longer(cols = c(arm_1, arm_2), names_to = 'bubble_arm', values_to = 'unitig')
+# 
+# bubblegun_unique_df <-
+#   bubblegun_unique %>% 
+#   tidyr::pivot_longer(cols = c(arm_1, arm_2), names_to = 'bubble_arm', values_to = 'unitig')
+# 
+# shared_df <-
+#   shared_bubbles %>% 
+#   tidyr::pivot_longer(cols = c(arm_1, arm_2), names_to = 'bubble_arm', values_to = 'unitig')
+
+
+homology_df <-
+  bind_rows(
+    mashmap_unique,
+    bubblegun_unique,
+    shared_bubbles
+  ) 
+
+
+
+# Second Check Cleanup ----------------------------------------------------
+
+# filter out bubbles that contain unitigs in multiple bubbles
+homology_df <-
+  homology_df %>% 
+  filter(!is_duplicate_pair(arm_1, arm_2)) %>%
+  tidyr::pivot_longer(
+    cols = c(arm_1, arm_2),
+    names_to = 'bubble_arm',
+    values_to = 'unitig'
+  ) 
+
+bubbles_to_remove <- 
+  homology_df %>%
+  group_by(unitig) %>%
+  filter(n() != 1) %>% 
+  arrange(bubble) %>%  # alphabetically, favor bubblegun over mashmap
+  slice_head(n=1) %>% 
+  ungroup() %>% 
+  pull(bubble)
+
+homology_df <-
+  homology_df %>% 
+  filter(!(bubble %in% bubbles_to_remove))
 
 
 # Export ------------------------------------------------------------------
 
-homology_df <-
-  bind_rows(mashmap_df, bubblegun_df)
 
 #bubble double  check
 unitigs_per_bubble <-
@@ -288,7 +333,13 @@ unitigs_per_bubble <-
   count(bubble) %>% 
   pull()
 
+bubbles_per_unitig <-
+  homology_df %>% 
+  count(unitig) %>% 
+  pull()
+
 stopifnot(all(unitigs_per_bubble == 2))
+stopifnot(all(bubbles_per_unitig == 1))
 
 # output <- 'homology/NA18989/NA18989_combined_homology.tsv'
 readr::write_tsv(homology_df, output)
