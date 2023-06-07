@@ -19,17 +19,23 @@ tidy_multibubble_ <- function(bubble_name, arm_1_unitigs, arm_2_unitigs) {
   arm_1_unitigs <- strsplit(arm_1_unitigs, '_')[[1]]
   arm_2_unitigs <- strsplit(arm_2_unitigs, '_')[[1]]
   
+  # for now only one bubble from the multibubble is kept, as I don't have a way
+  # of guaranteeing that unitigs from the same merged bubble arm won't end up in
+  # different haplotypes. If more than 1 bubble is desired, remove the slice_head
+  
   # Sort by size
   arm_1_unitigs <-
     unitig_lengths_df %>%
     filter(unitig %in% arm_1_unitigs) %>%
     arrange(desc(length)) %>%
+    slice_head(n=1) %>% 
     pull(unitig)
   
   arm_2_unitigs <-
     unitig_lengths_df %>%
     filter(unitig %in% arm_2_unitigs) %>%
     arrange(desc(length)) %>%
+    slice_head(n=1) %>% 
     pull(unitig)
   
   n_pairs <- min(length(arm_1_unitigs), length(arm_2_unitigs))
@@ -231,6 +237,8 @@ bubblegun_df <-
 # homologies as (for now) each unitig is only appearing in one bubble.
 # Currently, pair biggest unitig with biggest possible partner.
 
+# FIXME this is an issue where locally, merged bubbles work, but on the cluster,
+# they appear to be removed, eg utig4-835 sample HG04036
 
 bubbles_with_merged_unitigs <- 
   bubblegun_df %>% 
