@@ -512,14 +512,17 @@ rule run_rukki:
         params="$params --hap-names haplotype1,haplotype2"
 
         # Minimal number of parent-specific markers required for assigning parental group to a node [default: 10]
-        params="$params --marker-cnt 10" 
+        params="$params --marker-cnt 1" 
 
         # Require at least (node_length / <value>) markers within the node for parental group assignment [default: 10000]
-        params="$params --marker-sparsity 50000" 
+        params="$params --marker-sparsity 999999999" 
 
         # Sets minimal marker excess for assigning a parental group to <value>:1 [default: 5]
-        params="$params --marker-ratio 1.5" 
+        params="$params --marker-ratio 3" 
 
+        # Longer nodes are unlikely to be spurious and likely to be reliably assigned based on markers (used in HOMOZYGOUS node labeling) [default: 200000]
+        params="$params --trusted-len 250000"
+        
         # Require at least (node_length / <value>) markers for assigning ISSUE label (by default == marker_sparsity, will typically be set to a value >= marker_sparsity)
         # params="$params --issue-sparsity 10000" 
 
@@ -535,11 +538,14 @@ rule run_rukki:
         # Bubbles with bigger difference between alternatives' lengths will not be filled [default: 200]
         params="$params --fillable-bubble-diff 1000"
 
+        # Longer nodes are unlikely to represent repeats, polymorphic variants, etc (used to seed and guide the path search) [default: 500000]
+        params="$params --solid-len 500000" 
+        
         # Solid nodes with coverage below <coeff> * <weighted mean coverage of 'solid' nodes> can not be classified as homozygous. 0. disables check [default: 1.5]
         params="$params --solid-homozygous-cov-coeff 1.1"
 
         # Sets minimal marker excess for assigning a parental group of solid nodes to <value>:1. Must be <= marker_ratio (by default == marker_ratio)
-        # params="$params --solid-ratio 1.5"
+        params="$params --solid-ratio 1.5"
 
         # Assign tangles flanked by solid nodes from the same class, # Allow dead-end nodes in the tangles
         params="$params --assign-tangles --tangle-allow-deadend"
