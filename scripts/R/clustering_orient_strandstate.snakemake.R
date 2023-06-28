@@ -14,10 +14,6 @@ strip_range <- function(x) {
   return(stringr::str_remove(x, ':.*$'))
 }
 
-strip_bin <- function(x) {
-  return(stringr::str_remove(x, '_bin[0-9]+'))
-}
-
 bind_with_inverted_unitigs <- function(counts_df) {
   counts_df <-
     counts_df %>% 
@@ -213,9 +209,8 @@ if(n_threads > 1) {
 ### Count mem Alignments ------------------------------------------------------
 lib_names <- map_chr(mem_alignment_files, function(x) gsub('.mdup.bam$', '', basename(x)))
 
-n_bins <- 3
 
-binned_counts_df <- import_mapper(mem_alignment_files, function(bam){
+counts_df <- import_mapper(mem_alignment_files, function(bam){
   cat(paste('counting bwa-mem alignments in', basename(bam), '\n'))
   aln <- scanBam(file = bam,
                  param = ScanBamParam(
@@ -264,18 +259,15 @@ binned_counts_df <- import_mapper(mem_alignment_files, function(bam){
     aln %>% 
     filter(rname == mrnm)
   
-  # Binned Counts
   aln <-
     aln %>% 
-    left_join(unitig_lengths_df, by = c('rname' = 'unitig')) %>% 
-    group_by(rname) %>% 
-    mutate(bin = cut_range_n(pos, n_bins, max_value = unique(length)))
+    left_join(unitig_lengths_df, by = c('rname' = 'unitig')) 
   
   # Counting
   out <-
     aln %>%
     # filter(mapq > 0) %>% 
-    group_by(rname, bin) %>%
+    group_by(rname) %>%
     summarise(c = sum(strand == '+'), w = sum(strand == '-'), .groups="drop")
   
   return(out)
@@ -283,43 +275,17 @@ binned_counts_df <- import_mapper(mem_alignment_files, function(bam){
   
 })
 
-binned_counts_df <-
-  binned_counts_df %>%
+counts_df <-
+  counts_df %>%
   set_names(lib_names) %>% 
   bind_rows(.id = 'lib') %>%
   dplyr::rename(unitig = rname) 
 
-binned_counts_df <-
-  binned_counts_df %>%
-  tidyr::complete(lib, unitig, bin, fill=list(c=0, w=0))
-
-binned_counts_df <-
-  binned_counts_df %>% 
+counts_df <-
+  counts_df %>%
+  tidyr::complete(lib, unitig, fill=list(c=0, w=0)) %>% 
   mutate(n = c+w)
 
-binned_counts_df <-
-  binned_counts_df %>% 
-  mutate(unitig_bin = paste0(unitig, '_bin', bin))
-
-#FIXME The binned counts currently aren't being used. Why? Experimentation was
-#carried out, with using binned counts for unitigs that fail contiBAIT qc, to
-#try to recover signal from those unitigs. this was inspired by cases where, eg
-#chr 18 appeared as a large X in the bandage plot, but every arm of the X failed
-#QC Suspected that the centromeric and telomeric regions included in thise
-#unitigs were causing it to fail QC ~ so use the binned counts to discard those
-#regions. This ran into problems with unitigs that contained purely degnerate
-#sequence ~ purely centromeric and telomeric unitigs. Those unitigs had bins
-#that would pass WC, but displayed very strange clustering behaviour, and they
-#would often form a separate contiBAIT cluster unitigs across chromosomes. This
-#clustering of degenrate unitigs was resistant to corrective heuristics, eg
-#cosine cluster merging. In order to use a binned counts strategy, I would want
-#a way to distiguish purely degenerate unitigs from unitigs containing lots of
-#degenerate regions, but are not purely degenerate, and I don't have that right
-#now lol. Maybe a better cutting method, eg breakpointR could work? ButI have
-#my doubts.
-
-counts_df <-
-  marginalize_wc_counts(binned_counts_df)
 
 ### Count fastmap Alignments ------------------------------------------------
 
@@ -366,10 +332,7 @@ if(n_threads > 1) {
 
 
 wfrac.matrix <-
-  counts_df %>% 
-  # binned_counts_df %>% 
-  # marginalize_wc_counts() %>% 
-  with(make_wc_matrix(w, c, lib, unitig))
+  with(counts_df, make_wc_matrix(w, c, lib, unitig))
 
 
 ## ContiBAIT QC ------------------------------------------------------------
@@ -404,8 +367,6 @@ strand.states <-
 # selected earlier by the contiBAIT clustering algorithm.
 mean_coverage <- 
   counts_df %>% 
-  # binned_counts_df %>% 
-  # marginalize_wc_counts() %>% 
   tidyr::complete(lib, unitig, fill=list(c=0, w=0)) %>% 
   group_by(unitig) %>% 
   summarise(coverage = mean(w+c), .groups="drop") 
@@ -451,18 +412,6 @@ cluster_df <-
 cluster_df <-
   cluster_df %>% 
   distinct(cluster, unitig)
-
-# binned unitigs grouped into multiple clusters
-# bad_clustering_unitigs <-
-#   cluster_df %>% 
-#   group_by(cluster, unitig) %>% 
-#   filter(n() > 1) %>% 
-#   distinct(unitig) %>% 
-#   pull()
-#   
-# cluster_df <-
-#   cluster_df %>% 
-#   mutate(cluster = ifelse(unitig %in% bad_clustering_unitigs, NA, cluster))
 
 cluster_df <-
   cluster_df %>% 
@@ -641,8 +590,6 @@ while(any_assigned) {
   candidate_cluster_unitigs <-
     cluster_df %>%
     left_join(components_df, by='unitig') %>%
-    # mutate(cluster = coalesce(cluster, paste0('LGcos', seq_len(n())))) %>% 
-    # filter(!is.na(cluster)) %>%
     with(split(unitig, cluster))
   
   scores <-
@@ -694,11 +641,10 @@ while(any_assigned) {
       '\n'
     )
     
-    length_threshold <- 250000
     long_unclustered_unitigs_df <- 
       unitig_lengths_df %>% 
       filter(unitig %in% unclustered_unitigs) %>% 
-      filter(length >= length_threshold)
+      filter(length >= segment_length_threshold)
 
     
     if(nrow(long_unclustered_unitigs_df) > 0) {
@@ -708,7 +654,7 @@ while(any_assigned) {
       new_cluster_unitig <- slice_max(long_unclustered_unitigs_df, length, n=1)
       cat('creating new cluster with unitig:', new_cluster_unitig$unitig,
           'with length:', new_cluster_unitig$length, 
-          'longer than threshold:', length_threshold,
+          'longer than segment length threshold:', segment_length_threshold,
           '\n')
       
       cluster_df <-
@@ -771,8 +717,6 @@ homology_df <-
 
 cat('Linking nodes sharing homology\n')
 
-# TODO make this step a filter rule I guess? so a generic link homology with
-# filtered homology df?
 cluster_df <- link_homology(cluster_df, homology_df, components_df)
 cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
 
@@ -1058,9 +1002,6 @@ no_bubble_unitig_sorts <-
     
   })
 
-# unitig_sorts <- 
-#   unitig_sorts %>% 
-#   bind_rows(.id = 'cluster')
 
 
 ### Library Swapping ------------------------------------------------------
@@ -1123,9 +1064,6 @@ no_bubble_lib_swaps <-
     return(swaps)
     
   })
-
-
-
 
 
 ## Phase Clusters With Homology -----------------------------------------
@@ -1333,10 +1271,10 @@ marker_counts <-
 
 stopifnot(nrow(marker_counts) == length(all_unitigs))
 stopifnot(setequal(all_unitigs, marker_counts$unitig))
+
 ## CSV ---------------------------------------------------------------------
 
 readr::write_csv(marker_counts, output)
-
 
 # Warnings ----------------------------------------------------------------
 

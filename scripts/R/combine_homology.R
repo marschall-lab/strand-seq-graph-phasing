@@ -147,7 +147,7 @@ output <- get_values('--output', singular=TRUE)
 # TODO check if the above is still true or just due to the filtering bug when
 # mashmap was updated to 3.0 (paf format).
 
-# mashmap <- 'homology/NA19317/NA19317_mashmap.paf'
+# mashmap <- 'homology/HG04036/HG04036_mashmap.paf'
 
 mashmap_df <-
   pafr::read_paf(mashmap, tibble=TRUE, include_tags = TRUE)
@@ -208,7 +208,7 @@ mashmap_df <-
 
 ## Read Unitig Lengths -----------------------------------------------------
 
-# gfa <- '../wd/gfa/gfa/NA19317_exploded.gfa'
+# gfa <- '../wd/gfa/gfa/HG04036_exploded.gfa'
 unitig_lengths_df <-
   tibble::enframe(
     read_segment_sizes_from_gfa(gfa),
@@ -218,7 +218,7 @@ unitig_lengths_df <-
 
 
 ## Read Bubbles ------------------------------------------------------------
-# bubblegun <- 'homology/NA19317/NA19317_exploded_simplified_bubblegun.json'
+# bubblegun <- 'homology/HG04036/HG04036_exploded_simplified_bubblegun.json'
 
 bubblegun_chains_json <- jsonlite::read_json(bubblegun)
 
@@ -349,5 +349,5 @@ bubbles_per_unitig <-
 stopifnot(all(unitigs_per_bubble == 2))
 stopifnot(all(bubbles_per_unitig == 1))
 
-# output <- 'homology/NA18989/NA18989_combined_homology.tsv'
+# output <- 'homology/HG04036/HG04036_combined_mashmap_bubblegun_homology.tsv'
 readr::write_tsv(homology_df, output)
