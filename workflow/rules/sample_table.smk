@@ -6,7 +6,7 @@ MAP_SAMPLE_TO_INPUT = None
 
 
 def process_sample_sheet():
-    # sample_sheet_file = pathlib.Path('config/samples-hgsvc-verkko131.tsv').resolve(strict=True)
+    # sample_sheet_file = pathlib.Path('config/samples-hgsvc-verkko14.tsv').resolve(strict=True)
     sample_sheet_file = pathlib.Path(config["samples"]).resolve(strict=True)
     sample_sheet = pandas.read_csv(
         sample_sheet_file,
@@ -17,16 +17,18 @@ def process_sample_sheet():
     if sample_sheet['sample'].duplicated().any():
         raise ValueError('Duplicated entries in "sample" column')
 
-    for col in ['gfa', 'strandseq_dir', 'coverage']:
-        sample_sheet[col] = sample_sheet[col].map(pathlib.Path)
-
     samples = set()
     sample_input = dict()
 
     for row in sample_sheet.itertuples(index=False):
         print('Processing sample: ' + row.sample)
+
+        samples.add(row.sample)
+        sample_input[row.sample] = dict()
+
+       # Strand-seq files
         # ss_dir = pathlib.Path('/Users/henglinm/Documents/wd/GM19317').resolve(strict=True)
-        ss_dir = row.strandseq_dir.resolve(strict=True)
+        ss_dir = pathlib.Path(row.strandseq_dir).resolve(strict=True)
         ss_files = set(ss_dir.glob(f"**/*.gz"))
 
         ss_files = [str(f) for f in sorted(ss_files) if f.is_file()]
@@ -35,14 +37,16 @@ def process_sample_sheet():
 
         sseq_pairs = organize_sseq_files(ss_files)
 
-        samples.add(row.sample)
-        sample_input[row.sample] = dict(
-            gfa=str(row.gfa.resolve(strict=True)),
-            # TODO make coverage optional, and run rukki variably depending on whether or not coverage is given?
-            coverage=str(row.coverage.resolve(strict=True)),
-            strandseq_libs=list(sseq_pairs.keys()),
-            strandseq_pairs=sseq_pairs
-        )
+        sample_input[row.sample]['strandseq_libs'] = list(sseq_pairs.keys())
+        sample_input[row.sample]['strandseq_pairs'] = sseq_pairs
+
+        # GFA
+        sample_input[row.sample]['gfa'] = str(pathlib.Path(row.gfa).resolve(strict=True))
+
+        # Coverage ~ Optional
+        if not pandas.isna(row.coverage):
+            sample_input[row.sample]['coverage'] = str(pathlib.Path(row.coverage).resolve(strict=True))
+
 
     global SAMPLES
     SAMPLES = sorted(samples)
