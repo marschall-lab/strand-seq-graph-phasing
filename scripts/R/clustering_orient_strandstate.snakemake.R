@@ -1272,6 +1272,31 @@ marker_counts <-
 stopifnot(nrow(marker_counts) == length(all_unitigs))
 stopifnot(setequal(all_unitigs, marker_counts$unitig))
 
+
+
+## Unitig-Confidence Scaling -----------------------------------------------
+
+# This emerged from discussions with Sergey Koren with regards to rukki. It was
+# discovered that very large unitigs can have very low unitig counts while still
+# appearing to show a plausible phasing. EG utig4-234[01], utig4-2336,
+# utig4-1216 from HG02106 show plausible marker counts despite a very low count
+# of markers per unitig (<= 3). This could cause problems with rukki where,
+# unless certain filtering thresholds were essentially entirely eliminated,
+# those large unitigs would not be considered during path finding. After Sergey
+# K. consulted with Sergey N., it was suggested that one simple trick would be
+# to multiply the marker counts of large unitigs by some scaling factor. This
+# would essentially allow large unitigs to be included during path finding
+# without removing all filtering. This allows large unitigs to be retained even
+# when smaller unitigs are discarded for low marker counts.
+
+marker_counts <-
+  marker_counts %>%
+  left_join(unitig_lengths_df, by = 'unitig') %>%
+  mutate(
+    hap_1_counts = ifelse(length >= 1e6, 10 * hap_1_counts, hap_1_counts),
+    hap_2_counts = ifelse(length >= 1e6, 10 * hap_2_counts, hap_2_counts)
+  )
+
 ## CSV ---------------------------------------------------------------------
 
 readr::write_csv(marker_counts, output)

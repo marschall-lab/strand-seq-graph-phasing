@@ -512,10 +512,10 @@ rule run_rukki:
         params="$params --hap-names haplotype1,haplotype2"
 
         # Minimal number of parent-specific markers required for assigning parental group to a node [default: 10]
-        params="$params --marker-cnt 1" 
+        params="$params --marker-cnt 5" 
 
         # Require at least (node_length / <value>) markers within the node for parental group assignment [default: 10000]
-        params="$params --marker-sparsity 999999999" 
+        params="$params --marker-sparsity 5000000" 
 
         # Sets minimal marker excess for assigning a parental group to <value>:1 [default: 5]
         params="$params --marker-ratio 3" 
@@ -536,7 +536,7 @@ rule run_rukki:
         params="$params --fillable-bubble-len 500000"
 
         # Bubbles with bigger difference between alternatives' lengths will not be filled [default: 200]
-        params="$params --fillable-bubble-diff 1000"
+        params="$params --fillable-bubble-diff 10000"
 
         # Longer nodes are unlikely to represent repeats, polymorphic variants, etc (used to seed and guide the path search) [default: 500000]
         params="$params --solid-len 500000" 
