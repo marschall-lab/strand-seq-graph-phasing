@@ -197,13 +197,28 @@ rule bwa_index_unitigs:
 #####################################################################
 ############ bwa mem Unmerged SS Reads to Assembly Unitigs ##########
 #####################################################################
+SSreads="ss/merged/{sample}/{lib}.combined.homopolymer-compressed.fasta",
+def sample2unmergedss(wildcards, file):
+    fpath = 'ss/unmerged/{sample}/{lib}_'
 
-rule bwa_align_unmerged_compressed_ss_to_unitigs:
+    if file==1:
+        fpath += 'file1'
+    else:
+        fpath += 'file2'
+
+    if MAP_SAMPLE_TO_INPUT[wildcards.sample]['hpc']:
+        fpath += '.homopolymer-compressed.fasta'
+    else:
+        fpath += '.renamed.fasta'
+
+    return fpath
+
+rule bwa_align_unmerged_ss_to_unitigs:
     input:
         unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta", # gfa_to_fasta
         unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices), # bwa_index_unitigs
-        mate1="ss/unmerged/{sample}/{lib}_file1.homopolymer-compressed.fasta",
-        mate2="ss/unmerged/{sample}/{lib}_file2.homopolymer-compressed.fasta"
+        mate1=lambda wildcards: sample2unmergedss(wildcards, 1),
+        mate2=lambda wildcards: sample2unmergedss(wildcards, 2)
     output: temp("temp_bwa_alignments/mem/{sample}/{lib}.bam")
     threads: 6
     conda:'envs/env_cl.yaml'
@@ -211,14 +226,14 @@ rule bwa_align_unmerged_compressed_ss_to_unitigs:
         mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     log:
-        bwa="log/bwa_align_unmerged_compressed_ss_to_unitigs_bwa_{sample}_{lib}.log",
-        samtools="log/bwa_align_unmerged_compressed_ss_to_unitigs_samtools_{sample}_{lib}.log"
+        bwa="log/bwa_align_unmerged_ss_to_unitigs_bwa_{sample}_{lib}.log",
+        samtools="log/bwa_align_unmerged_ss_to_unitigs_samtools_{sample}_{lib}.log"
     shell:
         '''
         bwa mem -t {threads} -R "@RG\\tID:{wildcards.lib}" -v 2 {input.unitigs} {input.mate1} {input.mate2} 2> {log.bwa} | samtools view -b -F 2304 /dev/stdin > {output} 2> {log.samtools}
         '''
 
-rule bwa_sort_unmerged_compressed_ss_alignments:
+rule bwa_sort_unmerged_ss_alignments:
     input:  "temp_bwa_alignments/mem/{sample}/{lib}.bam" # bwa_align
     output: temp("bwa_alignments/mem/{sample}/{lib}.bam")
     conda:'envs/env_cl.yaml'
@@ -262,11 +277,21 @@ rule unmerged_bwa_index:
 ############ fastmap merged Strand-seq reads ################
 #############################################################
 
+def sample2mergedss(wildcards):
+    fpath = 'ss/merged/{sample}/{lib}.combined'
+
+    if MAP_SAMPLE_TO_INPUT[wildcards.sample]['hpc']:
+        fpath += '.homopolymer-compressed.fasta'
+    else:
+        fpath += '.renamed.fasta'
+
+    return fpath
+
 rule fastmap_ss_reads_to_unitigs:
 	input:
 		unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
 		unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
-		SSreads="ss/merged/{sample}/{lib}.combined.homopolymer-compressed.fasta",
+		SSreads=sample2mergedss
 	output: "bwa_alignments/fastmap/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
 	threads: 2
 	conda: 'envs/env_cl.yaml'

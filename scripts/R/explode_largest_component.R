@@ -33,8 +33,8 @@ remove_nodes_from_gfa <- function(inpath, outpath, nodes_to_remove) {
       if(split_line[2] %in% nodes_to_remove | split_line[4] %in% nodes_to_remove) {
         next
       }
-    } else {
-      stop('error lol')
+    } else if(!(split_line[1] %in% c('S', 'L'))){
+      next
     }
     
     writeLines(line, out_gfa)
@@ -112,7 +112,7 @@ output_gfa <- get_values("--output-gfa", singular=TRUE)
 output_components <- get_values("--output-ccs", singular=TRUE) 
 segment_length_threshold <- as.integer(get_values("--segment-length-threshold", singular=TRUE))
 # Import ------------------------------------------------------------------
-# gfa <- 'assembly.homopolymer-compressed.gfa'
+# gfa <- 'hifiasm_draft/v0.19.5/HG00733/HG00733.hifiasm.bp.p_utg.noseq.gfa'
 # cat('Importing gfa:', gfa, '\n')
 
 
@@ -120,6 +120,7 @@ links_df <-
   read_links_from_gfa(gfa) %>%
   strsplit("\t") %>%
   map(as.list) %>%
+  map(function(x) x[1:6]) %>% # remove extra link information, found in hifiasm graphs
   map(set_names,
       c('RecordType', 'From', 'FromOrient', 'To', 'ToOrient', 'Overlap')) %>%
   map(as_tibble) %>%

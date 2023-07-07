@@ -14,6 +14,8 @@ def process_sample_sheet():
         header=0
     )
 
+    # TODO add schema checks for file
+
     if sample_sheet['sample'].duplicated().any():
         raise ValueError('Duplicated entries in "sample" column')
 
@@ -42,6 +44,9 @@ def process_sample_sheet():
 
         # GFA
         sample_input[row.sample]['gfa'] = str(pathlib.Path(row.gfa).resolve(strict=True))
+
+        # hpc
+        sample_input[row.sample]['hpc'] = row.hpc
 
         # Coverage ~ Optional
         if not pandas.isna(row.coverage):
