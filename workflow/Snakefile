@@ -510,7 +510,6 @@ rule add_coverage_to_gfa:
         mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
         walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log: "log/add_coverage_to_gfa_{sample}.log"
-    benchmark: "benchmark/add_coverage_to_gfa_{sample}.benchmark"
     shell:
         '''
         ($CONDA_PREFIX/lib/verkko/scripts/inject_coverage.py --allow-absent {input.coverage} {input.gfa} > {output}) > {log} 2>&1
@@ -563,7 +562,6 @@ rule run_rukki:
         mhl= lambda wildcards: rukki_paramaterizer(wildcards, 'max-homozygous-len')
 
     log: "log/run_rukki_{sample}.log"
-    benchmark: "benchmark/run_rukki_{sample}.benchmark"
     shell:
         '''
         params=""
