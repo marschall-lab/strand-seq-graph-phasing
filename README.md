@@ -23,7 +23,7 @@ Due to Hilbert's difficulties with R bioconductor packages (which attempt to con
 conda env create -p env/snakemake_runner/ -f workflow/envs/env_snakemake.yaml
 ```
 
-Before running the pipeline, remember to activate this conda environment
+Before running the pipeline, remember to activate this conda environment.
 
 5. Setup the `BubbleGun` conda environment:
 
@@ -37,9 +37,9 @@ Before running the pipeline, remember to activate this conda environment
 PIP_CONFIG_FILE=/software/python/pip.conf pip install --user BubbleGun==1.1.3
 ```
 
-6. Adjust config file and sample sheet. Reference config yaml is `config/config.yaml`. Reference sample sheet is `config/samples.tsv`
+6. Adjust config file and sample sheet. Reference config yaml is `config/config.yaml`. Reference sample sheet is `config/samples-hgsvc-verkko14.tsv`
 
-Hopefully pipeline should work after this.
+Hopefully the pipeline should work after this.
 
 ## Running the pipeline on HHU Hilbert
 
@@ -47,26 +47,32 @@ __NOTE__: Peter has mentioned that, in general, `snakemake` appears to have trou
 
 
 ### Config and Sample Sheet
-
+sample	strandseq_dir	gfa	coverage	hpc	assembler	expect_XY_separate
 #### Sample sheet settings
 
-`sample: str` ID	
-
-`gfa: str` Path to input `.gfa`
+`sample: str` Sample ID	
 
 `strandseq_dir: str` Path to Strand-seq files	
 
-`strandseq_suffix: str` Strand-seq file suffix. All Strand-seq file names are expected to be of the form `{lib}_{1,2}_{strandseq_suffix}`
+`gfa: str` Path to input `.gfa`
+
+`coverage: str, NA` Path to coverage file that will be injected into `gfa` for rukki path calculations. If no coverage file exists, use "NA"
+
+`hpc: [TRUE, FALSE]` Is the `gfa` homopolymer compressed?
+
+`assembler: [verkko, hifiasm]` which genome assembly program was used to create the gfa. 
+
+`expect_XY_separate: [TRUE, FALSE]` Is the assembly graph such that it can be expected that the only diploid component connected to the X and Y chromosomes will be the PAR? From Mir's experience, this has been the case for verkko graphs, while for hifiasm graphs, most chromosomes have been joined together in a single component.
 
 #### Config settings
 
 `samples: str` Path to sample sheet. This is an optional parameter, as the path to the sample sheet can instead be entered during the snakemake command, which would allow the same config file to be used for multiple sample sheets.
 
-`segmentLengthThreshold: int` Filtration parameter. Unitigs in the input `.gfa` less than segmentLengthThreshold in basepairs will be filtered out.
+`segmentLengthThreshold: int` Filtration parameter. Unitigs in the input `.gfa` less than `segmentLengthThreshold` in basepairs will be filtered out.
 
 `scripts_dir: str` Path to folder containing R and python scripts. This is the folder `scripts` in the project folder.
 
-`reference: str, None` Path to reference alignment  
+`reference: str, None` Path to reference alignment. If provided, the assembly will be aligned to the reference using `minimap2`
 
 The last two parameters only apply to the rules which run R scripts:
 
@@ -74,7 +80,7 @@ The last two parameters only apply to the rules which run R scripts:
 
 `singularity_Renv:` Path to the R singularty environment. Only needed if `deploy_offline: True`
 
-#### Example Command: 
+#### Running the pipeline on Hilbert: 
 
 First, activate the snakemake running environment:
 
@@ -87,14 +93,16 @@ Next, if the pipeline is being run with the R singularity container, load the `S
 module load Singularity
 ```
 
+Example command:
+
 ```bash
 snakemake \\
--d ../wd/ \\ 
---configfiles config/config_HGSVC-renewal.yaml \\
---config samples=/gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing_testing/config/sample_sheet_NA24385_test.txt \\
---profile ../wd/prf_SSGP_Mir_MT/ \\
---use-singularity --singularity-args "-B /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing_testing/scripts/:/gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing_testing/scripts/" \\
---restart-times 2 
+-d ../test_wd/ \\
+ --configfiles config/config.yaml \\
+ --config samples=/gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing/config/samples-hgsvc-verkko14.tsv  \\
+ --profile ../test_wd/prf_SSGP_Mir_MT/ \\
+ --use-singularity --singularity-args "-B /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing/scripts/:/gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing/scripts/" \\
+ --restart-times 3
 ```
 #### Explanation
 
@@ -108,10 +116,5 @@ snakemake \\
 
 `--use-singularity --singularity-args "-B ..."` Used when using Singularity for the R environments. Unfortunately, when the singularity container can have trouble locating paths outside of the working directory, and thus may fail to locate the scripts folder. If that occurs, the path to the scripts folder needs to be explicitly bound in singularity: `-B /path/to/scripts/folder/:/path/to/scripts/folder/`.
 
-`--restart-times` While the resource allocation for each rule generally works on the first attempt, some rules occasionally need more memory for. 2 restarts generally works to provide enough memory for the pipeline to finish.
+`--restart-times` While the resource allocation for each rule generally works on the first attempt, some rules occasionally need more memory for. 3 restarts generally works to provide enough memory for the pipeline to finish.
 
-## Warnings
-
-### Results are stochastic!
-
-One important step in the pipeline is to cluster unitigs from the `.gfa` into groups corresponding to the same chromosome. This step is achieved using a stochastic ensemble clustering algorithm from the `contiBAIT` package [(See figure 7.3)](https://open.library.ubc.ca/media/stream/pdf/24/1.0135595/1). The clustering is run with settings that will likely be consistent for large unitigs with high-quality Strand-seq signal. However, it is not unlikely that the clustering of smaller unitigs with less Strand-seq signal will vary if the pipeline is run multiple times with the same configuration.
