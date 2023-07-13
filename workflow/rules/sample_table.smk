@@ -51,11 +51,14 @@ def process_sample_sheet():
         # assembler
         sample_input[row.sample]['assembler'] = row.assembler
 
+        # assembler
+        sample_input[row.sample]['expect_XY_separate'] = row.expect_XY_separate
+
 
         # Coverage ~ Optional
         if not pandas.isna(row.coverage):
             sample_input[row.sample]['coverage'] = str(pathlib.Path(row.coverage).resolve(strict=True))
-        else :
+        elif row.assembler == 'hifiasm':
             sample_input[row.sample]['coverage'] = f'hifiasm_hifi_coverage/{row.sample}_hifiasm_hifi_coverage.tsv'
 
 

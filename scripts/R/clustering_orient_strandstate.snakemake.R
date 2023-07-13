@@ -97,6 +97,7 @@ expected_args <-
     
     ## Params
     '--segment-length-threshold',
+    '--expect-XY-separate',
     '--threads'
   )
 
@@ -155,7 +156,7 @@ connected_components <- get_values('--connected-components', singular=TRUE)
 
 ## Parameters
 segment_length_threshold <- as.numeric(get_values('--segment-length-threshold'))
-
+expect_XY_separate <- as.logical(get_values('--expect-XY-separate', singular=TRUE))
 n_threads <- as.numeric(get_values('--threads'))
 stopifnot(n_threads >= 1)
 
@@ -424,6 +425,8 @@ cat('Refining Clusters\n')
 ### PAR Detection -----------------------------------------------------------
 cat('Detecting PAR\n')
 
+# TODO add some sort of size based threshold for the PAR (hpc and non-hpc)
+
 # TODO, add a percentage check to declare a PAR cluster. EG the sex cluster must
 # take up at least X% of the cluster on a component or something like that.
 
@@ -451,6 +454,8 @@ haploid_component_fractions_df <-
 
 perc_threshold <- 0.05
 
+# TODO experiment with filtering criteria that doesn't demand a flag.
+
 # Haploid unititgs sometimes appear in the degenerate regions of other
 # chromosomes (i've noticed them in the big circular tangle on Chr1 a couple
 # times) so there needs to be a little logic before calling a cluster a PAR
@@ -471,12 +476,21 @@ haploid_component_unititgs <-
   semi_join(long_unitigs_df, by='unitig') %>% 
   pull(unitig)
 
+# expect_XY_separate ~ only perform PAR detection for assemblies where the XY
+# component is likely only conntected to the PAR. Hifiasm graphs are more
+# tangled than that right now and therefore PAR detection for hifiasm likely
+# shoould not be attempted. The condition that the haploid cluster be the
+# largest likely would prevent anything from going wrong, but this flag is here
+# to be extra safe.
 par_clusters <- 
   cluster_df %>% 
   filter(unitig %in% haploid_component_unititgs) %>% 
   filter(!grepl('^sex', cluster)) %>% 
   filter(!is.na(cluster)) %>%
+  filter(expect_XY_separate) %>% 
   pull_distinct(cluster) 
+
+
 
 cat('No. PAR clusters detected: ', length(par_clusters), '\n')
 

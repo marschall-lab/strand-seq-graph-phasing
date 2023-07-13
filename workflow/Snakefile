@@ -459,6 +459,7 @@ rule count_haplotype_markers:
         "haplotype_marker_counts/{sample}_haplotype_marker_counts.csv"
     params:
         segment_length_threshold=segment_length_threshold,
+        expect_XY_separate = lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['expect_XY_separate'],
         script = get_script_path('R','clustering_orient_strandstate.snakemake.R')
     singularity: singularity_r_env
     conda: conda_r_env
@@ -475,6 +476,7 @@ rule count_haplotype_markers:
         --homology {input.homology} \\
         --connected-components {input.connected_components} \\
         --segment-length-threshold {params.segment_length_threshold} \\
+        --expect-XY-separate {params.expect_XY_separate} \\
         --threads {threads} \\
         --output {output}) > {log} 2>&1
         '''
