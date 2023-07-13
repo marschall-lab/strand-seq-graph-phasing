@@ -63,7 +63,6 @@ get_script_dir <- function() {
 
 
 # Log ---------------------------------------------------------------------
-## Log
 
 log_path <- get_values('--log')
 log <- file(log_path, open='wt')
@@ -214,6 +213,19 @@ coverage <-
 
 # TODO some sort of more specific report about what and how much each is
 # filtered?
+
+# All clusters should have reads in both watson and crick orientation. Filter
+# out those that don't (small clusters). Sorting breaks if not filtered out.
+# TODO see how this affects exclusions?
+no_both_ori <-
+  coverage %>%
+  distinct(chrom_clust, alignment_direction_cluster) %>%
+  count(chrom_clust) %>%
+  filter(n < 2)
+
+coverage <-
+  anti_join(coverage, no_both_ori, by = 'chrom_clust') %>%
+  as.data.table()
 
 # Coverage Matrices -------------------------------------------------------
 # Phasing is calculated on each chromosome cluster infividually -> Lots of
@@ -376,6 +388,7 @@ coverage_matrices <-
 
 
 get_strand_states <- function(coverage_pair) {
+  
   haplo_strand_states <-
     coverage_pair %>%
     lapply(function(x) data.table(lib_hap=rownames(x))) %>%
@@ -387,7 +400,8 @@ get_strand_states <- function(coverage_pair) {
       col = 'lib_hap',
       into = c('lib', 'haplotype'),
       sep = '__C'
-    )
+    ) %>% 
+    as.data.table()
   
   haplo_strand_states[, `:=`(haplotype=as.integer(haplotype)-1, cluster=as.integer(cluster))]
   
