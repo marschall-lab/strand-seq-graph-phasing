@@ -17,6 +17,15 @@ def collect_output():
 
     all_output.append(expand("rukki/{sample}/{sample}_rukki_paths.gaf", sample=rukki_samples))
 
+    # HiFiasm samples ~ yak databases
+    hifi_samples = set()
+    for sample in SAMPLES:
+        assembler = MAP_SAMPLE_TO_INPUT[sample].get('assembler', None)
+        if assembler == 'hifiasm':
+            hifi_samples.add(sample)
+
+    all_output.append(expand('yak/{sample}/{sample}_{hap}.yak',sample=hifi_samples, hap=['hap1', 'hap2']))
+
     global ALL_OUTPUT
     ALL_OUTPUT = all_output
 

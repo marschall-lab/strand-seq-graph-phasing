@@ -480,10 +480,24 @@ rule count_haplotype_markers:
         '''
 
 
-#######################################
-############ Rukki ############
-#######################################
+################################################################
+############ HiFiasm  Graph Hifi Coverage for Rukki ############
+################################################################
 
+rule extract_coverage_from_hifiasm_gfa:
+    input:
+        gfa=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa'],
+    output:
+        'hifiasm_hifi_coverage/{sample}_hifiasm_hifi_coverage.tsv'
+    shell:
+        '''
+        grep "^S" {input} | awk -F'\t' '{{gsub(/^LN:i:/, "", $4); gsub(/^rd:i:/, "", $5); print $2 "\t" $5 "\t" $4}}' > {output}
+        '''
+
+
+#######################################################
+############ Run Rukki Graph Hifi Coverage ############
+#######################################################
 
 rule add_coverage_to_gfa:
     input:
@@ -510,6 +524,25 @@ rule convert_markers_to_tsv:
            tail -n +2 {input} | awk -F',' '{{OFS="\t"; $1=$1; print}}' > {output}
         '''
 
+#  hifiasm paramters are very experimental. Just trying to manage the presence of long, homozygous nodes, which aren't found in verkko graphs.
+def rukki_paramaterizer(wildcards, parameter) :
+    assembler = MAP_SAMPLE_TO_INPUT[wildcards.sample]['assembler']
+    if parameter == 'solid-homozygous-cov-coeff':
+        if assembler == 'verkko':
+            return 1.1
+        elif assembler == 'hifiasm':
+            return 0
+
+    if parameter == 'max-homozygous-len':
+        if assembler == 'verkko':
+            return 2000000
+        elif assembler == 'hifiasm':
+            return 10000000
+
+    else:
+        raise ValueError(f'No function for parameter: {parameter}')
+
+    raise ValueError('Got nothing')
 
 rule run_rukki:
     input:
@@ -525,6 +558,10 @@ rule run_rukki:
     resources:
         mem_mb=lambda wildcards, attempt: 1024 * 12 * attempt,
         walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
+    params:
+        shcc =lambda wildcards: rukki_paramaterizer(wildcards, 'solid-homozygous-cov-coeff'),
+        mhl= lambda wildcards: rukki_paramaterizer(wildcards, 'max-homozygous-len')
+
     log: "log/run_rukki_{sample}.log"
     benchmark: "benchmark/run_rukki_{sample}.benchmark"
     shell:
@@ -566,14 +603,74 @@ rule run_rukki:
         params="$params --solid-len 500000" 
         
         # Solid nodes with coverage below <coeff> * <weighted mean coverage of 'solid' nodes> can not be classified as homozygous. 0. disables check [default: 1.5]
-        params="$params --solid-homozygous-cov-coeff 1.1"
+        params="$params --solid-homozygous-cov-coeff {params.shcc}"
 
         # Sets minimal marker excess for assigning a parental group of solid nodes to <value>:1. Must be <= marker_ratio (by default == marker_ratio)
         params="$params --solid-ratio 1.5"
-
+        
+        # Longer nodes can not be classified as homozygous [default: 2000000]
+        params="$params --max-homozygous-len {params.mhl}"
+        
         # Assign tangles flanked by solid nodes from the same class, # Allow dead-end nodes in the tangles
         params="$params --assign-tangles --tangle-allow-deadend"
 
         ($CONDA_PREFIX/lib/verkko/bin/rukki trio -g {input.graph} -m {input.markers}              -p {output.tsv} $params) > {log} 2>&1
         ($CONDA_PREFIX/lib/verkko/bin/rukki trio -g {input.graph} -m {input.markers} --gaf-format -p {output.gaf} $params) >> {log} 2>&1
+        '''
+
+
+##############################################
+############ Hifiasm Yak Counting ############
+##############################################
+
+# Peter mentioned that this should be very quick to count, and I am therefore keeping it
+# simple and running both haplotypes in a single rule
+
+rule split_haplotype_annotations:
+    input: 'rukki/{sample}/{sample}_out_final_ann.csv'
+    output:
+        hap1=temp('rukki/{sample}/{sample}_hap1_nodes.txt'),
+        hap2=temp('rukki/{sample}/{sample}_hap2_nodes.txt')
+    shell:
+        '''
+        awk -F'\t' '$2 != "HAPLOTYPE2" {{print $1}}' "{input}" > {output.hap1}
+        awk -F'\t' '$2 != "HAPLOTYPE1" {{print $1}}' "{input}" > {output.hap2}
+        '''
+
+rule split_assembly_for_yak:
+    input:
+        hap1_nodes = 'rukki/{sample}/{sample}_hap1_nodes.txt',
+        hap2_nodes = 'rukki/{sample}/{sample}_hap2_nodes.txt',
+        fasta= 'fasta/{sample}/{sample}_unitigs-hpc.fasta'
+    output:
+        hap1=temp('fasta/{sample}/{sample}_unitigs_hap1.fasta'),
+        hap2=temp('fasta/{sample}/{sample}_unitigs_hap2.fasta')
+    conda: 'envs/env_yak.yaml'
+    shell:
+        '''
+        seqtk subseq {input.fasta} {input.hap1_nodes} > {output.hap1}
+        seqtk subseq {input.fasta} {input.hap2_nodes} > {output.hap2}
+        '''
+
+
+rule yak_count_split_fasta:
+    input:
+        hap1='fasta/{sample}/{sample}_unitigs_hap1.fasta',
+        hap2='fasta/{sample}/{sample}_unitigs_hap2.fasta'
+    output:
+        hap1='yak/{sample}_hap1.yak',
+        hap2='yak/{sample}_hap2.yak'
+    threads: 24
+    conda:'envs/env_yak.yaml'
+    resources:
+        mem_mb = lambda wildcards,attempt: 1024 * 128 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
+    log:
+        hap1="log/yak_count_fasta_hap1_{sample}.log",
+        hap2="log/yak_count_fasta_hap2_{sample}.log"
+    benchmark: "benchmark/yak_count_fasta_{sample}.benchmark"
+    shell:
+        '''
+        yak count -b37 -t{threads} -o {output.hap1} {input.hap1} > {log.hap1} 2>&1
+        yak count -b37 -t{threads} -o {output.hap2} {input.hap2} > {log.hap2} 2>&1
         '''

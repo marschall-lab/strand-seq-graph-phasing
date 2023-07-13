@@ -48,9 +48,15 @@ def process_sample_sheet():
         # hpc
         sample_input[row.sample]['hpc'] = row.hpc
 
+        # assembler
+        sample_input[row.sample]['assembler'] = row.assembler
+
+
         # Coverage ~ Optional
         if not pandas.isna(row.coverage):
             sample_input[row.sample]['coverage'] = str(pathlib.Path(row.coverage).resolve(strict=True))
+        else :
+            sample_input[row.sample]['coverage'] = f'hifiasm_hifi_coverage/{row.sample}_hifiasm_hifi_coverage.tsv'
 
 
     global SAMPLES

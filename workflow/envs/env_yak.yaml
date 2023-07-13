@@ -1,0 +1,4 @@
+name: env_yak
+dependencies:
+  - seqtk>=1.4
+  - yak
