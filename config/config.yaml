@@ -1,4 +1,4 @@
-samples: /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing/config/samples.tsv
+samples: /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing/config/samples-hgsvc-verkko14.tsv
 # modify this to be some sort of num alignments?
 segmentLengthThreshold: 250000
 
