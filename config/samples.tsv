@@ -1,3 +1,0 @@
-sample	gfa	strandseq_dir	strandseq_suffix
-HG002tester	/gpfs/project/projects/medbioinf/projects/mihen108/input/HG002/assembly/assembly.homopolymer-compressed.gfa	/gpfs/project/projects/medbioinf/projects/mihen108/input/HG002/strandseq/	.fastq.gz
-HC01457tester	/gpfs/project/projects/medbioinf/projects/mihen108/input/HC01457/assembly/assembly.homopolymer-compressed.gfa	/gpfs/project/projects/medbioinf/projects/mihen108/input/HC01457/strandseq/	_sequence.txt.gz
