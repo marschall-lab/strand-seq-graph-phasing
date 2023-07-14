@@ -24,7 +24,7 @@ def collect_output():
         if assembler == 'hifiasm':
             hifi_samples.add(sample)
 
-    all_output.append(expand('yak/{sample}/{sample}_{hap}.yak',sample=hifi_samples, hap=['hap1', 'hap2']))
+    all_output.append(expand('yak/{sample}_{hap}.yak',sample=hifi_samples, hap=['hap1', 'hap2']))
 
     global ALL_OUTPUT
     ALL_OUTPUT = all_output
