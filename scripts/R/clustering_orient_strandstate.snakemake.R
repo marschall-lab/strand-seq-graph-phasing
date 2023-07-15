@@ -284,8 +284,10 @@ counts_df <-
 
 counts_df <-
   counts_df %>%
+  right_join(select(long_unitigs_df, unitig), by = 'unitig') %>% 
   tidyr::complete(lib, unitig, fill=list(c=0, w=0)) %>% 
-  mutate(n = c+w)
+  mutate(n = c+w) %>% 
+  filter(!is.na(lib))
 
 
 ### Count fastmap Alignments ------------------------------------------------
