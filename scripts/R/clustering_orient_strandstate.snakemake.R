@@ -974,7 +974,7 @@ exact_match_counts_df <-
   
 ## Phase Clusters Without Homology -----------------------------------------
 
-coverage_minimum <- 3
+coverage_minimum <- 5
 
 # Mark clusters without bubbles, or without sufficient bubble alignments
 clusters_with_adequately_covered_bubbles <-
@@ -989,89 +989,121 @@ no_bubble_clusters <-
   pull_distinct(cluster) %>% 
   setdiff(clusters_with_adequately_covered_bubbles)
 
-## Phase Clusters Without Homology -----------------------------------------
-
 
 ### Cosine Similarities  ------------------------------------------------
 
+big_unitigs <-
+  unitig_lengths_df %>% 
+  filter(length >= 1e6) %>% 
+  pull_distinct(unitig)
 
-# Filter out clusters with only 1 unitig.
+# Filter out clusters with only 1 big unitig.
 one_unitig_clusters <-
   cluster_df %>% 
   filter(cluster %in% no_bubble_clusters) %>% 
+  filter(unitig %in% big_unitigs) %>% 
   count(cluster) %>% 
   filter(n == 1) %>% 
   pull(cluster)
 
-# TODO what if all clusters have no bubbles?
-no_bubble_unitigs <-
-  cluster_df %>% 
-  filter(cluster %in% no_bubble_clusters) %>% 
-  filter(!cluster %in% one_unitig_clusters) %>% 
-  with(split(unitig, cluster))
 
-min_n_wc <- 1
-min_n_sim <- 2
-
-wc_mats <-
+# It appears that for XY clusters, regular counts perform better for separation
+# that exact match counts.
+non_sex_counts <-
   exact_match_counts_df %>% 
   left_join(cluster_df, by='unitig') %>% 
-  semi_join(wc_libraries_df, by=c('lib', 'cluster')) %>%
   filter(cluster %in% no_bubble_clusters) %>% 
-  filter(!cluster %in% one_unitig_clusters) %>% 
-  split(., .$cluster) %>% 
-  map(function(x) with(x, make_wc_matrix(c, w, lib, unitig, min_n=min_n_wc)))
+  # filter(!cluster %in% one_unitig_clusters) %>% 
+  filter(cluster != 'LGXY')
 
-similarities <-
-  map(wc_mats, cosine_similarity, min_overlaps=min_n_sim)
+sex_counts <-
+  counts_df %>% 
+  orient_counts(strand_orientation_clusters_df) %>% 
+  left_join(cluster_df, by='unitig') %>% 
+  filter(cluster %in% no_bubble_clusters) %>% 
+  # filter(!cluster %in% one_unitig_clusters) %>% 
+  filter(cluster =='LGXY')
+
+no_homology_counts_df <- 
+  bind_rows(non_sex_counts, sex_counts) %>%
+  filter(unitig %in% big_unitigs) %>% 
+  split(., .$cluster)
 
 ### Sort Unitigs ------------------------------------------------------------
 
+
 no_bubble_unitig_sorts <- 
-  map(similarities, function(x) {
-    ut <- x[upper.tri(x)]
-    if(all(is.na(ut))) {
-      return(tibble(unitig = rownames(x), sort = NA))
+  no_homology_counts_df[setdiff(names(no_homology_counts_df), one_unitig_clusters)] %>% 
+  imap(function(x, nm) {
+    cat('Sorting no-bubble cluster:', nm, '\n')
+    
+    unitigs <-
+      x %>% 
+      pull_distinct(unitig)
+    
+    fake_cluster_df <-
+      tibble(cluster = unitigs, unitig = unitigs)
+    
+    # TODO justify these parameter values
+    out <- 
+      merge_similar_clusters2_(x, fake_cluster_df, similarity_threshold = 0.5, min_n=1, min_overlaps =2) %>% 
+      mutate(sort = cluster) %>% 
+      mutate(sort = as.integer(as.factor(sort))) 
+    
+    num_clusters <- 
+      out %>% 
+      pull_distinct(sort) %>% 
+      length()
+    
+    num_loops <-
+      out %>% 
+      pull_distinct(num_loops)
+    
+    if(!(num_clusters %in% c(1,2))) {
+      cat('No bubble sorting failure for cluster:', nm, '\n')
+      out <-
+        out %>% 
+        mutate(sort = NA)
     }
     
-    if (!(1 %in% sign(ut) & -1 %in% sign(ut))) {
-      return(tibble(unitig = rownames(x), sort = 1))
-    } 
+    if(num_loops == 0) {
+      cat('No valid similarity scores for cluster:', nm, '\n')
+      out <-
+        out %>% 
+        mutate(sort = NA)
+    }
     
-    x[is.na(x)] <- 0
-    
-    # TODO something about filtering out homozygous here?
-    clusters <-
-      as.dist(1-x) %>% 
-      hclust() %>% 
-      cutree(2)
-    
-    return(tibble::enframe(clusters, name='unitig', value='sort'))
-    
+    out %>% 
+      select(sort, unitig) %>% 
+      return()
     
   })
-
 
 
 ### Library Swapping ------------------------------------------------------
 
 # TODO checks for all 1 and all NA
 no_bubble_lib_swaps <-
-  map(no_bubble_unitig_sorts, function(x) {
-    
-
+  imap(no_bubble_unitig_sorts, function(x, nm) {
+ 
     sort_counts <- 
-      exact_match_counts_df %>% 
+      no_homology_counts_df[nm] %>%
+      bind_rows(.id='cluster') %>% 
       inner_join(x, by='unitig') %>% 
-      left_join(cluster_df, by='unitig') %>% 
       semi_join(wc_libraries_df, by=c('lib', 'cluster'))
+
+    # TODO do this more cleverly
+    if(nrow(sort_counts) == 0){
+      sort_counts <- 
+        no_homology_counts_df[nm] %>%
+        bind_rows(.id='cluster')  %>% 
+        inner_join(x, by='unitig')
+    }
     
     sort_counts <-
       sort_counts %>% 
       group_by(lib, sort) %>% 
       summarise(c = sum(c), w=sum(w), n=sum(n), .groups = 'drop')
-    
-  
     
     if(all(is.na(sort_counts$sort))) {
       swaps <-
@@ -1115,6 +1147,34 @@ no_bubble_lib_swaps <-
   })
 
 
+## Haplotype Marker Counts -------------------------------------------------
+cat('Counting haplotype markers\n')
+
+no_bubble_lib_swaps_df <-
+  no_bubble_lib_swaps %>%
+  map_dfr(function(x)
+    tibble::enframe(x, name = 'lib', value = 'swapped'),
+    .id = 'cluster')
+
+no_bubble_marker_counts <-
+  no_homology_counts_df %>% 
+  bind_rows(.id='cluster') %>% 
+  inner_join(no_bubble_lib_swaps_df, by=c('lib', 'cluster')) 
+
+# NA values indicate WC libraries that mapped to no bubbles, or clusters with no
+# bubbles. 
+
+#  treat NA as swapped=FALSE for now?
+no_bubble_marker_counts <-
+  no_bubble_marker_counts %>%
+  filter(!is.na(swapped)) %>% 
+  mutate(c = ifelse(swapped & !is.na(swapped), n - c, c), 
+         w = ifelse(swapped & !is.na(swapped), n - w, w))
+
+no_bubble_marker_counts <-
+  no_bubble_marker_counts %>% 
+  group_by(unitig) %>% 
+  summarise(c = sum(c), w=sum(w), .groups="drop")
 ## Phase Clusters With Homology -----------------------------------------
 
 ### Filter to WC libraries for each cluster ---------------------------------
@@ -1184,13 +1244,6 @@ lib_swaps <-
   map(strandphaser_sort_array)
 
 
-
-## Combine Library Swaps ---------------------------------------------------
-
-stopifnot(all_are_unique(c(names(lib_swaps), names(no_bubble_lib_swaps))))
-
-lib_swaps <- c(lib_swaps, no_bubble_lib_swaps)
-
 ## Haplotype Marker Counts -------------------------------------------------
 
 cat('Counting haplotype markers\n')
@@ -1222,6 +1275,12 @@ marker_counts <-
   group_by(unitig) %>% 
   summarise(c = sum(c), w=sum(w), .groups="drop")
 
+
+# Combine Marker Counts ---------------------------------------------------
+
+marker_counts <-
+  marker_counts %>% 
+  bind_rows(no_bubble_marker_counts)
 
 # Export ------------------------------------------------------------------
 
