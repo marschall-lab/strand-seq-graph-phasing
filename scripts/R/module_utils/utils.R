@@ -56,6 +56,7 @@ basename_no_ext <- function(x) {
 # Tidying -----------------------------------------------------------------
 
 get_prcomp_plotdata <- function(pca, rownames_col='rname') {
+  stopifnot(class(pca) == 'prcomp')
   out <- as_tibble(pca$x)
   pc_cols <- names(out)
   out[, rownames_col] <- rownames(pca$x)

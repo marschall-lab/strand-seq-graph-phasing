@@ -200,6 +200,9 @@ merge_similar_clusters_on_components <- function(counts_df, cluster_df, componen
       filter(length(unique(cluster)) > 1) %>% 
       pull_distinct(component)
     
+    if(length(components_with_multiple_clusters) < 1) {
+      cat('No components with multiple clusters')
+    }
     
     for(cmp in components_with_multiple_clusters) {
       cmp_clusters <-
@@ -283,7 +286,7 @@ merge_similar_clusters_on_components <- function(counts_df, cluster_df, componen
       } else {
         cat(
           'Not merging',
-          cmp_clusters,
+          paste(cmp_clusters, collapse=','),
           ' greatest similarity between',
           clust_1,
           ', ',
