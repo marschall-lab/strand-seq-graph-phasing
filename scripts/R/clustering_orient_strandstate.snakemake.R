@@ -1147,7 +1147,43 @@ no_bubble_lib_swaps <-
   })
 
 
+### Swaps for 1 unitig clusters ---------------------------------------------
+
+# This exists to try to handle those verkko graphs when X and Y are fully
+# phased, and then the pipeline just goes to shit for those chromosomes.
+
+# Only for very big unitigs, just add them to each haplotype alternating from
+# largest to smallest
+
+# TODO should it also be clusters where the whole connected component is one
+# unitig?
+one_unitig_clusters_to_sort <-
+  cluster_df %>% 
+  filter(cluster %in% one_unitig_clusters) %>% 
+  left_join(unitig_lengths_df, by='unitig') %>% 
+  filter(length >= 1e7) %>% 
+  arrange(length) %>% 
+  pull(cluster)
+
+
+one_unitig_cluster_swaps <-
+  imap(one_unitig_clusters_to_sort, function(x, n) {
+    counts <- no_homology_counts_df[[cluster]]
+    if ((n %% 2) == 1) {
+      swaps <- set_names(counts$c > counts$w, counts$lib)
+    } else {
+      swaps <- set_names(counts$c < counts$w, counts$lib)
+    }
+    
+    return(swaps)
+  }) %>%
+  set_names(one_unitig_clusters_to_sort)
+
+
 ## Haplotype Marker Counts -------------------------------------------------
+
+no_bubble_lib_swaps <- c(no_bubble_lib_swaps, one_unitig_cluster_swaps)
+
 cat('Counting haplotype markers\n')
 
 no_bubble_lib_swaps_df <-
