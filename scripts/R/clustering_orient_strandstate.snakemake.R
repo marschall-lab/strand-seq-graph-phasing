@@ -292,7 +292,7 @@ counts_df <-
   mutate(n = c+w) %>% 
   filter(!is.na(lib))
 
-
+# raw_counts_df <- counts_df
 ### Count fastmap Alignments ------------------------------------------------
 
 lib_names <-
@@ -327,6 +327,8 @@ exact_match_counts_df <-
   mutate(n = c+w) %>% 
   filter(!is.na(lib))
 
+# raw_exact_match_counts_df <- exact_match_counts_df
+
 if(n_threads > 1) {
   # close workers
   plan(sequential)
@@ -355,6 +357,17 @@ strand.freq <-
 # debugonce(plotWCdistribution, signature = "StrandFreqMatrix")
 # plotWCdistribution(strand.freq)
 
+# It seems that more libraries can be removed than is explicitly stated during
+# contiBAIT preprocessing. EG, it will say 5 libs are removed for insufficent
+# read counts, but far fewer than 5 are removed in the strand state matrix.
+
+# UPDATE: It does appear that the additional libraries removed are indeed
+# strangely or improperly behaved. EG, a normal library will show three wfrac
+# peaks, at -1, 0, 1, while a library that was removed unannounced will have a
+# wfrac distribution looking like a normal centered at 0. So I guess there is a
+# good reason some additional libraries are excluded, but the fact that this
+# isn't properly announced is so frustrating.
+
 cat('Running contiBAIT QC\n')
 # debugonce(preprocessStrandTable, signature = 'StrandFreqMatrix')
 strand.states <-
@@ -364,6 +377,20 @@ strand.states <-
     lowQualThreshold = 0.8,
     minLib = 20
   )
+
+included_libraries <- colnames(strand.states$strandMatrix)
+excluded_libraries <- setdiff(lib_names, included_libraries)
+WARNINGS <- character()
+WARNINGS <- c(WARNINGS, paste0(length(included_libraries)/length(lib_names), '% of Strand-seq libraries pass QC'))
+
+counts_df <-
+  counts_df %>%
+  filter(lib %in% included_libraries)
+
+exact_match_counts_df <-
+  exact_match_counts_df %>%
+  filter(lib %in% included_libraries)
+
 
 ## Contibait Chromosome Clustering -----------------------------------------
 
@@ -402,7 +429,7 @@ clust <-
 # debugonce(findSexGroups, signature = c('LinkageGroupList', 'StrandStateMatrix'))
 clust <- findSexGroups(clust, strand.states$strandMatrix) 
 
-WARNINGS <- character()
+
 
 if(length(grep('^sex', names(clust), value = TRUE)) > 1) {
   # TODO what if multiple groups of haploid detected chromosomes?
@@ -932,6 +959,7 @@ if(nrow(bad) > 0) {
  
  
 ## Orient Fastmap Counts --------------------------------------------------
+# exact_match_counts_df <- raw_exact_match_counts_df
 
 # concatenate with inverted, then filter based on strand orientation
 exact_match_counts_df <-
