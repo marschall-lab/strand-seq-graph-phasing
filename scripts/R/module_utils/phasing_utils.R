@@ -530,6 +530,22 @@ link_homology <- function(cluster_df, homology_df, components_df) {
 
 
 # Phasing -----------------------------------------------------------------
+orient_counts <- function(counts_df, strand_orientation_clusters_df){
+  out <-
+    counts_df %>%
+    bind_with_inverted_unitigs() %>% 
+    semi_join(
+      filter(strand_orientation_clusters_df, strand_cluster == 1),
+      by = c('unitig', 'unitig_dir')
+    )
+  
+  out <- 
+    out %>% 
+    select(-unitig_dir)
+  
+  return(out)
+  
+}
 
 
 calc_concensus_margin <- function(x, ...) {
