@@ -962,25 +962,16 @@ if(nrow(bad) > 0) {
   # WARNINGS <- c(WARNINGS, 'Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
 }
 
- 
+
+
 # Phase Chromosomes -------------------------------------------------------
- 
- 
+
 ## Orient Fastmap Counts --------------------------------------------------
 # exact_match_counts_df <- raw_exact_match_counts_df
 
-# concatenate with inverted, then filter based on strand orientation
 exact_match_counts_df <-
-  exact_match_counts_df %>%
-  bind_with_inverted_unitigs() %>% 
-  semi_join(
-    filter(strand_orientation_clusters_df, strand_cluster == 1),
-    by = c('unitig', 'unitig_dir')
-  ) 
-
-exact_match_counts_df <-
-  exact_match_counts_df %>%
-  select(-unitig_dir)
+  orient_counts(exact_match_counts_df, strand_orientation_clusters_df)
+  
 
 
 ## Homology Cluster Check --------------------------------------------------
