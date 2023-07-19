@@ -955,7 +955,8 @@ strand_orientation_clusters_df <-
   filter(n() != 1)
 
 if(nrow(bad) > 0) {
-  WARNINGS <- c(WARNINGS, 'Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
+  stop('Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
+  # WARNINGS <- c(WARNINGS, 'Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
 }
 
  
