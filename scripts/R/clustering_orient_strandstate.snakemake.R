@@ -571,7 +571,7 @@ cluster_df <-
 
 cat('Cosine cluster merging\n')
 
-cluster_df <- merge_similar_clusters_on_components(cluster_df, components_df)
+cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.4)
 
 ### Cosine Unassigned -----------------------------------------------------
 
@@ -686,7 +686,7 @@ while(any_assigned) {
 # 
 # cat('Cosine cluster merging\n')
 # 
-# cluster_df <- merge_similar_clusters_on_components(cluster_df, components_df)
+# cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.35)
 
 ## Link Homology -----------------------------------------------------------
 

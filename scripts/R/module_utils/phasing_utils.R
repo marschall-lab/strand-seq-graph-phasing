@@ -184,9 +184,10 @@ marginalize_wc_counts <-
 
 # Clustering --------------------------------------------------------------
 
-
-merge_similar_clusters_on_components <- function(cluster_df, components_df, similarity_threshold =0.40 ) {
+merge_similar_clusters_on_components <- function(counts_df, cluster_df, components_df, similarity_threshold =0.40 ) {
   # TODO
+  wfrac_matrix <- with(counts_df, make_wc_matrix(w, c, lib, unitig))
+  
   any_merged <- TRUE
   while(any_merged) {
     any_merged <- FALSE
@@ -219,7 +220,7 @@ merge_similar_clusters_on_components <- function(cluster_df, components_df, simi
       
       # TODO weighted by vector length?
       component_similarities <-
-        wfrac.matrix[flatten_chr(cluster_unitigs), ] %>% 
+        wfrac_matrix[flatten_chr(cluster_unitigs), ] %>% 
         cosine_similarity() %>% 
         abs()
       
