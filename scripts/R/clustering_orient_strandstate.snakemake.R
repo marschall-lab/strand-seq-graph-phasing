@@ -318,12 +318,14 @@ exact_match_counts_df <- import_mapper(fastmap_alignment_files, function(x) {
 exact_match_counts_df <-
   exact_match_counts_df %>%
   set_names(lib_names) %>%
-  bind_rows(.id = 'lib') %>%
-  tidyr::complete(lib, unitig, fill=list(c=0, w=0))
+  bind_rows(.id = 'lib') 
 
 exact_match_counts_df <-
   exact_match_counts_df %>%
-  mutate(n = c+w)
+  right_join(select(long_unitigs_df, unitig), by = 'unitig') %>% 
+  tidyr::complete(lib, unitig, fill=list(c=0, w=0)) %>% 
+  mutate(n = c+w) %>% 
+  filter(!is.na(lib))
 
 if(n_threads > 1) {
   # close workers
