@@ -334,21 +334,10 @@ if(n_threads > 1) {
   plan(sequential)
 }
 
-
-
-# contiBait Clustering ----------------------------------------------------
-
-## W Fraction Matrix -------------------------------------------------------
-
-
-wfrac.matrix <-
-  with(counts_df, make_wc_matrix(w, c, lib, unitig))
-
-
 ## ContiBAIT QC ------------------------------------------------------------
 
 strand.freq <- 
-  wfrac.matrix %>% 
+  with(counts_df, make_wc_matrix(w, c, lib, unitig)) %>% 
   spoof_rownames() %>% 
   StrandFreqMatrix()
 
@@ -539,15 +528,6 @@ if(length(par_clusters) > 1) {
 ## Remove Micro Clusters ---------------------------------------------------
 
 cat('Removing micro clusters: \n')
-# clusters that are contained on only one component
-# one_component_clusters <-
-#   cluster_df %>% 
-#   left_join(components_df, by='unitig') %>% 
-#   filter(!is.na(cluster)) %>% 
-#   distinct(component, cluster) %>% 
-#   count(cluster) %>% 
-#   filter(n == 1) %>% 
-#   pull(cluster) 
 
 cluster_component_fractions <-
   components_df %>% 
@@ -753,7 +733,7 @@ for(bub in multi_cluster_bubbles) {
     ' and ',
     bubble_clusters[2],
     ' share homology via unitigs: ',
-    bubble_clusters_df$unitig,
+    paste(bubble_clusters_df$unitig, collapse = ', '),
     '\n'
   )
     
@@ -916,7 +896,7 @@ cat('Detecting unitig orientation\n')
 
 prcomps <-
   counts_df %>% 
-  bind_with_inverted_unitigs() %>% 
+  bind_with_inverted_unitigs() %>%
   left_join(cluster_df, by='unitig') %>% 
   # semi_join(ww_libraries_df, by=c('lib', 'cluster')) %>% 
   split(.$cluster) %>% 
@@ -943,16 +923,17 @@ strand_orientation_clusters_df <-
   strand_orientation_clusters_df %>% 
   mutate(unitig = stringr::str_remove(unitig_dir, '_inverted$'))
 
-#TODO I have discovered that some points are located truly at the origin (for all PCs), and
-#therefore do not separate on the first PC. What lol. Figure out what leads to
-#this. (HG03456)
+# I have discovered that some points are located truly at the origin (for
+# all PCs), and therefore do not separate on the first PC. What lol. 
+
+# TODO Figure out what leads to this. (HG03456)
 
 strand_orientation_clusters_df <- 
   strand_orientation_clusters_df %>% 
   mutate(strand_cluster = ifelse(strand_cluster != 0, strand_cluster, ifelse(grepl('_inverted', unitig_dir), -1, 1)))
 
 # Warning that checks that every unitig and its invert are in opposite clusters
- bad <-
+bad <-
   strand_orientation_clusters_df %>% 
   group_by(unitig, strand_cluster) %>% 
   filter(n() != 1)
@@ -1086,6 +1067,7 @@ no_bubble_unitig_sorts <-
 no_bubble_lib_swaps <-
   imap(no_bubble_unitig_sorts, function(x, nm) {
  
+    # TODO can you make this work without wc_libraries df?
     sort_counts <- 
       no_homology_counts_df[nm] %>%
       bind_rows(.id='cluster') %>% 
@@ -1129,8 +1111,6 @@ no_bubble_lib_swaps <-
       
       return(swaps)
     }
-    
-
     
     sort_2_votes <-
       sort_counts %>% 
@@ -1211,6 +1191,7 @@ no_bubble_marker_counts <-
   no_bubble_marker_counts %>% 
   group_by(unitig) %>% 
   summarise(c = sum(c), w=sum(w), .groups="drop")
+
 ## Phase Clusters With Homology -----------------------------------------
 
 ### Filter to WC libraries for each cluster ---------------------------------
