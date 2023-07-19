@@ -29,7 +29,10 @@ bind_with_inverted_unitigs <- function(counts_df) {
                c = n-c,
                w = n-w)
     )
+  
+  return(counts_df)
 }
+
 whats_covered <- function(crick_coverage_ratio, coverage_ratio_threshold=0.75) {
   
   if(is.na(crick_coverage_ratio)) {
