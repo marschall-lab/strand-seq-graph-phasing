@@ -603,7 +603,8 @@ cluster_df <-
 
 cat('Cosine cluster merging\n')
 
-cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.4)
+cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.35)
+
 cluster_df <- merge_similar_clusters(counts_df, cluster_df, similarity_threshold = 0.66)
 
 ### Cosine Unassigned -----------------------------------------------------
@@ -716,14 +717,15 @@ while(any_assigned) {
 }
 
 ## Cosine Cluster Merging ----------------------------------------------------
-# 
-# cat('Cosine cluster merging\n')
-# 
-# cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.35)
+
+cat('Cosine cluster merging\n')
+
+# Sometimes, some of the newly created clusters will should be merged into other
+# components on cluster (centromere troubles especially)
+cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.35)
+
 
 ## Link Homology -----------------------------------------------------------
-
-
 
 #### Remove multi cluster bubbles --------------------------------------------
 
