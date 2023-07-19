@@ -972,21 +972,22 @@ if(nrow(bad) > 0) {
 exact_match_counts_df <-
   orient_counts(exact_match_counts_df, strand_orientation_clusters_df)
   
+## Phase Clusters Without Homology -----------------------------------------
 
+coverage_minimum <- 3
 
-## Homology Cluster Check --------------------------------------------------
-
-bubble_counts_df <-
-  full_join(cluster_df, homology_df, by = 'unitig') %>% 
-  distinct(cluster, bubble) %>% 
-  group_by(cluster) %>% 
-  summarise(n_bubbles=sum(!is.na(bubble)))
-
+# Mark clusters without bubbles, or without sufficient bubble alignments
+clusters_with_adequately_covered_bubbles <-
+  exact_match_counts_df %>% 
+  semi_join(homology_df, by='unitig')  %>% 
+  left_join(cluster_df, by='unitig') %>% 
+  filter(n >= coverage_minimum) %>% 
+  pull_distinct(cluster)
 
 no_bubble_clusters <-
-  bubble_counts_df %>% 
-  filter(n_bubbles == 0) %>% 
-  pull(cluster)
+  cluster_df %>% 
+  pull_distinct(cluster) %>% 
+  setdiff(clusters_with_adequately_covered_bubbles)
 
 ## Phase Clusters Without Homology -----------------------------------------
 
@@ -1130,7 +1131,6 @@ bubble_coverage <-
 
 cat('Counting fastmap alignments to bubbles\n')
 
-coverage_minimum <- 3
 
 bubble_coverage <-
   bubble_coverage %>%
