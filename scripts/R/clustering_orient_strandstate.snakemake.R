@@ -900,7 +900,11 @@ cat('Detecting unitig orientation\n')
 # have a minimal effect? Do it anyways, it is just a semi_join? This could be a
 # vital step for clustering the haploid segments? It appears that for the
 # haploid clusters it works well to improve the explained variance of the first
-# PC, and makes it comparable to a diploid cluster.
+# PC, and makes it comparable to a diploid cluster. However, it seems to still
+# work correctly in general regardless of library selection, and it simplifies
+# things to not have to filter to any libraries for this step. EG, what if a
+# cluster consists entirely of misbehaving unitigs that make library calling
+# difficult, and having to account for that special case.
 
 # Is working in a continuous space (eg, principal components of W-fraction)
 # instead of a discretized space (eg, k-modes clustering on strand states)
@@ -911,7 +915,7 @@ prcomps <-
   counts_df %>% 
   bind_with_inverted_unitigs() %>% 
   left_join(cluster_df, by='unitig') %>% 
-  semi_join(ww_libraries_df, by=c('lib', 'cluster')) %>% 
+  # semi_join(ww_libraries_df, by=c('lib', 'cluster')) %>% 
   split(.$cluster) %>% 
   map(function(x) with(x, make_wc_matrix(w,c,lib,unitig_dir)))  %>% 
   # filling with 0s doesn't seem to affect first PC too much, compared to
