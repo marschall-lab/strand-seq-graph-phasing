@@ -425,9 +425,9 @@ clust <-
                  verbose = FALSE)
  
 ## Detect Haploid Clusters ----------------------------------------------
- 
+
 # debugonce(findSexGroups, signature = c('LinkageGroupList', 'StrandStateMatrix'))
-clust <- findSexGroups(clust, strand.states$strandMatrix) 
+clust <- findSexGroups(clust, strand.states$strandMatrix, callThreshold = 0.333)
 
 
 
