@@ -361,7 +361,6 @@ rule mashmap_assembly_to_self:
         '''
         mashmap -r {input} -q {input} -t {threads} -f none --pi {params.percent_identity} -s {params.min_alignment_size} -k {params.kmer_size} -o {output} > {log} 2>&1
         '''
-
 # rule filter_mashmap:
 #     input:  "homology/{sample}/{sample}_mashmap.paf"
 #     output: "homology/{sample}/{sample}_mashmap_unitig-matches.tsv"
@@ -372,6 +371,20 @@ rule mashmap_assembly_to_self:
 #         cat {input} |awk '{{if ($NF > 99 && $4-$3 > 500000 && $1 != $6) print $1"\t"$6}}'|sort |uniq > {output}
 #         '''
 #
+
+# parameters from the minimap cookbook: https://github.com/lh3/minimap2/blob/master/cookbook.md#constructing-self-homology-map
+rule minimap_assembly_to_self:
+    input: "fasta/{sample}/{sample}_unitigs-hpc.fasta"
+    output: "homology/{sample}/{sample}_minimap.paf"
+    conda: 'envs/env_cl.yaml'
+    resources:
+        mem_mb=lambda wildcards, attempt: 1024 * 96 * attempt,
+        walltime=lambda wildcards, attempt: f'{8 + attempt * attempt:02}:59:00'
+    threads: 24
+    log: "log/minimap_homology_{sample}.log"
+    benchmark: "benchmark/minimap_homology_{sample}.benchmark"
+    shell: '(minimap2 -DP -k19 -w19 -m200 {input} {input} > {output}) > {log} 2>&1'
+
 
 ################################################
 ############ bubbleGun Homology ############
@@ -417,6 +430,7 @@ rule combine_homology:
     input:
         mashmap="homology/{sample}/{sample}_mashmap.paf",
         bubblegun="homology/{sample}/{sample}_exploded_simplified_bubblegun.json",
+        # minimap="homology/{sample}/{sample}_minimap.paf",
         gfa="gfa/gfa/{sample}_exploded_simplified.gfa"
     output: "homology/{sample}/{sample}_combined_mashmap_bubblegun_homology.tsv"
     params:
