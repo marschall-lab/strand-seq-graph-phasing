@@ -604,6 +604,7 @@ cluster_df <-
 cat('Cosine cluster merging\n')
 
 cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.4)
+cluster_df <- merge_similar_clusters(counts_df, cluster_df, similarity_threshold = 0.66)
 
 ### Cosine Unassigned -----------------------------------------------------
 
