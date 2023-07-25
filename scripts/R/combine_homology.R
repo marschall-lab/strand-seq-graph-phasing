@@ -255,6 +255,23 @@ bubblegun_df <-
   bubblegun_df %>% 
   filter(!(bubble %in% bubbles_with_merged_unitigs)) %>% 
   bind_rows(merged_bubble_df) 
+
+
+## Bubble Size Filtering ---------------------------------------------------
+
+# There can be false positive bubble detection
+short_unitigs <- 
+  unitig_lengths_df %>% 
+  filter(length <=5e5) %>% 
+  pull(unitig)
+
+bubblegun_df <- 
+  bubblegun_df %>% 
+  filter(!(unitig %in% short_unitigs)) %>% 
+  group_by(bubble) %>% 
+  filter(n() == 2) %>% 
+  ungroup()
+
 # Deduplicate Bubbles -----------------------------------------------------
 
 mashmap_wide <-
