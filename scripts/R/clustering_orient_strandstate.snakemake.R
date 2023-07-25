@@ -723,14 +723,15 @@ strand_state_df <-
 strand_state_df <-
   strand_state_df %>% 
   mutate(unitig = strip_range(unitig_range)) %>% 
-  left_join(cluster_df, by='unitig')
+  left_join(cluster_df, by='unitig') %>% # Full join to pull in missing clusters?
+  left_join(counts_df, by=c('unitig', 'lib'))
 
 # 2 ~ heterozygous call
 het_fracs <-
   strand_state_df %>% 
   group_by(cluster, lib, .drop=FALSE) %>% 
-  filter(!(unitig %in% c(low_wc_unitigs, high_wc_unitigs))) %>% 
-  summarise(het_frac = mean(state==2, na.rm=TRUE), .groups="drop") 
+  filter(!(unitig %in% c(low_wc_unitigs, high_wc_unitigs))) %>%
+  summarise(het_frac = weighted.mean(state==2, n, na.rm=TRUE), .groups="drop") 
 
 # TODO, check that all clusters have at least one unitig to call strand states
 # with. Current fall through: If a cluster consists of only unusual unitigs (no
