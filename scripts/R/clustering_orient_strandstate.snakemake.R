@@ -491,6 +491,15 @@ while(any_assigned) {
 
 }
 
+
+### NA Cluster --------------------------------------------------------------
+# TODO why do these form?
+
+cluster_df <-
+  cluster_df %>% 
+  mutate(cluster = ifelse(is.na(cluster), paste0('LGNA_', unitig), cluster))
+
+
 ## Cosine Cluster Merging ----------------------------------------------------
 
 cat('Cosine cluster merging\n')
