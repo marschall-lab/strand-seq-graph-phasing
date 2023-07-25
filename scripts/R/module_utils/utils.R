@@ -140,7 +140,7 @@ cosine_similarity <-function(mat, ...) {
   
   for(i in 1:n) {
     for(j in i:n) {
-      sim <- cosine_similarity_(mat[i, ], mat[j, ])
+      sim <- cosine_similarity_(mat[i, ,drop=FALSE], mat[j, ,drop=FALSE])
       similarity_mat[i, j] <- sim
       similarity_mat[j, i] <- sim
     }
