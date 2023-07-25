@@ -700,65 +700,6 @@ for(bbc in bare_bubble_components) {
 
 
 
-# Call WC Libraries -------------------------------------------------------
-
-cat('Calling library strand states\n')
-# TODO incorporate the low-quality libraries from the contiBAIT QC into this. Or
-# is that done already by using the strand.states$strandMatrix? I think that is
-# already handled that's nice lol.
-
-## Unusual Unitigs ---------------------------------------------------------
-
-high_wc_unitigs <-
-  strand.states$AWCcontigs@seqnames %>% 
-  as.character()
-
-low_wc_unitigs <-
-  clust[grepl('^sex', names(clust))] %>% 
-  flatten_chr() %>% 
-  strip_range()
-
-
-## Call Library State  -------------------------------------------------------
-
-strand_state_df <-
-  strand.states$strandMatrix@.Data %>% 
-  as_tibble(rownames = 'unitig_range')
-
-strand_state_df <-
-  strand_state_df %>% 
-  tidyr::pivot_longer(-unitig_range, names_to = 'lib', values_to = 'state')
-
-strand_state_df <-
-  strand_state_df %>% 
-  mutate(unitig = strip_range(unitig_range)) %>% 
-  left_join(cluster_df, by='unitig') %>% # Full join to pull in missing clusters?
-  left_join(counts_df, by=c('unitig', 'lib'))
-
-# 2 ~ heterozygous call
-het_fracs <-
-  strand_state_df %>% 
-  group_by(cluster, lib, .drop=FALSE) %>% 
-  filter(!(unitig %in% c(low_wc_unitigs, high_wc_unitigs))) %>%
-  summarise(het_frac = weighted.mean(state==2, n, na.rm=TRUE), .groups="drop") 
-
-# TODO, check that all clusters have at least one unitig to call strand states
-# with. Current fall through: If a cluster consists of only unusual unitigs (no
-# unitigs in het_fracs) then all libraries will be called WC
-
-# Threshold chosen based on looking at a plot
-wc_threshold <- 0.9
-
-ww_libraries_df <-
-  het_fracs %>% 
-  dplyr::filter(het_frac < wc_threshold) 
-
-wc_libraries_df <-
-  het_fracs %>% 
-  anti_join(ww_libraries_df, by=c('cluster', 'lib'))
-
-
-
 # Orientation Detection w/ Inverted Unitigs -------------------------------
 
 cat('Detecting unitig orientation\n')
@@ -839,6 +780,110 @@ if(nrow(bad) > 0) {
   # WARNINGS <- c(WARNINGS, 'Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
 }
 
+
+# Call WC Libraries -------------------------------------------------------
+
+cat('Calling library strand states\n')
+# TODO incorporate the low-quality libraries from the contiBAIT QC into this. Or
+# is that done already by using the strand.states$strandMatrix? I think that is
+# already handled that's nice lol.
+
+## Unusual Unitigs ---------------------------------------------------------
+
+high_wc_unitigs <-
+  strand.states$AWCcontigs@seqnames %>% 
+  as.character()
+
+low_wc_unitigs <-
+  clust[grepl('^sex', names(clust))] %>% 
+  flatten_chr() %>% 
+  strip_range()
+
+
+## Call Library State contiBAIT  -------------------------------------------------------
+
+# FIXME This will only call WC states for clusters that contiBAIT created!
+strand_state_df <-
+  strand.states$strandMatrix@.Data %>% 
+  as_tibble(rownames = 'unitig_range')
+
+strand_state_df <-
+  strand_state_df %>% 
+  tidyr::pivot_longer(-unitig_range, names_to = 'lib', values_to = 'state')
+
+strand_state_df <-
+  strand_state_df %>% 
+  mutate(unitig = strip_range(unitig_range)) %>% 
+  left_join(cluster_df, by='unitig') %>% # Full join to pull in missing clusters?
+  left_join(counts_df, by=c('unitig', 'lib'))
+
+# 2 ~ heterozygous call
+het_fracs <-
+  strand_state_df %>% 
+  group_by(cluster, lib, .drop=FALSE) %>% 
+  filter(!(unitig %in% c(low_wc_unitigs, high_wc_unitigs))) %>%
+  summarise(het_frac = weighted.mean(state==2, n, na.rm=TRUE), .groups="drop") 
+
+# TODO, check that all clusters have at least one unitig to call strand states
+# with. Current fall through: If a cluster consists of only unusual unitigs (no
+# unitigs in het_fracs) then all libraries will be called WC
+
+# Threshold chosen based on looking at a plot
+wc_threshold <- 0.9
+
+ww_libraries_df <-
+  het_fracs %>% 
+  dplyr::filter(het_frac < wc_threshold) 
+
+wc_libraries_df <-
+  het_fracs %>% 
+  anti_join(ww_libraries_df, by=c('cluster', 'lib'))
+
+
+## Call Library State no ContiBait -----------------------------------------
+
+# TODO If a cluster contains no unitigs that passed contibait QC, then the WC
+# libraries need to be inferred somehow else.
+
+# Use the prcomps!
+missing_clusters <-
+  cluster_df %>% 
+  pull_distinct(cluster) %>% 
+  setdiff(strand_state_df$cluster)
+
+missing_wc <-
+  prcomps[missing_clusters] %>% 
+  imap_dfr(function(x, nm) {
+    # Use loadings from first PC. High loadings ~ WW libraries Low Loadings WC Libraries
+    loading_percentages <-
+      x$rotation[, 1] ^2
+    
+    n_libs <- length(loading_percentages)
+    
+    loading_range <- 
+      range(loading_percentages)
+    
+    threshold <-
+      loading_range[1] + 0.2 * loading_range[2]
+    
+    wc_libs <-
+      names(loading_percentages)[loading_percentages < threshold]
+    
+    # if(length(wc_libs) > n_libs %/% 2) {
+    #   wc_libs <-
+    #     sort(loading_percentages, decreasing=FALSE)[1:(n_libs %/% 2)] %>% 
+    #     names()
+    # }
+    
+    out <-
+      tibble(cluster=nm, lib=wc_libs)
+    
+    return(out)
+  })
+
+wc_libraries_df <-
+  wc_libraries_df %>% 
+  bind_rows(missing_wc)
 
 
 # Phase Chromosomes -------------------------------------------------------
