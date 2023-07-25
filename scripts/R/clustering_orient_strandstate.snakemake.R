@@ -327,84 +327,7 @@ cluster_df <-
 
 cat('Refining Clusters\n')
 
-### PAR Detection -----------------------------------------------------------
-cat('Detecting PAR\n')
 
-# TODO add some sort of size based threshold for the PAR (hpc and non-hpc)
-
-# TODO, add a percentage check to declare a PAR cluster. EG the sex cluster must
-# take up at least X% of the cluster on a component or something like that.
-
-haploid_component_fractions_df <-
-  cluster_df %>%
-  left_join(components_df, by='unitig') %>% 
-  left_join(unitig_lengths_df, b='unitig') %>% 
-  group_by(component) %>% 
-  filter(any(grepl('^sex', cluster))) %>% 
-  ungroup()
-
-haploid_component_fractions_df <-
-  haploid_component_fractions_df %>% 
-  group_by(component, cluster) %>% 
-  summarise(length = sum(length), .groups="drop") %>% 
-  group_by(component) %>% 
-  mutate(perc = length/sum(length)) %>% 
-  ungroup()
-
-# TODO handle warning when nrow(haploid_component_fractions_df) == 0
-
-# TODO
-# Only a haploid component if x% of the             unitigs on a component are haploid clustered?
-# Only a haploid component if x% of the *clustered* unitigs on a component are haploid clustered?
-
-perc_threshold <- 0.05
-
-# TODO experiment with filtering criteria that doesn't demand a flag.
-
-# Haploid unititgs sometimes appear in the degenerate regions of other
-# chromosomes (i've noticed them in the big circular tangle on Chr1 a couple
-# times) so there needs to be a little logic before calling a cluster a PAR
-# cluster. Here a genuine haploid unitig is only called if it is the largest
-# cluster among clustered unitigs, and occupies more than `perc_threshold`
-# percent of a component
-haploid_components <-
-  haploid_component_fractions_df %>% 
-  filter(!is.na(cluster)) %>% 
-  group_by(component) %>% 
-  filter(perc == max(perc) & grepl('^sex', cluster) & perc >= perc_threshold) %>% 
-  ungroup() %>% 
-  pull_distinct(component) 
-
-haploid_component_unititgs <-
-  components_df %>% 
-  filter(component %in% haploid_components) %>% 
-  semi_join(long_unitigs_df, by='unitig') %>% 
-  pull(unitig)
-
-# expect_XY_separate ~ only perform PAR detection for assemblies where the XY
-# component is likely only conntected to the PAR. Hifiasm graphs are more
-# tangled than that right now and therefore PAR detection for hifiasm likely
-# shoould not be attempted. The condition that the haploid cluster be the
-# largest likely would prevent anything from going wrong, but this flag is here
-# to be extra safe.
-par_clusters <- 
-  cluster_df %>% 
-  filter(unitig %in% haploid_component_unititgs) %>% 
-  filter(!grepl('^sex', cluster)) %>% 
-  filter(!is.na(cluster)) %>%
-  filter(expect_XY_separate) %>% 
-  pull_distinct(cluster) 
-
-
-
-cat('No. PAR clusters detected: ', length(par_clusters), '\n')
-
-if(length(par_clusters) > 1) {
-  WARNINGS <-
-    c(WARNINGS,
-      "more than 1 PAR cluster, haven't thought about what will happen in this case")
-  
-}
 
 
 ## Remove Micro Clusters ---------------------------------------------------
@@ -430,7 +353,7 @@ component_fraction_threshold <- 0.02
 micro_component_cluster_df <-
   cluster_component_fractions %>%
   filter(!is.na(cluster)) %>%
-  filter(!(cluster %in% par_clusters)) %>% 
+  # filter(!(cluster %in% par_clusters)) %>% 
   # filter(cluster %in% one_component_clusters) %>% 
   filter(perc_length <= component_fraction_threshold)
 
@@ -449,16 +372,6 @@ cluster_df <-
   cluster_df  %>% 
   mutate(cluster = ifelse(unitig %in% micro_component_cluster_unitigs, NA, cluster))
 
-## Haploid Propagation------------------------------------------------------
-
-par_unitigs <-
-  cluster_df %>% 
-  filter(cluster %in% par_clusters) %>% 
-  pull(unitig)
-
-cluster_df <-
-  cluster_df %>% 
-  mutate(cluster = ifelse(cluster %in% par_clusters | grepl('^sex', cluster), 'LGXY', cluster))
 
 
 ## Cosine Cluster Merging ----------------------------------------------------
@@ -585,6 +498,96 @@ cat('Cosine cluster merging\n')
 # Sometimes, some of the newly created clusters will should be merged into other
 # components on cluster (centromere troubles especially)
 cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.35)
+
+## PAR Detection -----------------------------------------------------------
+cat('Detecting PAR\n')
+
+# TODO add some sort of size based threshold for the PAR (hpc and non-hpc)
+
+# TODO, add a percentage check to declare a PAR cluster. EG the sex cluster must
+# take up at least X% of the cluster on a component or something like that.
+
+haploid_component_fractions_df <-
+  cluster_df %>%
+  left_join(components_df, by='unitig') %>% 
+  left_join(unitig_lengths_df, b='unitig') %>% 
+  group_by(component) %>% 
+  filter(any(grepl('^sex', cluster))) %>% 
+  ungroup()
+
+haploid_component_fractions_df <-
+  haploid_component_fractions_df %>% 
+  group_by(component, cluster) %>% 
+  summarise(length = sum(length), .groups="drop") %>% 
+  group_by(component) %>% 
+  mutate(perc = length/sum(length)) %>% 
+  ungroup()
+
+# TODO handle warning when nrow(haploid_component_fractions_df) == 0
+
+# TODO
+# Only a haploid component if x% of the             unitigs on a component are haploid clustered?
+# Only a haploid component if x% of the *clustered* unitigs on a component are haploid clustered?
+
+perc_threshold <- 0.90
+
+# TODO experiment with filtering criteria that doesn't demand a flag.
+
+# Haploid unititgs sometimes appear in the degenerate regions of other
+# chromosomes (i've noticed them in the big circular tangle on Chr1 a couple
+# times) so there needs to be a little logic before calling a cluster a PAR
+# cluster. Here a genuine haploid unitig is only called if it is the largest
+# cluster among clustered unitigs, and occupies more than `perc_threshold`
+# percent of a component
+haploid_components <-
+  haploid_component_fractions_df %>% 
+  filter(!is.na(cluster)) %>% 
+  group_by(component) %>% 
+  filter(perc == max(perc) & grepl('^sex', cluster) & perc >= perc_threshold) %>% 
+  ungroup() %>% 
+  pull_distinct(component) 
+
+haploid_component_unititgs <-
+  components_df %>% 
+  filter(component %in% haploid_components) %>% 
+  semi_join(long_unitigs_df, by='unitig') %>% 
+  pull(unitig)
+
+# expect_XY_separate ~ only perform PAR detection for assemblies where the XY
+# component is likely only conntected to the PAR. Hifiasm graphs are more
+# tangled than that right now and therefore PAR detection for hifiasm likely
+# shoould not be attempted. The condition that the haploid cluster be the
+# largest likely would prevent anything from going wrong, but this flag is here
+# to be extra safe.
+par_clusters <- 
+  cluster_df %>% 
+  filter(unitig %in% haploid_component_unititgs) %>% 
+  filter(!grepl('^sex', cluster)) %>% 
+  filter(!is.na(cluster)) %>%
+  filter(expect_XY_separate) %>% 
+  pull_distinct(cluster) 
+
+
+
+cat('No. PAR clusters detected: ', length(par_clusters), '\n')
+
+if(length(par_clusters) > 1) {
+  WARNINGS <-
+    c(WARNINGS,
+      "more than 1 PAR cluster, haven't thought about what will happen in this case")
+  
+}
+
+### Haploid Propagation------------------------------------------------------
+
+par_unitigs <-
+  cluster_df %>% 
+  filter(cluster %in% par_clusters) %>% 
+  pull(unitig)
+
+cluster_df <-
+  cluster_df %>% 
+  mutate(cluster = ifelse(cluster %in% par_clusters | grepl('^sex', cluster), 'LGXY', cluster))
 
 
 ## Link Homology -----------------------------------------------------------
