@@ -465,11 +465,38 @@ def sample2fastmap(wildcards):
         lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs'])
     return out
 
-rule count_haplotype_markers:
+
+rule count_sseq_alignments:
     input:
         bam=lambda wildcards: sample2mem(wildcards, 'bam'),
         bai=lambda wildcards: sample2mem(wildcards, 'bam.bai'),
         fastmap=sample2fastmap,
+    output:
+        mem = "sseq_alignment_counts/{sample}_sseq_mem_counts.csv",
+        fastmap = "sseq_alignment_counts/{sample}_sseq_fastmap_counts.csv",
+    params:
+        script = get_script_path('R', 'count_alignments.snakemake.R')
+    singularity: singularity_r_env
+    conda: conda_r_env
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        walltime = lambda wildcards, attempt: f'{2 + attempt*attempt:02}:59:00'
+    threads: 1
+    log: "log/count_sseq_alignments_{sample}.log"
+    shell:
+        '''
+        (Rscript --vanilla {params.script} \\
+        --mem-alignment-bams {input.bam} \\
+        --fastmap-alignments {input.fastmap} \\
+        --threads {threads} \\
+        --output-mem {output.mem} \\
+        --output-fastmap {output.fastmap}) > {log} 2>&1
+        '''
+
+rule count_haplotype_markers:
+    input:
+        mem = "sseq_alignment_counts/{sample}_sseq_mem_counts.csv",
+        fastmap="sseq_alignment_counts/{sample}_sseq_fastmap_counts.csv",
         connected_components='gfa/ccs/{sample}_exploded_ccs.tsv',
         homology="homology/{sample}/{sample}_combined_mashmap_bubblegun_homology.tsv"
     output:
@@ -481,15 +508,15 @@ rule count_haplotype_markers:
     singularity: singularity_r_env
     conda: conda_r_env
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 12 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        walltime = lambda wildcards, attempt: f'{2 + attempt*attempt:02}:59:00'
     threads: 1
     log: "log/count_haplotype_markers_{sample}.log"
     shell:
         '''
         (Rscript --vanilla {params.script} \\
-        --mem-alignment-bams {input.bam} \\
-        --fastmap-alignments {input.fastmap} \\
+        --mem-counts {input.mem} \\
+        --fastmap-counts {input.fastmap} \\
         --homology {input.homology} \\
         --connected-components {input.connected_components} \\
         --segment-length-threshold {params.segment_length_threshold} \\
