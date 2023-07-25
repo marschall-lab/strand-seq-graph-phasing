@@ -1156,7 +1156,7 @@ lib_swaps_df <-
     tibble::enframe(x, name = 'lib', value = 'swapped'),
     .id = 'cluster')
 
-marker_counts <-
+bubble_marker_counts <-
   exact_match_counts_df %>% 
   left_join(cluster_df, by='unitig') %>% 
   semi_join(wc_libraries_df, by=c('lib', 'cluster')) %>% 
@@ -1166,22 +1166,22 @@ marker_counts <-
 # bubbles. 
 
 #  treat NA as swapped=FALSE for now?
-marker_counts <-
-  marker_counts %>%
+bubble_marker_counts <-
+  bubble_marker_counts %>%
   filter(!is.na(swapped)) %>% 
   mutate(c = ifelse(swapped & !is.na(swapped), n - c, c), 
          w = ifelse(swapped & !is.na(swapped), n - w, w))
 
-marker_counts <-
-  marker_counts %>% 
+bubble_marker_counts <-
+  bubble_marker_counts %>% 
   group_by(unitig) %>% 
   summarise(c = sum(c), w=sum(w), .groups="drop")
 
 
-# Combine Marker Counts ---------------------------------------------------
+## Combine Marker Counts ---------------------------------------------------
 
 marker_counts <-
-  marker_counts %>% 
+  bubble_marker_counts %>% 
   bind_rows(no_bubble_marker_counts)
 
 # Export ------------------------------------------------------------------
