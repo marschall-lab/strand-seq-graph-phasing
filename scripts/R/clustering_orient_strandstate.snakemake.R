@@ -1313,6 +1313,14 @@ no_bubble_lib_swaps <-
 
 cat('Counting haplotype markers\n')
 
+# Binding an empty table ensures that the output has columns if it turns out
+# there were no clusters without homology.
+no_bubble_lib_swaps_df <-
+  no_bubble_lib_swaps %>%
+  map_dfr(function(x)
+    tibble::enframe(x, name = 'lib', value = 'swapped'),
+    .id = 'cluster') %>% 
+  bind_rows(tibble(cluster = character(), lib=character(), swapped=logical()))
 
 no_bubble_marker_counts <-
   no_homology_counts_df %>% 
