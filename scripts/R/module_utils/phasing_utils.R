@@ -400,7 +400,14 @@ merge_similar_clusters <- function(counts_df, cluster_df, similarity_threshold =
 
 
 merge_similar_clusters2_ <- function(counts_df, cluster_df, similarity_threshold =0.50, min_n=10, min_overlaps=5 ) {
-  # TODO
+  
+  if(nrow(cluster_df) == 1) {
+    out <-
+      cluster_df %>% 
+      mutate(num_loops=1) 
+    
+    return(out)
+  }
   wfrac_matrix <- with(counts_df, make_wc_matrix(w, c, lib, unitig, min_n=min_n))
   any_merged <- TRUE
   num_loops <- 0
@@ -426,7 +433,7 @@ merge_similar_clusters2_ <- function(counts_df, cluster_df, similarity_threshold
     # up orthogonal no one another, where the "error" (I think it is an error)
     # of applying abs() would have little effect.
     similarities <-
-      wfrac_matrix[flatten_chr(cluster_unitigs), ] %>%
+      wfrac_matrix[flatten_chr(cluster_unitigs), ,drop=FALSE] %>%
       cosine_similarity(min_overlaps=min_overlaps) # %>% 
       # abs()
     
