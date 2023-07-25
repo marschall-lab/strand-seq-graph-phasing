@@ -305,7 +305,16 @@ merge_similar_clusters_on_components <- function(counts_df, cluster_df, componen
 
 merge_similar_clusters <- function(counts_df, cluster_df, similarity_threshold =0.50, min_n=10, min_overlaps=5 ) {
   cat('Creating wfrac matrix \n')
-  wfrac_matrix <- with(counts_df, make_wc_matrix(w, c, lib, unitig, min_n=min_n))
+  wfrac_matrix <- 
+    counts_df %>% 
+    semi_join(cluster_df, by='unitig') %>% 
+    with(make_wc_matrix(w, c, lib, unitig, min_n=min_n))
+  
+  cat('Calculating similarities \n')
+  similarities <-
+    wfrac_matrix %>%
+    cosine_similarity(min_overlaps=min_overlaps) %>% 
+    abs()
   
   any_merged <- TRUE
   cat('Merging clusters \n')
@@ -326,12 +335,7 @@ merge_similar_clusters <- function(counts_df, cluster_df, similarity_threshold =
             pull(unitig)
         })
       
-      cat('Calculating similarities \n')
-      similarities <-
-        wfrac_matrix[flatten_chr(cluster_unitigs), ] %>%
-        cosine_similarity(min_overlaps=min_overlaps) %>% 
-        abs()
-      
+
       # Average within and between clusters
       n_clusters <- length(clusters)
       
