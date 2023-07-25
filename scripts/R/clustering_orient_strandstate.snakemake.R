@@ -91,8 +91,8 @@ args <- commandArgs(trailingOnly = FALSE)
 expected_args <-
   c(
     ## Input
-    '--mem-alignment-bams',
-    '--fastmap-alignments',
+    '--mem-counts',
+    '--fastmap-counts',
     '--homology',
     '--connected-components',
     ## Output
@@ -143,7 +143,6 @@ print(args)
 library(dplyr)
 library(purrr)
 
-library(Rsamtools)
 library(contiBAIT)
 
 source(file.path(get_script_dir(), "module_utils/utils.R"))
@@ -152,8 +151,8 @@ source(file.path(get_script_dir(), "module_utils/phasing_utils.R"))
 
 ## Input
 
-mem_alignment_files <- get_values("--mem-alignment-bams", singular=FALSE)
-fastmap_alignment_files <- get_values("--fastmap-alignments", singular=FALSE)
+mem_counts <- get_values("--mem-counts", singular=FALSE)
+fastmap_counts <- get_values("--fastmap-counts", singular=FALSE)
 homology <- get_values("--homology", singular=TRUE)
 connected_components <- get_values('--connected-components', singular=TRUE)
 
@@ -168,25 +167,6 @@ output <- get_values('--output')
 
 # Import ------------------------------------------------------------------
 
-
-## Load Headers ------------------------------------------------------------
-
-cat('Scanning Bam Header:\n')
-# All bam headers should be the same right? Only need one
-unitig_lengths <- scanBamHeader(mem_alignment_files[[1]], what='targets')[[1]]$targets
-unitig_lengths_df <- tibble::enframe(unitig_lengths, name='unitig', value='length')
-
-long_unitigs_df <- 
-  unitig_lengths_df %>% 
-  filter(length >= segment_length_threshold) %>% 
-  select(unitig)
-
-
-cat('Assembly Statistics\n')
-print(summary(unitig_lengths_df))
-
-cat('No. Unitigs >= ', segment_length_threshold, ': ', nrow(long_unitigs_df), '\n')
-
 ## Connected Components in Exploded Graph ----------------------------------
 
 cat('Reading connected components\n')
@@ -200,139 +180,37 @@ cat('Reading Homology\n')
 homology_df <- readr::read_tsv(homology)
 
 cat('No. Bubbles: ', nrow(homology_df)/2, '\n')
-## Count Alignments ---------------------------------------------------------
+## Alignment Counts  ---------------------------------------------------------
 
-if(n_threads > 1) {
-  library(furrr)
-  plan(multisession, workers=n_threads)
-  import_mapper <- furrr::future_map  
-} else {
-  import_mapper <- purrr::map
-}
+counts_df <-
+  readr::read_csv(mem_counts, col_types = 'cciiii')
 
-### Count mem Alignments ------------------------------------------------------
-lib_names <- map_chr(mem_alignment_files, function(x) gsub('.mdup.bam$', '', basename(x)))
+exact_match_counts_df <-
+  readr::read_csv(fastmap_counts, col_types = 'cciiii')
 
+stopifnot(setequal(pull_distinct(counts_df, unitig), pull_distinct(exact_match_counts_df, unitig)))
 
-counts_df <- import_mapper(mem_alignment_files, function(bam){
-  cat(paste('counting bwa-mem alignments in', basename(bam), '\n'))
-  aln <- scanBam(file = bam,
-                 param = ScanBamParam(
-                   what = c('qname', 'rname', 'strand', 'pos', 'qwidth', 'mrnm', 'isize', 'mapq'),
-                   flag = scanBamFlag(
-                     isSupplementaryAlignment = FALSE,
-                     isSecondaryAlignment = FALSE,
-                     isDuplicate = FALSE,
-                     # for the purpose of determining qname/direction mapping, having both mates simply provides redundant information?
-                     isFirstMateRead = TRUE,
-                     isProperPair = TRUE
-                   )
-                 ))
-  
-  aln <- as_tibble(aln[[1]])
-  
-  #TODO add check for nrow() > 0. nrow() = 0 can happen with meme alignments if
-  #one of the Strand-seq files is malformed.
-  
-  # filter out alignments to short unitigs
-  aln <- 
-    aln %>%  
-    mutate(rname = as.character(rname)) %>% # default is as.factor import?
-    filter(rname %in% long_unitigs_df$unitig)
-  
-  
-  # Keep only reads that successfully aligned
-  aln <- 
-    aln %>% 
-    filter(strand %in% c('+','-'))
-  
-  # filter any ss_reads that map to too many unitigs
-  # dplyr::filter with lots of groups can be very slow -> duplicated is faster
-  duplicated_qnames <-
-    with(aln, qname[duplicated(qname)])
-  
-  if(any(duplicated_qnames)) {
-    cat('Duplicated qnames found in:', basename(bam), '\n')
-    aln <-
-      aln %>%
-      filter(!(qname %in% duplicated_qnames))
-  }
-  
-  # to simplify, only keep alignments where both mates land on the same rname
-  aln <- 
-    aln %>% 
-    filter(rname == mrnm)
-  
-  aln <-
-    aln %>% 
-    left_join(unitig_lengths_df, by = c('rname' = 'unitig')) 
-  
-  # Counting
-  out <-
-    aln %>%
-    # filter(mapq > 0) %>% 
-    group_by(rname) %>%
-    summarise(c = sum(strand == '+'), w = sum(strand == '-'), .groups="drop")
-  
-  return(out)
-  
-  
-})
+unitig_lengths_df <- 
+  counts_df %>% 
+  distinct(unitig, length)
+
+long_unitigs_df <-
+  unitig_lengths_df %>% 
+  filter(length >= segment_length_threshold) %>% 
+  distinct(unitig)
 
 counts_df <-
   counts_df %>%
-  set_names(lib_names) %>% 
-  bind_rows(.id = 'lib') %>%
-  dplyr::rename(unitig = rname) 
-
-counts_df <-
-  counts_df %>%
-  right_join(select(long_unitigs_df, unitig), by = 'unitig') %>% 
-  tidyr::complete(lib, unitig, fill=list(c=0, w=0)) %>% 
-  mutate(n = c+w) %>% 
-  filter(!is.na(lib))
-
-# raw_counts_df <- counts_df
-### Count fastmap Alignments ------------------------------------------------
-
-lib_names <-
-  map_chr(fastmap_alignment_files, function(x)
-    gsub('_maximal_unique_exact_match.tsv$', '', basename(x)))
-
-# There is a common warning stating "incomplete final line found on". I
-# think it is connected to the source of the extra // that appear in the files
-exact_match_counts_df <- import_mapper(fastmap_alignment_files, function(x) {
-  cat(paste('counting bwa-fastmap alignments in', basename(x), '\n'))
-  out <- extract_exact_matches(x)
-  
-  out <-
-    out %>%
-    filter(unitig %in% long_unitigs_df$unitig) %>%
-    group_by(unitig) %>%
-    summarise(c = sum(strand == '+'), w = sum(strand == '-'), .groups="drop") 
-  
-  return(out)
-})
-
+  filter(length >= segment_length_threshold) %>% 
+  select(-length) 
 
 exact_match_counts_df <-
-  exact_match_counts_df %>%
-  set_names(lib_names) %>%
-  bind_rows(.id = 'lib') 
+  exact_match_counts_df %>% 
+  filter(length >= segment_length_threshold) %>% 
+  select(-length)
 
-exact_match_counts_df <-
-  exact_match_counts_df %>%
-  right_join(select(long_unitigs_df, unitig), by = 'unitig') %>% 
-  tidyr::complete(lib, unitig, fill=list(c=0, w=0)) %>% 
-  mutate(n = c+w) %>% 
-  filter(!is.na(lib))
 
-# raw_exact_match_counts_df <- exact_match_counts_df
-
-if(n_threads > 1) {
-  # close workers
-  plan(sequential)
-}
+# contiBAIT ---------------------------------------------------------------
 
 ## ContiBAIT QC ------------------------------------------------------------
 
@@ -366,6 +244,10 @@ strand.states <-
     lowQualThreshold = 0.8,
     minLib = 20
   )
+
+lib_names <- 
+  counts_df %>% 
+  pull_distinct(lib)
 
 included_libraries <- colnames(strand.states$strandMatrix)
 excluded_libraries <- setdiff(lib_names, included_libraries)
