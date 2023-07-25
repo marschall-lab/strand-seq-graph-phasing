@@ -839,106 +839,243 @@ if(nrow(bad) > 0) {
 exact_match_counts_df <-
   orient_counts(exact_match_counts_df, strand_orientation_clusters_df)
   
-## Phase Clusters Without Homology -----------------------------------------
+## Clusters covered by bubbles ---------------------------------------------------
 
-coverage_minimum <- 5
+n_bubbles <- 1
+libs_per_bubble <- 3
+coverage_minimum <- 7
+
 
 # Mark clusters without bubbles, or without sufficient bubble alignments
-clusters_with_adequately_covered_bubbles <-
-  exact_match_counts_df %>% 
-  semi_join(homology_df, by='unitig')  %>% 
+clusters_covered_with_bubbles <-
+  exact_match_counts_df %>%
+  inner_join(homology_df, by='unitig')  %>% 
   left_join(cluster_df, by='unitig') %>% 
   filter(n >= coverage_minimum) %>% 
+  group_by(cluster, bubble, lib) %>% 
+  filter(n() == 2) %>% 
+  ungroup()
+
+clusters_covered_with_bubbles <-
+  clusters_covered_with_bubbles %>% 
+  group_by(cluster, bubble) %>% 
+  filter(length(unique(lib)) >= libs_per_bubble) %>% 
+  ungroup()
+
+
+clusters_covered_with_bubbles <-
+  clusters_covered_with_bubbles %>% 
+  group_by(cluster) %>% 
+  filter(length(unique(bubble)) >= n_bubbles)%>% 
+  ungroup()
+
+clusters_covered_with_bubbles <-
+  clusters_covered_with_bubbles %>% 
   pull_distinct(cluster)
 
-no_bubble_clusters <-
+
+# XY bubbles should only be PAR bubbles, therefore small
+bad_xy_bubbles <- 
+  homology_df  %>% 
+  left_join(cluster_df, by='unitig') %>% 
+  left_join(unitig_lengths_df, by='unitig') %>% 
+  filter(cluster == 'LGXY') %>% 
+  filter(length >= 3e6) %>% 
+  pull_distinct(bubble)
+
+clusters_covered_with_bubbles <-
+  setdiff(clusters_covered_with_bubbles, bad_xy_bubbles) %>% 
+  set_names()
+
+clusters_not_covered_with_bubbles <-
   cluster_df %>% 
   pull_distinct(cluster) %>% 
-  setdiff(clusters_with_adequately_covered_bubbles)
+  setdiff(clusters_covered_with_bubbles) %>% 
+  set_names()
 
 
-### Cosine Similarities  ------------------------------------------------
+## Phase Clusters Without Homology -----------------------------------------
 
-big_unitigs <-
-  unitig_lengths_df %>% 
-  filter(length >= 1e6) %>% 
-  pull_distinct(unitig)
-
-# Filter out clusters with only 1 big unitig.
-one_unitig_clusters <-
-  cluster_df %>% 
-  filter(cluster %in% no_bubble_clusters) %>% 
-  filter(unitig %in% big_unitigs) %>% 
-  count(cluster) %>% 
-  filter(n == 1) %>% 
-  pull(cluster)
-
+### No Homology Counts  ------------------------------------------------
 
 # It appears that for XY clusters, regular counts perform better for separation
 # that exact match counts.
 non_sex_counts <-
   exact_match_counts_df %>% 
   left_join(cluster_df, by='unitig') %>% 
-  filter(cluster %in% no_bubble_clusters) %>% 
-  # filter(!cluster %in% one_unitig_clusters) %>% 
+  filter(cluster %in% clusters_not_covered_with_bubbles) %>% 
   filter(cluster != 'LGXY')
 
 sex_counts <-
   counts_df %>% 
   orient_counts(strand_orientation_clusters_df) %>% 
   left_join(cluster_df, by='unitig') %>% 
-  filter(cluster %in% no_bubble_clusters) %>% 
-  # filter(!cluster %in% one_unitig_clusters) %>% 
+  filter(cluster %in% clusters_not_covered_with_bubbles) %>% 
   filter(cluster =='LGXY')
 
 no_homology_counts_df <- 
-  bind_rows(non_sex_counts, sex_counts) %>%
-  filter(unitig %in% big_unitigs) %>% 
-  split(., .$cluster)
+  bind_rows(non_sex_counts, sex_counts) 
 
 ### Sort Unitigs ------------------------------------------------------------
 
+big_unitigs <-
+  unitig_lengths_df %>%
+  filter(length >= 1e6) %>%
+  pull_distinct(unitig)
+
+very_big_unitigs <-
+  unitig_lengths_df %>%
+  filter(length >= 1e7) %>%
+  pull_distinct(unitig)
+
+one_cluster_components <-
+  components_df %>% 
+  left_join(cluster_df, by='unitig') %>% 
+  filter(!is.na(cluster)) %>% 
+  distinct(component, cluster) %>% 
+  count(component) %>% 
+  filter(n == 1) %>% 
+  pull(component)
+
+one_cluster_component_unitigs <-
+  components_df %>% 
+  filter(component %in% one_cluster_components) %>% 
+  pull(unitig)
 
 no_bubble_unitig_sorts <- 
-  no_homology_counts_df[setdiff(names(no_homology_counts_df), one_unitig_clusters)] %>% 
-  imap(function(x, nm) {
-    cat('Sorting no-bubble cluster:', nm, '\n')
-    
+  map(clusters_not_covered_with_bubbles, function(x) {
+    cat('Sorting no-bubble cluster:', x, '\n')
+  
+  sort_counts <-
+    no_homology_counts_df %>%
+    filter(cluster == x) %>%
+    semi_join(wc_libraries_df, by=c('lib', 'cluster'))
+
+    # TODO do this more cleverly
+    if(nrow(sort_counts) == 0){
+      sort_counts <-
+        no_homology_counts_df %>%
+        filter(cluster == x)
+    }
+  
     unitigs <-
-      x %>% 
+      sort_counts %>%
       pull_distinct(unitig)
     
-    fake_cluster_df <-
-      tibble(cluster = unitigs, unitig = unitigs)
+    # TODO maybe use && to short circuit? instead of all()
+    if(length(unitigs) == 1 & !all(unitigs %in% one_cluster_component_unitigs)) {
+      cat('One unitig cluster on a multi-cluster component; not sorting cluster:', x, '\n')
+      out <-
+        tibble(sort = NA, unitig = sort_counts %>% pull_distinct(unitig))
+      return(out)
+    }
+  
+  
+    # Trying to sort on good, big unitigs that are often present in verkko graphs.
+    unitigs <-
+      sort_counts %>%
+      pull_distinct(unitig) %>% 
+      setdiff(c(low_wc_unitigs, high_wc_unitigs)) %>% 
+      intersect(very_big_unitigs)
     
+    if(length(unitigs) < 1) {
+      unitigs <-
+        sort_counts %>%
+        pull_distinct(unitig) %>%
+        intersect(big_unitigs)
+      
+      if(length(unitigs) < 1) {
+        cat('No adequately long unitigs for homology-free sorting of cluster:', x, '\n')
+        out <-
+          tibble(sort = NA, unitig = sort_counts %>% pull_distinct(unitig))
+        return(out)
+      }
+      
+      # TODO collect and justify parameters
+      
+      ## TODO Minimum vector length needs to be scaled by num libraries
+      wc <-
+        sort_counts %>%
+        with(make_wc_matrix(w,c,lib,unitig, min_n=1))
+
+      unitig_vector_lengths <-
+        wc %>%
+        apply( 1, function(x) (sqrt(sum(x^2, na.rm=T))))
+
+      print(unitig_vector_lengths)
+
+      unitigs <-
+        names(unitig_vector_lengths)[unitig_vector_lengths > 4]
+      
+      if(length(unitigs) < 1) {
+        cat('No adequately low-noise unitigs for homology-free sorting of cluster:', x, '\n')
+        out <-
+          tibble(sort = NA, unitig = sort_counts %>% pull_distinct(unitig))
+        return(out)
+      }
+    }
+    # 
+    # 
+    # sort_counts <- 
+    #   no_homology_counts_df %>%
+    #   filter(cluster == x) 
+    
+   
+    
+    fake_cluster_df <-
+      tibble(unitig = unitigs) %>% 
+      mutate(cluster = unitig)
+
     # TODO justify these parameter values
     out <- 
-      merge_similar_clusters2_(x, fake_cluster_df, similarity_threshold = 0.5, min_n=1, min_overlaps =2) %>% 
+      merge_similar_clusters2_(sort_counts, fake_cluster_df, similarity_threshold = 0.5, min_n=1, min_overlaps =2) %>% 
       mutate(sort = cluster) %>% 
       mutate(sort = as.integer(as.factor(sort))) 
-    
-    num_clusters <- 
-      out %>% 
-      pull_distinct(sort) %>% 
-      length()
     
     num_loops <-
       out %>% 
       pull_distinct(num_loops)
     
-    if(!(num_clusters %in% c(1,2))) {
-      cat('No bubble sorting failure for cluster:', nm, '\n')
+    if(num_loops == 0) {
+      cat('No valid similarity scores for cluster:', x, '\n')
       out <-
         out %>% 
         mutate(sort = NA)
     }
     
-    if(num_loops == 0) {
-      cat('No valid similarity scores for cluster:', nm, '\n')
+    num_clusters <- 
+      out %>% 
+      pull_distinct(sort) %>% 
+      length()
+
+    
+    if(!(num_clusters %in% c(1,2))) {
+      cat('Hierarchically dividing cluster:', x, '\n')
+      # take two most dissimilar clusters
+      wc <-
+        sort_counts %>%
+        with(make_wc_matrix(w,c,lib,unitig, min_n=1))
+      
+      cs <- 
+        wc[unitigs, ,drop=FALSE] %>% 
+        cosine_similarity(min_overlaps=2)
+
+      cs[is.na(cs)] <- 0
+      # pc <- prcomp(cs)
+      # get_prcomp_plotdata(pc, 'unitig') %>% ggplot() + geom_label(aes(x=PC1, y=PC2, label=unitig))
+      
+      clusters <-
+        # dist(pc$x) %>% 
+        as.dist(1-cs) %>%
+        hclust() %>% 
+        cutree(2)
+      
       out <-
-        out %>% 
-        mutate(sort = NA)
+        tibble(sort = clusters, unitig = names(clusters))
     }
+    
+    
+
     
     out %>% 
       select(sort, unitig) %>% 
@@ -949,129 +1086,244 @@ no_bubble_unitig_sorts <-
 
 ### Library Swapping ------------------------------------------------------
 
-# TODO checks for all 1 and all NA
-no_bubble_lib_swaps <-
-  imap(no_bubble_unitig_sorts, function(x, nm) {
- 
-    # TODO can you make this work without wc_libraries df?
-    sort_counts <- 
-      no_homology_counts_df[nm] %>%
-      bind_rows(.id='cluster') %>% 
-      inner_join(x, by='unitig') %>% 
-      semi_join(wc_libraries_df, by=c('lib', 'cluster'))
 
-    # TODO do this more cleverly
-    if(nrow(sort_counts) == 0){
-      sort_counts <- 
-        no_homology_counts_df[nm] %>%
-        bind_rows(.id='cluster')  %>% 
-        inner_join(x, by='unitig')
-    }
+# All NA
+all_na_sorts <- 
+  no_bubble_unitig_sorts %>% 
+  keep(function(x) all(is.na(x$sort)))
+
+# Only one Sort:
+one_cluster_sorts <-
+  no_bubble_unitig_sorts %>% 
+  keep(function(x) {
+    sorts <- x$sort
+    sorts <- sorts[!is.na(sorts)]
+    return(length(unique(sorts)) == 1)
+    })
+
+two_cluster_sorts <-
+  no_bubble_unitig_sorts %>% 
+  keep(function(x) {
+    sorts <- x$sort
+    sorts <- sorts[!is.na(sorts)]
+    return(length(unique(sorts)) == 2 & all(sorts %in% c(1,2)))
+  })
+
+stopifnot(setequal(c(
+  names(all_na_sorts),
+  names(one_cluster_sorts),
+  names(two_cluster_sorts)
+), names(no_bubble_unitig_sorts)))
+
+
+all_na_swaps <-
+  list()
+if(length(all_na_sorts) >= 1) {
+  
+  libs <-
+    counts_df %>% 
+    pull_distinct(lib) %>% 
+    sort()
+  
     
-    sort_counts <-
-      sort_counts %>% 
-      group_by(lib, sort) %>% 
-      summarise(c = sum(c), w=sum(w), n=sum(n), .groups = 'drop')
-    
-    if(all(is.na(sort_counts$sort))) {
+  
+  all_na_swaps <-
+    map(all_na_sorts, function(x) {
       swaps <-
-        sort_counts %>%
-        distinct(lib) %>% 
-        mutate(swap = FALSE) %>% 
+        tibble(lib=libs, swap=NA)%>% 
         tibble::deframe()
       
       return(swaps)
-    }
-    
-    # Sort libraries so that sort 1  has more crick reads and sort 2 has more
-    # watson reads
-    sort_1_votes <- 
-      sort_counts %>% 
-      filter(sort == 1) %>% 
-      mutate(vote = w-c) %>% 
-      with(set_names(vote, lib))
-    
-    if(all_are_identical(sort_counts$sort)) {
-      swaps <- 
-        sign(sort_1_votes) == 1
+    })
+}
+
+
+# One swaps
+one_cluster_swaps <- list()
+if(length(one_cluster_sorts) >= 1) {
+  
+  # sort by length:
+  one_cluster_sort_lengths <-
+    one_cluster_sorts %>% 
+    imap_dbl(function(x, nm){
+      
+      cluster_size <- 
+        cluster_df %>% 
+        filter(cluster == nm) %>% 
+        left_join(unitig_lengths_df, by='unitig') %>% 
+        pull_distinct(length) %>% 
+        sum(na.rm=T)
+      
+      return(cluster_size)
+    })
+  
+  one_cluster_sorts <- one_cluster_sorts[names(sort(one_cluster_sort_lengths))]
+  
+  one_cluster_swaps <-
+    pmap(list(one_cluster_sorts, names(one_cluster_sorts), seq_along(one_cluster_sorts)), function(x, nm, n) {
+      
+      # TODO add library count check
+      
+      sort_counts <- 
+        no_homology_counts_df %>%
+        filter(cluster == nm) %>% 
+        inner_join(x, by='unitig') %>% 
+        semi_join(wc_libraries_df, by=c('lib', 'cluster'))
+      
+      # TODO do this more cleverly
+      if(nrow(sort_counts) == 0){
+        sort_counts <- 
+          no_homology_counts_df %>%
+          filter(cluster == nm) %>%
+          inner_join(x, by='unitig')
+      }
+      
+      # Component check
+      # total_length <-
+      #   sort_counts %>% 
+      #   distinct(unitig) %>% 
+      #   left_join(unitig_lengths_df, by='unitig') %>% 
+      #   pull(length) %>%
+      #   sum()
+      
+      cluster_components <- 
+        sort_counts %>% 
+        left_join(components_df, by='unitig') %>% 
+        pull_distinct(component)
+      
+      clusters_on_cluster_component <-
+        cluster_df %>% 
+        left_join(components_df, by='unitig') %>% 
+        filter(component %in% cluster_components) 
+      
+      cluster_component_fractions <-
+        cluster_df %>% 
+        left_join(components_df, by='unitig') %>% 
+        left_join(unitig_lengths_df, by='unitig') %>% 
+        filter(component %in% cluster_components) %>% 
+        group_by(component, cluster) %>%
+        summarise(length = sum(length), .groups = 'drop') %>% 
+        group_by(component) %>% 
+        mutate(perc = length/sum(length)) %>% 
+        ungroup()
+        
+      n_components <- 
+        cluster_component_fractions %>% 
+        pull_distinct(component) %>% 
+        length()
+      
+      n_majority_components <-
+        cluster_component_fractions %>% 
+        filter(cluster == nm) %>% 
+        filter(perc >= 0.5) %>% 
+        nrow()
+
+      if(n_majority_components < n_components) {
+        libs <- pull_distinct(sort_counts, lib)
+        swaps <- 
+          tibble(lib=libs, swap=NA) %>% 
+          tibble::deframe()
+        
+        return(swaps)
+      }
+        
+      sort_counts <-
+        sort_counts %>% 
+        group_by(lib) %>% 
+        summarise(c = sum(c), w=sum(w))
+      
+      if ((n %% 2) == 1) {
+        swaps <- set_names(sort_counts$c > sort_counts$w, sort_counts$lib)
+      } else {
+        swaps <- set_names(sort_counts$c < sort_counts$w, sort_counts$lib)
+      }
       
       return(swaps)
-    }
-    
-    sort_2_votes <-
-      sort_counts %>% 
-      filter(sort == 2) %>% 
-      mutate(vote = c-w) %>% 
-      with(set_names(vote, lib))
-    
-    swaps <- 
-      sign(sort_1_votes + sort_2_votes) == 1
-    
-    
-    return(swaps)
-    
-  })
+    })
+}
+
+# Two sort
+two_cluster_swaps <- list()
+if(length(two_cluster_sorts) >= 1) {
+  two_cluster_swaps <-
+    imap(two_cluster_sorts, function(x, nm) {
+      # browser()
+      # TODO can you make this work without wc_libraries df?
+      sort_counts <- 
+        no_homology_counts_df %>%
+        filter(cluster == nm) %>% 
+        inner_join(x, by='unitig') %>% 
+        semi_join(wc_libraries_df, by=c('lib', 'cluster'))
+      
+      # TODO do this more cleverly
+      if(nrow(sort_counts) == 0){
+        sort_counts <- 
+          no_homology_counts_df %>%
+          filter(cluster == nm) %>%
+          inner_join(x, by='unitig')
+      }
+      
+      sort_counts <-
+        sort_counts %>% 
+        group_by(lib, sort) %>% 
+        summarise(c = sum(c), w=sum(w), n=sum(n), .groups = 'drop')
+      
+      # Sort libraries so that sort 1  has more crick reads and sort 2 has more
+      # watson reads
+      sort_1_votes <- 
+        sort_counts %>% 
+        filter(sort == 1) %>% 
+        mutate(vote = w-c) %>% 
+        with(set_names(vote, lib))
+      
+      if(all_are_identical(sort_counts$sort)) {
+        swaps <- 
+          sign(sort_1_votes) == 1
+        
+        return(swaps)
+      }
+      
+      sort_2_votes <-
+        sort_counts %>% 
+        filter(sort == 2) %>% 
+        mutate(vote = c-w) %>% 
+        with(set_names(vote, lib))
+      
+      swaps <- 
+        sign(sort_1_votes + sort_2_votes) == 1
+      
+      
+      return(swaps)
+      
+    })
+}
+
+no_bubble_lib_swaps <-
+  c(
+    all_na_swaps,
+    one_cluster_swaps,
+    two_cluster_swaps
+  )
 
 
-### Swaps for 1 unitig clusters ---------------------------------------------
 
-# This exists to try to handle those verkko graphs when X and Y are fully
-# phased, and then the pipeline just goes to shit for those chromosomes.
+### Haplotype Marker Counts -------------------------------------------------
 
-# Only for very big unitigs, just add them to each haplotype alternating from
-# largest to smallest
-
-# TODO should it also be clusters where the whole connected component is one
-# unitig?
-one_unitig_clusters_to_sort <-
-  cluster_df %>% 
-  filter(cluster %in% one_unitig_clusters) %>% 
-  left_join(unitig_lengths_df, by='unitig') %>% 
-  filter(length >= 1e7) %>% 
-  arrange(length) %>% 
-  pull(cluster)
-
-
-one_unitig_cluster_swaps <-
-  imap(one_unitig_clusters_to_sort, function(x, n) {
-    counts <- no_homology_counts_df[[cluster]]
-    if ((n %% 2) == 1) {
-      swaps <- set_names(counts$c > counts$w, counts$lib)
-    } else {
-      swaps <- set_names(counts$c < counts$w, counts$lib)
-    }
-    
-    return(swaps)
-  }) %>%
-  set_names(one_unitig_clusters_to_sort)
-
-
-## Haplotype Marker Counts -------------------------------------------------
-
-no_bubble_lib_swaps <- c(no_bubble_lib_swaps, one_unitig_cluster_swaps)
+# no_bubble_lib_swaps <- c(no_bubble_lib_swaps, one_unitig_cluster_swaps)
 
 cat('Counting haplotype markers\n')
 
-no_bubble_lib_swaps_df <-
-  no_bubble_lib_swaps %>%
-  map_dfr(function(x)
-    tibble::enframe(x, name = 'lib', value = 'swapped'),
-    .id = 'cluster')
 
 no_bubble_marker_counts <-
   no_homology_counts_df %>% 
-  bind_rows(.id='cluster') %>% 
   inner_join(no_bubble_lib_swaps_df, by=c('lib', 'cluster')) 
 
-# NA values indicate WC libraries that mapped to no bubbles, or clusters with no
-# bubbles. 
-
-#  treat NA as swapped=FALSE for now?
 no_bubble_marker_counts <-
   no_bubble_marker_counts %>%
-  filter(!is.na(swapped)) %>% 
-  mutate(c = ifelse(swapped & !is.na(swapped), n - c, c), 
-         w = ifelse(swapped & !is.na(swapped), n - w, w))
+  mutate(
+    c = ifelse(is.na(swapped), 0, ifelse(swapped, n-c, c)), 
+    w = ifelse(is.na(swapped), 0, ifelse(swapped, w-c, w))
+  )
 
 no_bubble_marker_counts <-
   no_bubble_marker_counts %>% 
@@ -1147,7 +1399,7 @@ lib_swaps <-
   map(strandphaser_sort_array)
 
 
-## Haplotype Marker Counts -------------------------------------------------
+### Haplotype Marker Counts -------------------------------------------------
 
 cat('Counting haplotype markers\n')
 
