@@ -1334,9 +1334,12 @@ no_bubble_marker_counts <-
 
 ### Filter to WC libraries for each cluster ---------------------------------
 
+#TODO I think there is potential here for there to be an issue if there is a
+#cluster with covered bubbles but no wc libraries?
 bubble_coverage <-
   exact_match_counts_df %>% 
   left_join(cluster_df, by='unitig') %>% 
+  filter(cluster %in% clusters_covered_with_bubbles) %>% 
   semi_join(wc_libraries_df, by=c('lib', 'cluster')) %>% 
   # TODO not inner_join here? Need to left join and check that all clusters have
   # homology? Maybe make cluster a factor to handle this or something?
