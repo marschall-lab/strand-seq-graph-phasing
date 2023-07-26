@@ -713,6 +713,7 @@ par_unitigs <-
   filter(cluster %in% par_clusters) %>% 
   pull(unitig)
 
+# PAR and haploid need to be oriented together.
 cluster_df <-
   cluster_df %>% 
   mutate(cluster = ifelse(cluster %in% par_clusters | grepl('^sex', cluster), 'LGXY', cluster))
@@ -893,13 +894,21 @@ missing_wc <-
     threshold <-
       loading_range[1] + 0.2 * loading_range[2]
     
+    # FIXME, for XY unitigs, it seems that this does the opposite of what is
+    # wanted! USing all libraries is way better than this selection. in fact
+    # maybe the opposite is what is needed in that case!
     wc_libs <-
       names(loading_percentages)[loading_percentages < threshold]
     
     # if(length(wc_libs) > n_libs %/% 2) {
-    #   wc_libs <-
-    #     sort(loading_percentages, decreasing=FALSE)[1:(n_libs %/% 2)] %>% 
-    #     names()
+    # wc_libs <-
+    #   sort(loading_percentages, decreasing=FALSE)[1:(n_libs %/% 2)] %>%
+    #   names()
+    # }
+    
+    # if(nm == 'LGXY') {
+    #   # I don't know why but this seems to work better than taking a subset?
+    #   wc_libs <- names(loading_percentages)
     # }
     
     out <-
@@ -991,6 +1000,10 @@ no_homology_counts_df <-
 
 ### Sort Unitigs ------------------------------------------------------------
 
+
+#### Common ------------------------------------------------------------------
+
+
 big_unitigs <-
   unitig_lengths_df %>%
   filter(length >= 1e6) %>%
@@ -1015,22 +1028,28 @@ one_cluster_component_unitigs <-
   filter(component %in% one_cluster_components) %>% 
   pull(unitig)
 
+#### Sorting ------------------------------------------------------------------
 no_bubble_unitig_sorts <- 
   map(clusters_not_covered_with_bubbles, function(x) {
     cat('Sorting no-bubble cluster:', x, '\n')
-  
-  sort_counts <-
-    no_homology_counts_df %>%
-    filter(cluster == x) %>%
-    semi_join(wc_libraries_df, by=c('lib', 'cluster'))
-
+    
+    sort_counts <-
+      no_homology_counts_df %>%
+      filter(cluster == x) 
+    
+    # if(x != 'LGXY') {
+      sort_counts <-
+        sort_counts %>% 
+        semi_join(wc_libraries_df, by=c('lib', 'cluster'))
+    # }
+    
     # TODO do this more cleverly
     if(nrow(sort_counts) == 0){
       sort_counts <-
         no_homology_counts_df %>%
         filter(cluster == x)
     }
-  
+    
     unitigs <-
       sort_counts %>%
       pull_distinct(unitig)
@@ -1046,16 +1065,15 @@ no_bubble_unitig_sorts <-
     if(length(unitigs) == 1 & !all(unitigs %in% one_cluster_component_unitigs)) {
       cat('One unitig cluster on a multi-cluster component; not sorting cluster:', x, '\n')
       out <-
-        tibble(sort = NA, unitig = sort_counts %>% pull_distinct(unitig))
+        tibble(sort = NA, unitig = unitigs)
       return(out)
     }
-  
-  
+    
     # Trying to sort on good, big unitigs that are often present in verkko graphs.
     unitigs <-
       sort_counts %>%
       pull_distinct(unitig) %>% 
-      setdiff(c(low_wc_unitigs, high_wc_unitigs)) %>% 
+      setdiff(c(low_wc_unitigs, high_wc_unitigs)) %>%
       intersect(very_big_unitigs)
     
     if(length(unitigs) < 1) {
@@ -1077,13 +1095,13 @@ no_bubble_unitig_sorts <-
       wc <-
         sort_counts %>%
         with(make_wc_matrix(w,c,lib,unitig, min_n=1))
-
+      
       unitig_vector_lengths <-
         wc %>%
         apply( 1, function(x) (sqrt(sum(x^2, na.rm=T))))
-
+      
       print(unitig_vector_lengths)
-
+      
       threshold <- 
         max(unitig_vector_lengths) - 0.2 *  max(unitig_vector_lengths)
       
@@ -1103,12 +1121,12 @@ no_bubble_unitig_sorts <-
     #   no_homology_counts_df %>%
     #   filter(cluster == x) 
     
-   
+    
     
     fake_cluster_df <-
       tibble(unitig = unitigs) %>% 
       mutate(cluster = unitig)
-
+    
     # TODO justify these parameter values
     out <- 
       merge_similar_clusters2_(sort_counts, fake_cluster_df, similarity_threshold = 0.5, min_n=1, min_overlaps =2) %>% 
@@ -1197,7 +1215,7 @@ one_cluster_sorts <-
     sorts <- x$sort
     sorts <- sorts[!is.na(sorts)]
     return(length(unique(sorts)) == 1)
-    })
+  })
 
 two_cluster_sorts <-
   no_bubble_unitig_sorts %>% 
@@ -1223,7 +1241,7 @@ if(length(all_na_sorts) >= 1) {
     pull_distinct(lib) %>% 
     sort()
   
-    
+  
   
   all_na_swaps <-
     map(all_na_sorts, function(x) {
@@ -1265,8 +1283,13 @@ if(length(one_cluster_sorts) >= 1) {
       sort_counts <- 
         no_homology_counts_df %>%
         filter(cluster == nm) %>% 
-        inner_join(x, by='unitig') %>% 
-        semi_join(wc_libraries_df, by=c('lib', 'cluster'))
+        inner_join(x, by='unitig') 
+      
+      # if(nm != 'LGXY') {
+        sort_counts <-
+          sort_counts %>% 
+          semi_join(wc_libraries_df, by=c('lib', 'cluster'))
+      # }
       
       # TODO do this more cleverly
       if(nrow(sort_counts) == 0){
@@ -1350,9 +1373,14 @@ if(length(two_cluster_sorts) >= 1) {
       sort_counts <- 
         no_homology_counts_df %>%
         filter(cluster == nm) %>% 
-        inner_join(x, by='unitig') %>% 
-        semi_join(wc_libraries_df, by=c('lib', 'cluster'))
+        inner_join(x, by='unitig')
       
+      # if(nm != 'LGXY') {
+        sort_counts <- 
+          sort_counts %>% 
+          semi_join(wc_libraries_df, by=c('lib', 'cluster'))
+      # }
+        
       # TODO do this more cleverly
       if(nrow(sort_counts) == 0){
         sort_counts <- 
@@ -1667,6 +1695,12 @@ marker_counts <-
     hap_1_counts = ifelse(length >= 1e6, 10 * hap_1_counts, hap_1_counts),
     hap_2_counts = ifelse(length >= 1e6, 10 * hap_2_counts, hap_2_counts)
   )
+
+
+
+# Haplotype Size Evening --------------------------------------------------
+
+# TODO, flip haplotypes labels that make the overall haplotype sizes more even.
 
 ## CSV ---------------------------------------------------------------------
 
