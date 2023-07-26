@@ -1088,7 +1088,7 @@ no_bubble_unitig_sorts <-
         max(unitig_vector_lengths) - 0.2 *  max(unitig_vector_lengths)
       
       unitigs <-
-        names(unitig_vector_lengths)[unitig_vector_lengths > 4 & unitig_vector_lengths > threshold]
+        names(unitig_vector_lengths)[unitig_vector_lengths > 3 & unitig_vector_lengths > threshold]
       
       if(length(unitigs) < 1) {
         cat('No adequately low-noise unitigs for homology-free sorting of cluster:', x, '\n')
