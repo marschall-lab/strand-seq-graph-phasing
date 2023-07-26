@@ -1035,6 +1035,13 @@ no_bubble_unitig_sorts <-
       sort_counts %>%
       pull_distinct(unitig)
     
+    if(length(unitigs) == 1 & all(unitigs %in% one_cluster_component_unitigs)) {
+      cat('One unitig cluster on a one-cluster component:', x, '\n')
+      out <-
+        tibble(sort = 1, unitig = unitigs)
+      return(out)
+    }
+    
     # TODO maybe use && to short circuit? instead of all()
     if(length(unitigs) == 1 & !all(unitigs %in% one_cluster_component_unitigs)) {
       cat('One unitig cluster on a multi-cluster component; not sorting cluster:', x, '\n')
@@ -1262,47 +1269,47 @@ if(length(one_cluster_sorts) >= 1) {
       #   pull(length) %>%
       #   sum()
       
-      cluster_components <- 
-        sort_counts %>% 
-        left_join(components_df, by='unitig') %>% 
-        pull_distinct(component)
+      # cluster_components <- 
+      #   sort_counts %>% 
+      #   left_join(components_df, by='unitig') %>% 
+      #   pull_distinct(component)
+      # 
+      # clusters_on_cluster_component <-
+      #   cluster_df %>% 
+      #   left_join(components_df, by='unitig') %>% 
+      #   filter(component %in% cluster_components) 
+      # 
+      # cluster_component_fractions <-
+      #   cluster_df %>% 
+      #   left_join(components_df, by='unitig') %>% 
+      #   left_join(unitig_lengths_df, by='unitig') %>% 
+      #   filter(component %in% cluster_components) %>% 
+      #   group_by(component, cluster) %>%
+      #   summarise(length = sum(length), .groups = 'drop') %>% 
+      #   group_by(component) %>% 
+      #   mutate(perc = length/sum(length)) %>% 
+      #   ungroup()
+      #   
+      # n_components <- 
+      #   cluster_component_fractions %>% 
+      #   pull_distinct(component) %>% 
+      #   length()
+      # 
+      # n_majority_components <-
+      #   cluster_component_fractions %>% 
+      #   filter(cluster == nm) %>% 
+      #   filter(perc >= 0.5) %>% 
+      #   nrow()
+      # 
+      # if(n_majority_components < n_components) {
+      #   libs <- pull_distinct(sort_counts, lib)
+      #   swaps <- 
+      #     tibble(lib=libs, swap=NA) %>% 
+      #     tibble::deframe()
+      #   
+      #   return(swaps)
+      # }
       
-      clusters_on_cluster_component <-
-        cluster_df %>% 
-        left_join(components_df, by='unitig') %>% 
-        filter(component %in% cluster_components) 
-      
-      cluster_component_fractions <-
-        cluster_df %>% 
-        left_join(components_df, by='unitig') %>% 
-        left_join(unitig_lengths_df, by='unitig') %>% 
-        filter(component %in% cluster_components) %>% 
-        group_by(component, cluster) %>%
-        summarise(length = sum(length), .groups = 'drop') %>% 
-        group_by(component) %>% 
-        mutate(perc = length/sum(length)) %>% 
-        ungroup()
-        
-      n_components <- 
-        cluster_component_fractions %>% 
-        pull_distinct(component) %>% 
-        length()
-      
-      n_majority_components <-
-        cluster_component_fractions %>% 
-        filter(cluster == nm) %>% 
-        filter(perc >= 0.5) %>% 
-        nrow()
-
-      if(n_majority_components < n_components) {
-        libs <- pull_distinct(sort_counts, lib)
-        swaps <- 
-          tibble(lib=libs, swap=NA) %>% 
-          tibble::deframe()
-        
-        return(swaps)
-      }
-        
       sort_counts <-
         sort_counts %>% 
         group_by(lib) %>% 
