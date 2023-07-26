@@ -920,12 +920,12 @@ wc_libraries_df <-
 
 exact_match_counts_df <-
   orient_counts(exact_match_counts_df, strand_orientation_clusters_df)
-  
+
 ## Clusters covered by bubbles ---------------------------------------------------
 
 n_bubbles <- 1
 libs_per_bubble <- 3
-coverage_minimum <- 7
+coverage_minimum <- 5
 
 
 # Mark clusters without bubbles, or without sufficient bubble alignments
