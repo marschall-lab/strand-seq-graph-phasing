@@ -574,6 +574,8 @@ haploid_component_unititgs <-
 # to be extra safe.
 par_clusters <- 
   cluster_df %>% 
+  left_join(unitig_lengths_df) %>%
+  filter(length < 2.8e6) %>% # size check
   filter(unitig %in% haploid_component_unititgs) %>% 
   filter(!grepl('^sex', cluster)) %>% 
   filter(!is.na(cluster)) %>%
