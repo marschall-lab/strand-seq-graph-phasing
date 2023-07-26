@@ -466,11 +466,14 @@ while(any_assigned) {
       '\n'
     )
     
+    # TODO justify
+    length_factor <- 3
+    
     long_unclustered_unitigs_df <- 
       unitig_lengths_df %>% 
       filter(unitig %in% unclustered_unitigs) %>% 
-      filter(length >= segment_length_threshold)
-
+      filter(length >= length_factor * segment_length_threshold)
+    
     
     if(nrow(long_unclustered_unitigs_df) > 0) {
       any_assigned <- TRUE
