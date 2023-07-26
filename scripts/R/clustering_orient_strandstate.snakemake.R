@@ -1130,42 +1130,57 @@ no_bubble_unitig_sorts <-
       out %>% 
       pull_distinct(sort) %>% 
       length()
-
+    
     
     if(!(num_clusters %in% c(1,2))) {
-      cat('Hierarchically dividing cluster:', x, '\n')
-      # take two most dissimilar clusters
-      wc <-
-        sort_counts %>%
-        with(make_wc_matrix(w,c,lib,unitig, min_n=1))
+      # browser()
+      # cat('Hierarchically dividing cluster:', x, '\n')
+      # # take two most dissimilar clusters
+      # wc <-
+      #   sort_counts %>%
+      #   with(make_wc_matrix(w,c,lib,unitig, min_n=1))
+      # 
+      # cs <- 
+      #   wc[unitigs, ,drop=FALSE] %>% 
+      #   cosine_similarity(min_overlaps=2)
+      # 
+      # cs[is.na(cs)] <- 0
+      # # pc <- prcomp(cs)
+      # # get_prcomp_plotdata(pc, 'unitig') %>% ggplot() + geom_label(aes(x=PC1, y=PC2, label=unitig))
+      # 
+      # clusters <-
+      #   # dist(pc$x) %>% 
+      #   as.dist(1-cs) %>%
+      #   hclust() %>% 
+      #   cutree(2)
+      cat('Taking largest clusters:', x, '\n')
       
-      cs <- 
-        wc[unitigs, ,drop=FALSE] %>% 
-        cosine_similarity(min_overlaps=2)
-
-      cs[is.na(cs)] <- 0
-      # pc <- prcomp(cs)
-      # get_prcomp_plotdata(pc, 'unitig') %>% ggplot() + geom_label(aes(x=PC1, y=PC2, label=unitig))
-      
-      clusters <-
-        # dist(pc$x) %>% 
-        as.dist(1-cs) %>%
-        hclust() %>% 
-        cutree(2)
+      sorts_to_keep <-
+        out %>% 
+        left_join(unitig_lengths_df, by='unitig') %>% 
+        count(sort, wt=length) %>% 
+        arrange(desc(n)) %>% 
+        dplyr::slice(1:2)
       
       out <-
-        tibble(sort = clusters, unitig = names(clusters))
+        out %>% 
+        semi_join(sorts_to_keep, by='sort') %>% 
+        mutate(sort = as.integer(as.factor(sort)))
+        
     }
     
-    
 
+    # sort_counts %>%
+    #   distinct(unitig) %>%
+    #   left_join(
+    #     out %>%
+    #       select(sort, unitig)) %>%
+    #   return()
     
-    out %>% 
-      select(sort, unitig) %>% 
+    out %>%
+      select(sort, unitig) %>%
       return()
-    
   })
-
 
 ### Library Swapping ------------------------------------------------------
 
