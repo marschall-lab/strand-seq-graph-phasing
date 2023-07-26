@@ -491,16 +491,69 @@ while(any_assigned) {
     }
   }
   
-
+  
 }
 
 
-### NA Cluster --------------------------------------------------------------
-# TODO why do these form?
 
-cluster_df <-
-  cluster_df %>% 
-  mutate(cluster = ifelse(is.na(cluster), paste0('LGNA_', unitig), cluster))
+
+
+## POCC-----------------------------------------------------------
+
+cat('Propagating one cluster components\n')
+cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
+
+## Bare Components ---------------------------------------------------------
+
+cat('Assigning clusters to bare components with homology\n')
+
+# Assign bare components w/ at least one bubble to its own cluster
+bare_components <-
+  components_df %>% 
+  left_join(cluster_df, by='unitig') %>% 
+  group_by(component) %>% 
+  filter(all(is.na(cluster))) %>% 
+  ungroup() %>% 
+  pull_distinct(component) 
+
+components_with_whole_bubbles <-
+  homology_df %>% 
+  left_join(components_df, by='unitig') %>% 
+  group_by(bubble) %>% 
+  filter(!anyNA(component) & all_are_identical(component)) %>% 
+  ungroup() %>% 
+  pull_distinct(component) 
+
+# acrocentric_components <-
+#   components_df %>% 
+#   filter(member_largest_component) %>% 
+#   pull_distinct(component)
+
+# TODO Why? There is a recurring pattern where nearly-perfectly phased unitigs
+# (straight out of verkko) tend to be unclustered by contibait because the
+# degenrate regions add noise to the untiig. Therefore if it is unclustered ->
+# likely highly phased out of verkko -> safe to cluster together? Or maybe its
+# fine to stay more conservateive if its failing it situations where additional
+# phasing isnt even needed?
+bare_bubble_components <- 
+  intersect(bare_components, components_with_whole_bubbles) # %>%
+# setdiff(acrocentric_components)
+
+i <- 0
+for(bbc in bare_bubble_components) {
+  i <- i+1
+  bbc_unitigs <- 
+    components_df %>% 
+    filter(component == bbc) %>% 
+    pull(unitig)
+  
+  label <- paste0('LG Bare ', i)
+  
+  cluster_df <-
+    cluster_df %>% 
+    mutate(cluster = ifelse(unitig %in% bbc_unitigs, label, cluster))
+}
+
 
 
 ## Cosine Cluster Merging ----------------------------------------------------
@@ -510,7 +563,67 @@ cat('Cosine cluster merging\n')
 # Sometimes, some of the newly created clusters will should be merged into other
 # components on cluster (centromere troubles especially)
 cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.5)
+## Link Homology -----------------------------------------------------------
 
+#### Remove multi cluster bubbles --------------------------------------------
+
+multi_cluster_bubbles <-
+  homology_df %>%
+  left_join(cluster_df, by='unitig') %>% 
+  group_by(bubble) %>% 
+  filter(all_are_unique(cluster) & !anyNA(cluster)) %>% 
+  ungroup() %>% 
+  pull_distinct(bubble)
+
+for(bub in multi_cluster_bubbles) {
+  bubble_clusters_df <-
+    homology_df %>% 
+    left_join(cluster_df, by = 'unitig') %>% 
+    filter(bubble %in% bub) 
+  
+  bubble_clusters <-
+    bubble_clusters_df %>% 
+    pull(cluster) 
+  
+  warning(
+    'clusters: ',
+    bubble_clusters[1],
+    ' and ',
+    bubble_clusters[2],
+    ' share homology via unitigs: ',
+    paste(bubble_clusters_df$unitig, collapse = ', '),
+    '\n'
+  )
+  
+}
+
+homology_df <-
+  homology_df %>% 
+  filter(!(bubble %in% multi_cluster_bubbles))
+
+#### Link --------------------------------------------------------------------
+cat('Linking nodes sharing homology\n')
+cluster_df <- link_homology(cluster_df, homology_df, components_df)
+
+## NA Cluster --------------------------------------------------------------
+# TODO why do these form?
+
+cluster_df <-
+  cluster_df %>%
+  mutate(cluster = ifelse(is.na(cluster), paste0('LGNA_', unitig), cluster))
+
+
+## Unusual Unitigs ---------------------------------------------------------
+
+high_wc_unitigs <-
+  strand.states$AWCcontigs@seqnames %>% 
+  as.character()
+
+low_wc_unitigs <-
+  cluster_df %>% 
+  filter(grepl('^sex', cluster)) %>% 
+  pull_distinct(unitig) %>% 
+  setdiff(high_wc_unitigs)
 
 ## PAR Detection -----------------------------------------------------------
 cat('Detecting PAR\n')
@@ -604,106 +717,24 @@ cluster_df <-
   cluster_df %>% 
   mutate(cluster = ifelse(cluster %in% par_clusters | grepl('^sex', cluster), 'LGXY', cluster))
 
+# cluster_df <-
+#   cluster_df %>%
+#   mutate(cluster = ifelse(grepl('^sex', cluster), 'LGXY', cluster))
 
-## Link Homology -----------------------------------------------------------
+# Bad XY Bubbles ----------------------------------------------------------
 
-#### Remove multi cluster bubbles --------------------------------------------
-
-multi_cluster_bubbles <-
-  homology_df %>%
+# XY bubbles should only be PAR bubbles, therefore small
+bad_xy_bubbles <- 
+  homology_df  %>% 
   left_join(cluster_df, by='unitig') %>% 
-  group_by(bubble) %>% 
-  filter(all_are_unique(cluster)) %>% 
-  ungroup() %>% 
-  pull_distinct(bubble)
-
-for(bub in multi_cluster_bubbles) {
-  bubble_clusters_df <-
-    homology_df %>% 
-    left_join(cluster_df, by = 'unitig') %>% 
-    filter(bubble %in% bub) 
-  
-  bubble_clusters <-
-    bubble_clusters_df %>% 
-    pull(cluster) 
-  
-  warning(
-    'clusters: ',
-    bubble_clusters[1],
-    ' and ',
-    bubble_clusters[2],
-    ' share homology via unitigs: ',
-    paste(bubble_clusters_df$unitig, collapse = ', '),
-    '\n'
-  )
-    
-}
+  left_join(unitig_lengths_df, by='unitig') %>% 
+  filter(cluster == 'LGXY') %>% 
+  filter(length >= 3e6)
+  # filter(length >= 0) 
 
 homology_df <-
   homology_df %>% 
-  filter(!(bubble %in% multi_cluster_bubbles))
-
-#### Link --------------------------------------------------------------------
-
-
-cat('Linking nodes sharing homology\n')
-
-cluster_df <- link_homology(cluster_df, homology_df, components_df)
-cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
-
-
-## Bare Components ---------------------------------------------------------
-
-cat('Assigning clusters to bare components with homology\n')
-
-# Assign bare components w/ at least one bubble to its own cluster
-bare_components <-
-  components_df %>% 
-  left_join(cluster_df, by='unitig') %>% 
-  group_by(component) %>% 
-  filter(all(is.na(cluster))) %>% 
-  ungroup() %>% 
-  pull_distinct(component) 
-
-components_with_whole_bubbles <-
-  homology_df %>% 
-  left_join(components_df, by='unitig') %>% 
-  group_by(bubble) %>% 
-  filter(!anyNA(component) & all_are_identical(component)) %>% 
-  ungroup() %>% 
-  pull_distinct(component) 
-
-# acrocentric_components <-
-#   components_df %>% 
-#   filter(member_largest_component) %>% 
-#   pull_distinct(component)
-
-# TODO Why? There is a recurring pattern where nearly-perfectly phased unitigs
-# (straight out of verkko) tend to be unclustered by contibait because the
-# degenrate regions add noise to the untiig. Therefore if it is unclustered ->
-# likely highly phased out of verkko -> safe to cluster together? Or maybe its
-# fine to stay more conservateive if its failing it situations where additional
-# phasing isnt even needed?
-bare_bubble_components <- 
-  intersect(bare_components, components_with_whole_bubbles) # %>%
-  # setdiff(acrocentric_components)
-
-i <- 0
-for(bbc in bare_bubble_components) {
-  i <- i+1
-  bbc_unitigs <- 
-    components_df %>% 
-    filter(component == bbc) %>% 
-    pull(unitig)
-  
-  label <- paste0('LG Bare ', i)
-  
-  cluster_df <-
-    cluster_df %>% 
-    mutate(cluster = ifelse(unitig %in% bbc_unitigs, label, cluster))
-}
-
-
+  anti_join(bad_xy_bubbles, by='bubble')
 
 # Orientation Detection w/ Inverted Unitigs -------------------------------
 
@@ -793,16 +824,7 @@ cat('Calling library strand states\n')
 # is that done already by using the strand.states$strandMatrix? I think that is
 # already handled that's nice lol.
 
-## Unusual Unitigs ---------------------------------------------------------
 
-high_wc_unitigs <-
-  strand.states$AWCcontigs@seqnames %>% 
-  as.character()
-
-low_wc_unitigs <-
-  clust[grepl('^sex', names(clust))] %>% 
-  flatten_chr() %>% 
-  strip_range()
 
 
 ## Call Library State contiBAIT  -------------------------------------------------------
@@ -933,18 +955,9 @@ clusters_covered_with_bubbles <-
   clusters_covered_with_bubbles %>% 
   pull_distinct(cluster)
 
-
-# XY bubbles should only be PAR bubbles, therefore small
-bad_xy_bubbles <- 
-  homology_df  %>% 
-  left_join(cluster_df, by='unitig') %>% 
-  left_join(unitig_lengths_df, by='unitig') %>% 
-  filter(cluster == 'LGXY') %>% 
-  filter(length >= 3e6) %>% 
-  pull_distinct(bubble)
-
 clusters_covered_with_bubbles <-
-  setdiff(clusters_covered_with_bubbles, bad_xy_bubbles) %>% 
+  clusters_covered_with_bubbles %>% 
+  # setdiff(bad_xy_bubbles) %>% 
   set_names()
 
 clusters_not_covered_with_bubbles <-
