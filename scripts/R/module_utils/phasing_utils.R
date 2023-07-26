@@ -254,8 +254,15 @@ merge_similar_clusters_on_components <- function(counts_df, cluster_df, componen
       max_ix <-
         which(clust_sim == max_sim, arr.ind = TRUE)
       
-      clust_1 <- cmp_clusters[max_ix[1,1]]
-      clust_2 <- cmp_clusters[max_ix[1,2]]
+      # sort to ensure that sex cluster (sex > LG) is not overwritten
+      merge_clusters <- c(
+        cmp_clusters[max_ix[1,1]],
+        cmp_clusters[max_ix[1,2]]
+      ) %>% 
+        sort()
+      
+      clust_1 <- merge_clusters[1]
+      clust_2 <- merge_clusters[2]
       
       # similarity_threshold chosen by reviewing ~ 30 HGSVC assemblies. A value of
       # 0.4 appears to also work, as there seems to be a sharp gulf where unitigs
