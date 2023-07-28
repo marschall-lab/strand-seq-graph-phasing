@@ -500,7 +500,7 @@ rule count_haplotype_markers:
         connected_components='gfa/ccs/{sample}_exploded_ccs.tsv',
         homology="homology/{sample}/{sample}_combined_mashmap_bubblegun_homology.tsv"
     output:
-        "haplotype_marker_counts/{sample}_haplotype_marker_counts.csv"
+        temp("haplotype_marker_counts/{sample}_haplotype_marker_counts.csv")
     params:
         segment_length_threshold=segment_length_threshold,
         expect_XY_separate = lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['expect_XY_separate'],
@@ -525,7 +525,27 @@ rule count_haplotype_markers:
         --output {output}) > {log} 2>&1
         '''
 
-
+rule fudge_haplotype_markers:
+    input:
+        hmc = "haplotype_marker_counts/{sample}_haplotype_marker_counts.csv",
+        homology="homology/{sample}/{sample}_combined_mashmap_bubblegun_homology.tsv"
+    output:
+        "haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.csv"
+    params:
+        script = get_script_path('R','fudge_marker_counts.snakemake.R')
+    singularity: singularity_r_env
+    conda: conda_r_env
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        walltime = lambda wildcards, attempt: f'{2 + attempt*attempt:02}:59:00'
+    log: "log/fudge_haplotype_markers_{sample}.log"
+    shell:
+        '''
+        (Rscript --vanilla {params.script} \\
+        --hmc {input.hmc} \\
+        --homology {input.homology} \\
+        --output {output}) > {log} 2>&1
+        '''
 ################################################################
 ############ HiFiasm  Graph Hifi Coverage for Rukki ############
 ################################################################
@@ -562,8 +582,8 @@ rule add_coverage_to_gfa:
         '''
 
 rule convert_markers_to_tsv:
-    input: "haplotype_marker_counts/{sample}_haplotype_marker_counts.csv"
-    output: temp("haplotype_marker_counts/{sample}_haplotype_marker_counts.tsv")
+    input: "haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.csv"
+    output: temp("haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.tsv")
     shell:
         '''
            tail -n +2 {input} | awk -F',' '{{OFS="\t"; $1=$1; print}}' > {output}
@@ -592,7 +612,7 @@ def rukki_paramaterizer(wildcards, parameter) :
 rule run_rukki:
     input:
         graph='{sample}_gfa_with_coverage.gfa',
-        markers="haplotype_marker_counts/{sample}_haplotype_marker_counts.tsv"
+        markers="haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.tsv"
     output:
         tsv="rukki/{sample}/{sample}_rukki_paths.tsv",
         gaf="rukki/{sample}/{sample}_rukki_paths.gaf",
