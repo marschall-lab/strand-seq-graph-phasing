@@ -118,3 +118,16 @@ snakemake \\
 
 `--restart-times` While the resource allocation for each rule generally works on the first attempt, some rules occasionally need more memory for. 3 restarts generally works to provide enough memory for the pipeline to finish.
 
+`--restart-times` While the resource allocation for each rule generally works on the first attempt, some rules occasionally need more memory for. 2 restarts generally works to provide enough memory for the pipeline to finish.
+
+## Warnings
+
+### Results are stochastic
+
+One important step in the pipeline is to cluster unitigs from the `.gfa` into groups corresponding to the same chromosome. This step is achieved using a stochastic ensemble clustering algorithm from the `contiBAIT` package [(See figure 7.3)](https://open.library.ubc.ca/media/stream/pdf/24/1.0135595/1). Though `contiBAIT` parameters are set to attempt to limit variation in clustering, it is possible that the clustering of unitigs with less Strand-seq signal will vary even if the pipeline is run multiple times with the same configuration.
+
+This can (very rarely) result in "catastrophic" misclustering. One example Mir has encountered is the X/Y chromosome for sample NA18989. Over many tens of reruns, the output of the pipeline for NA18989 remains unchanged. However, on two different occasions, the X/Y chromosome ended up totally misclustered, with much of the X and Y chromosomes assigned to neither haplotype, or to the same haplotype. 
+
+### X and Y may be assigned to the same haplotype.
+
+Strand-seq alignments to the X and Y chromosomes can behave strangely when they are already full phased in the GFA; while normally unitigs from the X/Y chromosomes would display a "haploid" alignment signal and cluster together, it is not uncommon for fully phased X and Y chromosomes to display a "diploid" alignment signal and cluster separately. Mir has observed both Y ~ haploid and X ~ diploid separate clustering and X and Y both ~ diploid separate clustering. When this happens, it is possible for both the  X and Y chromosomes to be assigned to the same haplotype.
