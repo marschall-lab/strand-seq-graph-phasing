@@ -1115,17 +1115,17 @@ hmc <-
       counts %>% 
       filter(!grepl('inverted', unitig_dir)) %>% 
       right_join(weights, by='lib') 
-    
+
     out <-
       out %>% 
       mutate( # pseudo_counts
-        p_c = ifelse(sign(weight) == 1, weight * c, abs(weight) * w),
-        p_w = ifelse(sign(weight) == 1, weight * w, abs(weight) * c)
+        p_c = ifelse(sign(weight) == 1, weight^2 * c, weight^2 * w),
+        p_w = ifelse(sign(weight) == 1, weight^2 * w, weight^2 * c)
       ) %>% 
       group_by(unitig) %>%
-      summarise(p_c = sum(p_c), p_w = sum(p_w), n = sum(n)) %>%
+      summarise(p_c = sum(p_c), p_w = sum(p_w), n=sum(n)) %>%
       ungroup()
-    
+
     # scale marker ratio to original N
     out <-
       out %>% 
