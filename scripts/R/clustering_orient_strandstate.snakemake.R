@@ -1129,9 +1129,14 @@ hmc <-
     # scale marker ratio to original N
     out <-
       out %>% 
-      mutate(c = p_c/(p_c + p_w) * n,
-             w = p_w/(p_c + p_w) * n) %>% 
-      select(-p_c, -p_w, n)
+      mutate(
+        c = ifelse(p_c + p_w == 0, 0, p_c/(p_c + p_w) * n),
+        w = ifelse(p_c + p_w == 0, 0, p_w/(p_c + p_w) * n)
+      )%>% 
+      select(-p_c, -p_w) 
+    # Previously, this was select(-p_c, -p_w, n), which appeared to act exactly
+    # the same as select(-p_c, -p_w, n), despite the apparent bug of the n at
+    # the end of the select!
     
     return(out)
   })
