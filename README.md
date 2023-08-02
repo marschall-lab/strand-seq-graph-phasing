@@ -126,7 +126,7 @@ snakemake \\
 
 One important step in the pipeline is to cluster unitigs from the `.gfa` into groups corresponding to the same chromosome. This step is achieved using a stochastic ensemble clustering algorithm from the `contiBAIT` package [(See figure 7.3)](https://open.library.ubc.ca/media/stream/pdf/24/1.0135595/1). Though `contiBAIT` parameters are set to attempt to limit variation in clustering, it is possible that the clustering of unitigs with less Strand-seq signal will vary even if the pipeline is run multiple times with the same configuration.
 
-This can (very rarely) result in "catastrophic" misclustering. One example Mir has encountered is the X/Y chromosome for sample NA18989. Over many tens of reruns, the output of the pipeline for NA18989 remains unchanged. However, on two different occasions, the X/Y chromosome ended up totally misclustered, with much of the X and Y chromosomes assigned to neither haplotype, or to the same haplotype. 
+This can (rarely) result in **catastrophic misclustering**. One example Mir has encountered is the X/Y chromosome for sample NA18989. Over many tens of reruns, the output of the pipeline for NA18989 remains unchanged. However, on two different occasions, the X/Y chromosome ended up totally misclustered, with much of the X and Y chromosomes assigned to neither haplotype, or to the same haplotype. Another example is HG00171, is when large (several Mbp) centromeric unitigs from chromosome 4 were clustered with chromosome 12.
 
 ### X and Y may be assigned to the same haplotype.
 
