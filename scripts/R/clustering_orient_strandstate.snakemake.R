@@ -96,7 +96,8 @@ expected_args <-
     '--homology',
     '--connected-components',
     ## Output
-    '--output',
+    '--output-marker-counts',
+    '--output-lib',
     
     ## Params
     '--segment-length-threshold',
@@ -163,7 +164,8 @@ n_threads <- as.numeric(get_values('--threads'))
 stopifnot(n_threads >= 1)
 
 ## Output
-output <- get_values('--output')
+output_counts <- get_values('--output-marker-counts')
+output_lib <- get_values('--output-lib')
 
 # Import ------------------------------------------------------------------
 
@@ -662,39 +664,21 @@ cat('Detecting unitig orientation\n')
 # instead of a discretized space (eg, k-modes clustering on strand states)
 # better for tasks when there are strong prior assumptions?
 
-
-prcomps <-
-  counts_df %>% 
-  bind_with_inverted_unitigs() %>%
-  left_join(cluster_df, by='unitig') %>% 
-  # semi_join(ww_libraries_df, by=c('lib', 'cluster')) %>% 
-  split(.$cluster) %>% 
-  map(function(x) with(x, make_wc_matrix(w,c,lib,unitig_dir)))  %>% 
-  # filling with 0s doesn't seem to affect first PC too much, compared to
-  # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
-  map(function(x) {
-    x[is.na(x)] <- 0 
-    return(x)
-  }) %>% 
-  map(prcomp)
-
+mem_data_plane <- 
+  get_chrom_cluster_data_planes(counts_df, cluster_df, unitig_lengths_df, supervision = 'PC1')
+    
 # It appears that I need to do clustering only on the first PC, which
 # corresponds to orientation, as otherwise, other dimensions can influence the
 # results and lead to grouping of a unitig and its inversion together.
 
 strand_orientation_clusters_df <-
-  map(prcomps, 'x') %>%
-  map(function(x)
-    tibble(unitig_dir = rownames(x), strand_cluster = sign(x[, 'PC1']))) %>%
-  bind_rows(.id = 'cluster')
-
-strand_orientation_clusters_df <-
-  strand_orientation_clusters_df %>% 
-  mutate(unitig = stringr::str_remove(unitig_dir, '_inverted$'))
+  mem_data_plane$model_input %>% 
+  select(cluster, unitig, unitig_dir, PC1) %>% 
+  mutate(strand_cluster = sign(PC1)) %>% 
+  select(-PC1)
 
 # I have discovered that some points are located truly at the origin (for
 # all PCs), and therefore do not separate on the first PC. What lol. 
-
 # TODO Figure out what leads to this. (HG03456)
 
 strand_orientation_clusters_df <- 
@@ -712,69 +696,6 @@ if(nrow(bad) > 0) {
   # WARNINGS <- c(WARNINGS, 'Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
 }
 
-
-# Call WC Libraries -------------------------------------------------------
-
-cat('Calling library strand states\n')
-
-# Use the prcomps!
-prcomps <-
-  counts_df %>%
-  orient_counts(strand_orientation_clusters_df) %>%
-  bind_with_inverted_unitigs() %>%
-  left_join(cluster_df, by='unitig') %>%
-  split(.$cluster) %>%
-  map(function(x) with(x, make_wc_matrix(w,c,lib,unitig_dir)))  %>%
-  # filling with 0s doesn't seem to affect first PC too much, compared to
-  # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
-  map(function(x) {
-    x[is.na(x)] <- 0
-    return(x)
-  }) %>%
-  map(prcomp)
-
-wc_libraries_df <-
-  prcomps %>%
-  imap_dfr(function(x, nm) {
-    # Use loadings from first PC. High loadings ~ WW libraries Low Loadings WC Libraries
-    loading_percentages <-
-      x$rotation[, 1] ^2
-
-    n_libs <- length(loading_percentages)
-
-    loading_range <-
-      range(loading_percentages)
-
-    threshold <-
-      loading_range[1] + 0.2 * loading_range[2]
-
-    # FIXME, for XY unitigs, it seems that this does the opposite of what is
-    # wanted! USing all libraries is way better than this selection. in fact
-    # maybe the opposite is what is needed in that case!
-    wc_libs <-
-      names(loading_percentages)[loading_percentages < threshold]
-
-    if(length(wc_libs) > n_libs %/% 2) {
-    wc_libs <-
-      sort(loading_percentages, decreasing=FALSE)[1:(n_libs %/% 2)] %>%
-      names()
-    }
-
-    if(nm == 'LGXY') {
-      # I don't know why but this seems to work better than taking a subset?
-      wc_libs <- names(loading_percentages)
-    }
-
-    out <-
-      tibble(cluster=nm, lib=wc_libs)
-
-    return(out)
-  })
-
-wc_libraries_df <-
-  bind_rows(wc_libraries_df)
-
-
 # Phase Chromosomes -------------------------------------------------------
 
 ## Orient Fastmap Counts --------------------------------------------------
@@ -782,6 +703,9 @@ wc_libraries_df <-
 
 exact_match_counts_df <-
   orient_counts(exact_match_counts_df, strand_orientation_clusters_df)
+
+fastmap_data_plane <-
+  get_chrom_cluster_data_planes(exact_match_counts_df, cluster_df, unitig_lengths_df, supervision = 'inverse')
 
 ## Counts ------------------------------------------------------------------
 
@@ -808,25 +732,42 @@ is_one_haplotype_cluster <-
     sort_counts <-
       x %>%
       filter(!grepl('inverted', unitig_dir))
-
-    # TODO do this more cleverly
-      sort_counts <-
-        sort_counts %>%
-        semi_join(wc_libraries_df, by=c('lib', 'cluster'))
-
-    if(nrow(sort_counts) == 0){
-      stop('no rows')
+    
+    unitigs <-
+      sort_counts %>% 
+      pull_distinct(unitig)
+    
+    if(length(unitigs) == 1) {
+      cat('One unitig cluster:', nm, '\n')
+      return(unitigs)
     }
+    
+    
+    sort_counts <- 
+      sort_counts %>% 
+      left_join(fastmap_data_plane$weights, by=c('cluster', 'lib')) %>% 
+      mutate(p_weight = ifelse(is.na(p_weight), 0, p_weight))
+    
+    # TODO this weight thing isn't quite right.
+    sort_counts <-
+      sort_counts %>% 
+      mutate( # pseudo_counts
+        p_c = ifelse(sign(p_weight) == 1, c/p_weight, w/abs(p_weight)),
+        p_w = ifelse(sign(p_weight) == 1, w/p_weight, c/abs(p_weight))
+      ) 
+    
+    # scale marker ratio to original N
+    sort_counts <-
+      sort_counts %>% 
+      mutate(
+        c = ifelse(p_c + p_w == 0, 0, p_c/(p_c + p_w) * n),
+        w = ifelse(p_c + p_w == 0, 0, p_w/(p_c + p_w) * n)
+      )%>% 
+      select(-p_c, -p_w) %>% 
+      mutate(c = as.integer(ceiling(c)), w=as.integer(ceiling(w)))
 
-      unitigs <-
-        sort_counts %>% 
-        pull_distinct(unitig)
-      
-      if(length(unitigs) == 1) {
-        cat('One unitig cluster:', nm, '\n')
-        return(unitigs)
-      }
-      
+
+
     # Trying to sort on good, big unitigs that are often present in verkko graphs.
     unitigs <-
       sort_counts %>%
@@ -839,22 +780,30 @@ is_one_haplotype_cluster <-
         return(NA)
       }
 
-      ## TODO Minimum vector length needs to be scaled by num libraries
       wc <-
         sort_counts %>%
         with(make_wc_matrix(w,c,lib,unitig, min_n=1))
 
       unitig_vector_lengths <-
         wc %>%
-        apply( 1, function(x) (sqrt(sum(x^2, na.rm=T))))
+        apply(1, function(x) (sqrt(sum(x^2, na.rm=T))))
 
       print(unitig_vector_lengths)
 
       threshold <-
         max(unitig_vector_lengths) - 0.2 *  max(unitig_vector_lengths)
-
+      
+      #FIXME A genuine one-haplotype cluster may be flagged by this incorrectly.
+      #If something fails this check, it needs to be looked at in unweighted
+      #data space as well. Similarly, a one haplotype cluster may look very WC
+      #after down-weighting WW libraries. OR maybe not I have run tests with
+      #manually created one-haplotype clusters and it seems fine...
+      
+      # TODO Minimum vector length needs to be scaled by
+      #num libraries
+      min_vector_length <- 4
       unitigs <-
-        names(unitig_vector_lengths)[unitig_vector_lengths > 4 & unitig_vector_lengths > threshold]
+        names(unitig_vector_lengths)[unitig_vector_lengths > min_vector_length & unitig_vector_lengths > threshold]
 
       if(length(unitigs) < 1) {
         cat('Too few adequately low-noise unitigs for number of clusters detection:', nm, '\n')
@@ -894,42 +843,6 @@ is_one_haplotype_cluster <-
     }
 
   })
-
-
-# This doesn't work
-# 
-# 
-# sort_weights <-
-#   map2(prcomps, slopes, function(x, slp) {
-#     vec <- c(1,slp)
-#     unit_vector <- vec/sqrt(vec %*% vec)
-# 
-#     x <-
-#       x %>%
-#       get_prcomp_plotdata(., 'unitig_dir') %>%
-#       filter(!grepl('inverted', unitig_dir))
-# 
-#     mat <-
-#       x %>%
-#       select(PC1, PC2) %>%
-#       as.matrix()
-# 
-#     rownames(mat) <- x$unitig_dir
-# 
-#     mat %*% unit_vector
-# 
-#   })
-# 
-# # TODO
-# sort_ranges <-
-#   map_dbl(sort_weights, function(x) range(x)[2] -range(x)[1])
-# 
-# # TODO do I need to account for number of libraries? FIXME This is an untested
-# # value. It is about half of what a well behaved cluster is, but I haven't found
-# # any muti-unitig single haplotype clusters to test this with.
-# range_threshold <- 6
-# one_haplotype_clusters <- names(sort_ranges)[sort_ranges < range_threshold]
-
 
 one_haplotype_cluster_unitigs <-
   is_one_haplotype_cluster %>% 
@@ -1049,99 +962,28 @@ one_haplotype_cluster_counts <-
 
 ## Two Haplotype Clusters --------------------------------------------------
 
-
-### Princomps ---------------------------------------------------------------
-
-wfrac_mats <-
-  em_counts[two_haplotype_clusters] %>%
-  map(function(x) with(x, make_wc_matrix(w,c,lib,unitig_dir,min_n=5)))
-
-prcomps <-
-  wfrac_mats %>%
-  # filling with 0s doesn't seem to affect first PC too much, compared to
-  # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
-  map(function(x) {
-    x[is.na(x)] <- 0
-    return(x)
-  }) %>%
-  map(prcomp)# %>%
-# map(get_prcomp_plotdata, 'unitig_dir')
-
-
-### Library Weights ---------------------------------------------------------
-
-# size weighted
-glms <-
-  map(prcomps, function(x){
-    x <-
-      x %>%
-      get_prcomp_plotdata(., 'unitig_dir') %>%
-      mutate(unitig = gsub('_inverted', '', unitig_dir)) %>%
-      left_join(unitig_lengths_df, by='unitig') %>%
-      mutate(y = grepl('inverted', unitig_dir)) %>%
-      select(-unitig_dir, -unitig)
-    
-    w <- x$length
-    
-    x <-
-      x %>%
-      select(-length)
-    
-    glm(y ~ -1 + ., family=binomial(), weights = w, data=x)
-  })
-
-slopes <-
-  map(glms, function(x) {
-    coef(x)[1]/-coef(x)[2]
-    # coef(x)[2]/coef(x)[1] # Perpendicular slope
-  })
-
-# library(ggplot2)
-# plots <-
-#   map2(prcomps, slopes, function(x, slp) {
-#   x <-
-#     x %>%
-#     get_prcomp_plotdata(., 'unitig_dir') %>%
-#     mutate(unitig = gsub('_inverted', '', unitig_dir)) %>%
-#     left_join(unitig_lengths_df, by='unitig') %>%
-#     mutate(y = grepl('inverted', unitig_dir))
-# 
-#   p <-
-#     ggplot(x) +
-#     geom_point(aes(x = PC1, y=PC2, color=y, size=length)) +
-#     geom_text(aes(x = PC1, y=PC2, color=y, label=unitig)) +
-#     geom_abline(intercept = 0, slope=slp) +
-#     scale_size_area()
-# })
-
-lib_weights <-
-  map2(prcomps, slopes, function(x, slp) {
-    vec <- c(1,slp)
-    unit_vector <- vec/sqrt(vec %*% vec)
-    
-    out <- x$rotation[,1:2] %*% unit_vector
-    
-    out <- tibble(lib=rownames(out), weight = out[,1])
-    
-    out
-  })
-
 ### Count -----------------------------------------------------------------
 
 # TODO this weight thing isn't quite right.
 hmc <-
-  map2(em_counts[names(lib_weights)], lib_weights, function(counts, weights){
+  imap(em_counts[two_haplotype_clusters], function(counts, nm){
     # browser()
+    
+    weights <- 
+      fastmap_data_plane$weights %>% 
+      filter(cluster == nm)
+    
     out <- 
       counts %>% 
       filter(!grepl('inverted', unitig_dir)) %>% 
       right_join(weights, by='lib') 
 
+    # TODO this weights thing isn't quite right.
     out <-
       out %>% 
       mutate( # pseudo_counts
-        p_c = ifelse(sign(weight) == 1, weight^2 * c, weight^2 * w),
-        p_w = ifelse(sign(weight) == 1, weight^2 * w, weight^2 * c)
+        p_c = ifelse(sign(b_weight) == 1, b_weight^2 * c, b_weight^2 * w),
+        p_w = ifelse(sign(b_weight) == 1, b_weight^2 * w, b_weight^2 * c)
       ) %>% 
       group_by(unitig) %>%
       summarise(p_c = sum(p_c), p_w = sum(p_w), n=sum(n)) %>%
@@ -1171,7 +1013,10 @@ marker_counts <-
 
 cat('Exporting\n')
 
-## Join in Excluded Unitigs ------------------------------------------------
+## Marker Counts -----------------------------------------------------------
+
+
+### Join in Excluded Unitigs ------------------------------------------------
 all_unitigs <- unitig_lengths_df$unitig
 
 short_unitigs <- 
@@ -1217,7 +1062,7 @@ marker_counts <-
   full_join(marker_counts, exclusions_df, by='unitig')
 
 
-## Additional Information --------------------------------------------------
+### Additional Information --------------------------------------------------
 
 marker_counts <-
   marker_counts %>% 
@@ -1238,7 +1083,7 @@ marker_counts <-
   select(unitig, hap_1_counts, hap_2_counts, everything(), exclusion) %>% 
   arrange(cluster)
 
-## Bandage Cluster Colors -----------------------------------------------------
+### Bandage Cluster Colors -----------------------------------------------------
 
 cluster_palette <-
   marker_counts %>%
@@ -1262,18 +1107,44 @@ stopifnot(nrow(marker_counts) == length(all_unitigs))
 stopifnot(setequal(all_unitigs, marker_counts$unitig))
 
 
-## Haplotype Size Evening --------------------------------------------------
+### Haplotype Size Evening --------------------------------------------------
 
 # TODO, flip haplotypes labels that make the overall haplotype sizes more even.
 
 
-## CSV ---------------------------------------------------------------------
+### CSV ---------------------------------------------------------------------
 
 marker_counts <-
   marker_counts %>% 
   select(unitig, hap_1_counts, hap_2_counts, everything())
   
-readr::write_csv(marker_counts, output)
+readr::write_csv(marker_counts, output_counts)
+
+
+## Library Weights ---------------------------------------------------------
+
+mem_weights <-
+  mem_data_plane$weights %>% 
+  select(-b_weight) %>% 
+  dplyr::rename(ww_weight_mem = p_weight)
+
+fastmap_weights <-
+  fastmap_data_plane$weights %>% 
+  dplyr::rename(
+    ww_weight_fastmap = p_weight,
+    wc_weight_fastmap = b_weight
+    )
+
+library_weights <-
+  full_join(mem_weights, fastmap_weights,by=c('cluster', 'lib')) 
+
+# TODO schema checks
+
+
+### CSV ---------------------------------------------------------------------
+
+readr::write_csv(library_weights, output_lib)
+
 
 # Warnings ----------------------------------------------------------------
 

@@ -474,15 +474,18 @@ rule count_sseq_alignments:
     output:
         mem = "sseq_alignment_counts/{sample}_sseq_mem_counts.csv",
         fastmap = "sseq_alignment_counts/{sample}_sseq_fastmap_counts.csv",
+        mem_raw= "sseq_alignment_counts/{sample}_sseq_mem_raw.csv",
+        fastmap_raw = "sseq_alignment_counts/{sample}_sseq_fastmap_raw.csv"
     params:
         script = get_script_path('R', 'count_alignments.snakemake.R')
     singularity: singularity_r_env
     conda: conda_r_env
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
         walltime = lambda wildcards, attempt: f'{2 + attempt*attempt:02}:59:00'
     threads: 1
     log: "log/count_sseq_alignments_{sample}.log"
+    benchmark: "benchmark/count_sseq_alignments_{sample}.benchmark"
     shell:
         '''
         (Rscript --vanilla {params.script} \\
@@ -490,7 +493,9 @@ rule count_sseq_alignments:
         --fastmap-alignments {input.fastmap} \\
         --threads {threads} \\
         --output-mem {output.mem} \\
-        --output-fastmap {output.fastmap}) > {log} 2>&1
+        --output-fastmap {output.fastmap} \\
+        --output-mem-raw {output.mem_raw} \\
+        --output-fastmap-raw {output.fastmap_raw}) > {log} 2>&1
         '''
 
 rule count_haplotype_markers:
@@ -500,7 +505,8 @@ rule count_haplotype_markers:
         connected_components='gfa/ccs/{sample}_exploded_ccs.tsv',
         homology="homology/{sample}/{sample}_combined_mashmap_bubblegun_homology.tsv"
     output:
-        temp("haplotype_marker_counts/{sample}_haplotype_marker_counts.csv")
+        mc="haplotype_marker_counts/{sample}_haplotype_marker_counts.csv",
+        lib="library_weights/{sample}_library_weights.csv"
     params:
         segment_length_threshold=segment_length_threshold,
         expect_XY_separate = lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['expect_XY_separate'],
@@ -522,7 +528,8 @@ rule count_haplotype_markers:
         --segment-length-threshold {params.segment_length_threshold} \\
         --expect-XY-separate {params.expect_XY_separate} \\
         --threads {threads} \\
-        --output {output}) > {log} 2>&1
+        --output-marker-counts {output.mc} \\
+        --output-lib {output.lib}) > {log} 2>&1
         '''
 
 rule fudge_haplotype_markers:
