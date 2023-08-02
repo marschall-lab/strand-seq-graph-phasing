@@ -284,7 +284,7 @@ cat('Running contiBAIT clustering\n')
 # debugonce(clusterContigs, signature = 'StrandStateMatrix')
 clust <-
   clusterContigs(strand.states$strandMatrix,
-                 recluster = 100,
+                 recluster = 1000,
                  randomWeight = weights,
                  clusterBy = 'hetero',
                  verbose = FALSE)
