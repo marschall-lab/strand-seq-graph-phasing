@@ -147,10 +147,13 @@ marker_counts <-
 #     fudge_hap_2_counts = ifelse(length < 1e7, fudge_hap_2_counts, ifelse(hap_2_counts > hap_1_counts, 10 * fudge_hap_2_counts, fudge_hap_2_counts)),
 #   )
 
-long_unitigs_to_inflate <-
-  marker_counts %>% 
-  filter(length >= 1e7) %>% 
-  pull_distinct(unitig)
+long_unitigs_to_inflate <- character(0)
+# long_unitigs_to_inflate <-
+#   marker_counts %>%
+#   filter(length >= 4e7) %>% # HG03683 utig4-166[5,6]
+#   mutate(fudge_hap_1_counts = fudge_hap_1_counts + 1,fudge_hap_2_counts = fudge_hap_2_counts + 1 ) %>%
+#   # filter((fudge_hap_1_counts / fudge_hap_2_counts > 1.25) | (fudge_hap_2_counts/fudge_hap_1_counts > 1.25)) %>%
+#   pull_distinct(unitig)
 
 ## Bubble Ratio Inflation --------------------------------------------------
 
@@ -162,29 +165,30 @@ long_unitigs_to_inflate <-
 ## future, but for now, this is how homology is being used.
 
 
-bubble_counts <-
-  marker_counts %>%
-  left_join(homology_df, by='unitig') %>% 
-  filter(!is.na(bubble)) %>% 
-  mutate(wfrac = (hap_1_counts - hap_2_counts)/(hap_1_counts + hap_2_counts))
+# bubble_counts <-
+#   marker_counts %>%
+#   left_join(homology_df, by='unitig') %>% 
+#   filter(!is.na(bubble)) %>% 
+#   mutate(wfrac = (hap_1_counts - hap_2_counts)/(hap_1_counts + hap_2_counts))
+# 
+# count_threshold <- 5
+# bubble_counts <-
+#   bubble_counts %>% 
+#   filter((hap_1_counts + hap_2_counts) > count_threshold) %>% 
+#   group_by(bubble) %>% 
+#   filter(n() == 2) %>% 
+#   ungroup()
+# 
+# bubble_counts <-
+#   bubble_counts %>% 
+#   group_by(bubble) %>% 
+#   filter((1 %in% sign(wfrac)) & (-1 %in% sign(wfrac))) %>% 
+#   ungroup()
 
-count_threshold <- 5
-bubble_counts <-
-  bubble_counts %>% 
-  filter((hap_1_counts + hap_2_counts) > count_threshold) %>% 
-  group_by(bubble) %>% 
-  filter(n() == 2) %>% 
-  ungroup()
-
-bubble_counts <-
-  bubble_counts %>% 
-  group_by(bubble) %>% 
-  filter((1 %in% sign(wfrac)) & (-1 %in% sign(wfrac))) %>% 
-  ungroup()
-
-bubble_unitigs_to_inflate <-
-  bubble_counts %>% 
-  pull_distinct(unitig)
+bubble_unitigs_to_inflate <- character(0)
+# bubble_unitigs_to_inflate <-
+#   bubble_counts %>% 
+#   pull_distinct(unitig)
 
 
 
