@@ -600,7 +600,7 @@ def rukki_paramaterizer(wildcards, parameter) :
 
     if parameter == 'max-homozygous-len':
         if assembler == 'verkko':
-            return 6000000
+            return 10000000
         elif assembler == 'hifiasm':
             return 10000000
 
@@ -643,7 +643,7 @@ rule run_rukki:
         params="$params --marker-sparsity 5000000" 
 
         # Sets minimal marker excess for assigning a parental group to <value>:1 [default: 5]
-        params="$params --marker-ratio 3" 
+        params="$params --marker-ratio 4" 
 
         # Longer nodes are unlikely to be spurious and likely to be reliably assigned based on markers (used in HOMOZYGOUS node labeling) [default: 200000]
         params="$params --trusted-len 250000"
@@ -652,6 +652,8 @@ rule run_rukki:
         # params="$params --issue-sparsity 10000" 
 
         # Require primary marker excess BELOW <value>:1 for assigning ISSUE label. Must be <= marker_ratio (by default == marker_ratio)
+        # Apparently, Rukki is very bad at distinguishing between large HOM and ISSUE nodes, seemingly preferring to 
+        # assign them to ISSUE. My guess is that setting this to 1 (essentially disabling ISSUE nodes) is an attempt to force it to consider more nodes as HOM 
         params="$params --issue-ratio 1."
 
         # Try to fill in small ambiguous bubbles
@@ -670,7 +672,7 @@ rule run_rukki:
         params="$params --solid-homozygous-cov-coeff {params.shcc}"
 
         # Sets minimal marker excess for assigning a parental group of solid nodes to <value>:1. Must be <= marker_ratio (by default == marker_ratio)
-        params="$params --solid-ratio 1.5"
+        params="$params --solid-ratio 3"
         
         # Longer nodes can not be classified as homozygous [default: 2000000]
         params="$params --max-homozygous-len {params.mhl}"
