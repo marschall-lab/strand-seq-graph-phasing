@@ -70,7 +70,7 @@ extract_exact_matches <- function(fastmap_file) {
   header <-
     readr::read_tsv(I(header),
                     col_names = c('tag', 'qname', 'qlen'),
-                    col_types = '_c_')
+                    col_types = '_ci')
   
   header <-
     header %>%
@@ -84,7 +84,7 @@ extract_exact_matches <- function(fastmap_file) {
     readr::read_tsv(
       I(matches),
       col_names = c('tag', 'lpos', 'rpos', 'n_matches', 'map_info'),
-      col_types = '___ic'
+      col_types = '_iiic'
     )
   
   matches <-
@@ -104,11 +104,11 @@ extract_exact_matches <- function(fastmap_file) {
       more_info,
       into = c(
         'strand',
-        "I don't know this value's meaning fastmap is poorly documented"
+        'tstart'
       ),
       sep = 1
     ) %>%
-    select(unitig, strand, group)
+    select(unitig, strand, group, everything())
   
   out <-
     inner_join(header,  matches, by='group') %>% 
@@ -754,6 +754,109 @@ strandphaser_sort_array <- function(phaser_array) {
   
   return(lib_swapped)
   
+  
+}
+
+
+get_chrom_cluster_data_planes <- function(counts_df, cluster_df, unitig_lengths_df, supervision = c('PC1' , 'inverse'), min_n=5) {
+  
+  supervision <- match.arg(supervision)
+  
+  cluster_counts <-
+    counts_df %>% 
+    bind_with_inverted_unitigs() %>% # self-supervision
+    left_join(cluster_df, by='unitig') %>% 
+    split(.$cluster)
+  
+  wfracs <-
+    cluster_counts %>% 
+    map(function(x) with(x, make_wc_matrix(w,c,lib,unitig_dir,min_n=min_n)))  %>% 
+    # filling with 0s doesn't seem to affect first PC too much, compared to
+    # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
+    map(function(x) {
+      x[is.na(x)] <- 0 
+      return(x)
+    }) 
+  
+  prcomps <-
+    wfracs %>% 
+    map(prcomp)
+
+  model_input <-
+    map(prcomps, function(x) {
+      x <-
+        x %>%
+        get_prcomp_plotdata(., 'unitig_dir') %>%
+        mutate(unitig = gsub('_inverted', '', unitig_dir)) %>%
+        left_join(unitig_lengths_df, by='unitig')
+      
+      if(supervision == 'PC1') {
+        x <-
+          x %>%
+          mutate(y = sign(PC1)==1) 
+      } else if(supervision == 'inverse') {
+        x <-
+          x %>%
+          mutate(y = grepl('inverted', unitig_dir)) 
+      } else {
+        stop('nothing yet')
+      }
+      
+      return(x)
+
+    })
+  
+  glms <-
+    map(model_input, function(x){
+      w <- x$length
+      
+      x <-
+        x %>%
+        select(-length,-unitig_dir, -unitig)
+      
+      glm(y ~ -1 + ., family=binomial(), weights = w, data=x)
+    })
+  
+  plane_vectors <-
+    map(glms, function(x) {
+      list(
+        decision_boundary = -coef(x)[1] / coef(x)[2],
+        decision_boundary_perpendicular = coef(x)[2] / coef(x)[1]
+      ) %>% map(function(slp) {
+        vec <- c(1, slp)
+        unit_vector <- vec / sqrt(sum(vec * vec))
+        return(unit_vector)
+      })
+    })
+
+  
+  lib_weights <-
+    map2(prcomps, plane_vectors, function(x, vecs) {
+      projections <-
+        map(vecs, function(vec) {
+          x$rotation[, 1:2] %*% vec
+        })
+      
+      stopifnot(all(rownames(projections[[1]]) == rownames(projections[[2]])))
+      
+      out <-
+        tibble(
+          lib = rownames(projections[[1]]),
+          b_weight = projections$decision_boundary[, 1],
+          p_weight = projections$decision_boundary_perpendicular[, 1]
+        )
+      
+      return(out)
+    })
+  
+  lib_weights_df <-
+    bind_rows(lib_weights, .id='cluster')
+  
+  model_input <-
+    bind_rows(model_input, .id='cluster') %>% 
+    select(cluster, unitig, unitig_dir, y, everything())
+  
+  return(list(weights = lib_weights_df, model_input = model_input, plane_vectors = plane_vectors))
   
 }
 # Misc --------------------------------------------------------------------
