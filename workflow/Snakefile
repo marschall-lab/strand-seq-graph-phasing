@@ -692,6 +692,8 @@ rule run_rukki:
 # Peter mentioned that this should be very quick to count, and I am therefore keeping it
 # simple and running both haplotypes in a single rule
 
+# FIXME This doesn't work, as the attempts to force rukki to assign HOM labels completely turn off the assignment of HOM
+#  labels (--issue-ratio), and therefore the paths need to be processed instead of the annotations.
 rule split_haplotype_annotations:
     input: 'rukki/{sample}/{sample}_out_final_ann.csv'
     output:
@@ -699,8 +701,8 @@ rule split_haplotype_annotations:
         hap2=temp('rukki/{sample}/{sample}_hap2_nodes.txt')
     shell:
         '''
-        awk -F'\t' '$2 != "HAPLOTYPE2" {{print $1}}' "{input}" > {output.hap1}
-        awk -F'\t' '$2 != "HAPLOTYPE1" {{print $1}}' "{input}" > {output.hap2}
+        awk -F'\t' '$2 == "HAPLOTYPE1" || $2 == "HOM" {{print $1}}' "{input}" > {output.hap1}
+        awk -F'\t' '$2 == "HAPLOTYPE1" || $2 == "HOM" {{print $1}}' "{input}" > {output.hap2}
         '''
 
 rule split_assembly_for_yak:
