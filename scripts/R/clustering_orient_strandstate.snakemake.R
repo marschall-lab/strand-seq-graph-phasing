@@ -1156,7 +1156,7 @@ hmc <-
       )%>% 
       select(-p_c, -p_w) 
     # Previously, this was select(-p_c, -p_w, n), which appeared to act exactly
-    # the same as select(-p_c, -p_w, n), despite the apparent bug of the n at
+    # the same as select(-p_c, -p_w), despite the apparent bug of the n at
     # the end of the select!
     
     return(out)
