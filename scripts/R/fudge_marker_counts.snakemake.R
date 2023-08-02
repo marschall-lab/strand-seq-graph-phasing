@@ -222,6 +222,8 @@ marker_counts <-
 
 marker_counts <-
   marker_counts %>% 
+  left_join(homology_df, by='unitig') %>% 
+  select(-bubble_arm) %>% 
   select(unitig, fudge_hap_1_counts, fudge_hap_2_counts, everything())
 
 
