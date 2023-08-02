@@ -615,6 +615,27 @@ cluster_df <-
 #   cluster_df %>%
 #   mutate(cluster = ifelse(grepl('^sex', cluster), 'LGXY', cluster))
 
+
+### Small Cluster Removal --------------------------------------------
+
+threshold <- 1e7
+
+cluster_sizes <-
+  cluster_df %>% 
+  left_join(unitig_lengths_df) %>% 
+  group_by(cluster) %>% 
+  summarise(length = sum(length), .groups = 'drop')
+
+small_clusters <-
+  cluster_sizes %>% 
+  filter(length < threshold) %>% 
+  pull(cluster)
+
+cluster_df <-
+  cluster_df %>%
+  mutate(cluster = ifelse(cluster %in% small_clusters & grepl('LGcos', cluster), NA, cluster)) %>%
+  mutate(cluster = ifelse(is.na(cluster), paste0('LGNA2_', unitig), cluster))
+
 # Orientation Detection w/ Inverted Unitigs -------------------------------
 
 cat('Detecting unitig orientation\n')
