@@ -43,11 +43,9 @@ Hopefully the pipeline should work after this.
 
 ## Running the pipeline on HHU Hilbert
 
-__NOTE__: Peter has mentioned that, in general, `snakemake` appears to have trouble with relative paths. Therefore, all paths should be entered as absolute paths, which unfortunately can make commands quite long :confused:
-
-
 ### Config and Sample Sheet
 sample	strandseq_dir	gfa	coverage	hpc	assembler	expect_XY_separate
+
 #### Sample sheet settings
 
 `sample: str` Sample ID	
