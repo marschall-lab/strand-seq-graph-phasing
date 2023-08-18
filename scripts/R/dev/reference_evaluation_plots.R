@@ -56,7 +56,7 @@ reference_alignments %>%
 ## Haplotype Marker Counts -------------------------------------------------
 
 
-haplotype_marker_counts <- list.files('haplotype_marker_counts/', full.names = TRUE, pattern = 'csv$') %>% 
+haplotype_marker_counts <- list.files('haplotype_marker_counts/', full.names = TRUE, pattern = 'fudged_haplotype_marker_counts.csv$') %>% 
   set_names(hutils::trim_common_affixes(.))
 
 
@@ -167,7 +167,7 @@ left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'uniti
   iwalk(function(x, nm) {
     x %>% 
       select(unitig, everything()) %>% 
-    readr::write_csv(glue::glue('rmc/{nm}_ref_marker_counts.csv'))
+      readr::write_csv(glue::glue('rmc/{nm}_ref_marker_counts.csv'))
   })
 
 
@@ -743,6 +743,8 @@ plot_data <-
 
 plot_data <-
   plot_data %>% 
+  mutate(hap_1_counts = hap_1_counts + 1,
+         hap_2_counts = hap_2_counts + 1) %>% 
   mutate(rat = (hap_1_counts - hap_2_counts)/(hap_1_counts+hap_2_counts))
 
 plot_data %>%
@@ -887,9 +889,9 @@ length_stats %>%
   filter(!grepl('hifiasm', sample)) %>%
   ggplot() +
   geom_col(aes(x = statistic, y = value / 1e6)) +
-  geom_hline(aes(yintercept = ccn502 / 1e6),
-             linetype = 'dashed',
-             alpha = 0.8) +
+  # geom_hline(aes(yintercept = ccn502 / 1e6),
+  #            linetype = 'dashed',
+  #            alpha = 0.8) +
   facet_wrap(facets = vars(sample),
              ncol = 5,
              # scales = 'free_y'
