@@ -11,8 +11,7 @@ library(ggokabeito)
 library(progressr)
 # Import ------------------------------------------------------------------
 
-# sample <- 'HG02769'
-sample <- 'NA19434'
+sample <- 'HG02769'
 
 ## Haplotype Marker Counts -------------------------------------------------
 
@@ -45,13 +44,13 @@ lib_weights <-
 
 raw_counts <-
   list.files('sseq_alignment_counts/', full.names = TRUE, pattern='fastmap_raw.csv') %>% 
-  set_names(function(x) hutils::trim_common_affixes(basename(x))) %>% 
-  `[`(sample)
+  set_names(function(x) hutils::trim_common_affixes(basename(x))) # %>% 
+  # `[`(sample)
 
 # raw_counts <- raw_counts[sample]
 # raw_counts <- raw_counts[1]
 
-n_threads <- 1
+n_threads <- 10
 if(n_threads > 1) {
   library(furrr)
   plan(multisession, workers=n_threads)
@@ -168,13 +167,8 @@ raw_counts_df <-
   mutate(
     wc_signal = y * sign(wc_weight_fastmap) * wc_weight_fastmap^2 * unitig_orientation,
     ww_signal = y * sign(ww_weight_fastmap) * ww_weight_fastmap^2 * unitig_orientation
-    )    %>% 
-  select(-wc_weight_fastmap,
-         -ww_weight_fastmap,
-         -ww_weight_mem, 
-         -unitig_orientation,
-         -strand,
-         -cluster)
+    )  %>% 
+  select(-wc_weight_fastmap, -ww_weight_fastmap, -ww_weight_mem, -unitig_orientation, -strand, -cluster)
 
 # scale to original counts
 raw_counts_df <- 
@@ -186,42 +180,19 @@ raw_counts_df <-
   ) %>% 
   ungroup()
 
-# raw_counts_df <-
-#   raw_counts_df %>% 
-#   mutate(
-#     wc_signal = round(wc_signal),
-#     ww_signal = round(ww_signal)
-#   )
 # Haplotype Signal Plots --------------------------------------------------
 
- 
 
 bw <- 100e3
 raw_counts_df %>%
-  # filter(sample == 'HG00733red1') %>% 
-  filter(unitig %in% c('utig4-54', 'utig4-1653')) %>%
+  filter(sample == 'HG00733red1') %>% 
+  filter(unitig %in% c('utig4-35', 'utig4-373', 'utig4-374', 'utig4-377', 'utig4-386', 'utig4-53' )) %>% 
   filter(length >= 1e6) %>%
   # semi_join(unitigs_to_plot) %>%
   ggplot() +
   geom_histogram(aes(
     tstart,
-    weight = (wc_signal),
-    group = sign(wc_signal),
-    fill = as.factor(sign(wc_signal))
-  ),
-  binwidth = bw) +
-  facet_wrap( ~ sample + unitig, scale = 'free') +
-  theme_grey(base_size = 14)
-
-raw_counts_df %>%
-  # filter(sample == 'HG00733red1') %>% 
-  # filter(unitig %in% c('utig4-35', 'utig4-373', 'utig4-374', 'utig4-377', 'utig4-386', 'utig4-53' )) %>% 
-  filter(length >= 1e6) %>%
-  # semi_join(unitigs_to_plot) %>%
-  ggplot() +
-  geom_histogram(aes(
-    tstart,
-    weight = ww_signal ,
+    weight = ww_signal,
     group = sign(ww_signal),
     fill = as.factor(sign(ww_signal))
   ),
@@ -334,128 +305,34 @@ moving_sum_convolution <- function(x, half_window_width = 50, circular=FALSE) {
 }
 
 
-half_window_width <- 50
+half_window_width <- 100
 bp_df <-
   raw_counts_df %>% 
   group_by(sample, unitig) %>% 
-  filter(n() > 4 * half_window_width) %>% 
+  filter(n() > 3 * half_window_width) %>% 
   arrange(sample, unitig, x) %>% 
   mutate(
-    ma_wc = moving_average_convolution(wc_signal, 25)
+    ma_wc = moving_average_convolution(wc_signal, 10)
     ) %>% 
   mutate(    
     delta_wc = step_filter_convolution(wc_signal, half_window_width),
     delta_ma_wc = step_filter_convolution(ma_wc, half_window_width)
     )
 
-
-# 
-mean_shift_data <-
-  bp_df %>%
-  group_by(sample, unitig) %>%
-  filter(n() > 4 * half_window_width) %>%
-  arrange(sample, unitig, x) %>%
-  ungroup() %>%
-  select(sample, unitig, x, tstart, ma_wc) %>%
-  tidyr::nest(wc_signal = c(x, tstart, ma_wc))
-
-mean_shift_data <-
-  mean_shift_data %>% 
-  mutate(fit_changepoint = map(wc_signal, function(df) changepoint::cpt.mean(df$ma_wc)))
-
-mean_shift_data <-
-  mean_shift_data 
-
-
-chanepoint_data <-
-  mean_shift_data %>% 
-  mutate(
-    ints = map(fit_changepoint, function(x)  changepoint::param.est(x)$mean),
-    cp = map(fit_changepoint, function(x)  changepoint::cpts(x))
-  ) %>% 
-  select(sample, unitig, wc_signal, cp) %>% 
-  tidyr::unnest(cols = c(cp)) %>% 
-  mutate(cp = map2_int(wc_signal, cp, function(x, y) x$tstart[y]))
-
-
-ggplot(bp_df) +
-  # geom_histogram(aes(
-  #   tstart,
-  #   weight = wc_signal,
-  #   group = sign(wc_signal),
-  #   fill = as.factor(sign(wc_signal))
-  # ),
-  # binwidth = 100e3) +
-  geom_histogram(aes(
-    tstart,
-    weight = wc_signal,
-    group = sign(wc_signal),
-    fill = as.factor(sign(wc_signal))
-  ),
-  binwidth = 100e3) +
-  geom_vline(aes(xintercept = cp), data=chanepoint_data) +
-  facet_wrap( ~ sample + unitig, scale = 'free') +
-  theme_classic(base_size = 16)
-
-# stepfinder_data <-
-#   bp_df %>% 
-#   ungroup() %>% 
-#   filter(sample == 'HG03683') %>% 
-#   filter(unitig %in% c('utig4-1665')) %>% 
-#   select(tstart, x, ma_wc) %>% 
-#   dplyr::rename(frameID = x, x = tstart, y=ma_wc)
-# 
-# stepfinder::diagnose_detection(stepfinder_data)
-#   
-mean_shift_data <-
+temp <- 
   bp_df %>% 
-  filter(!is.na(ma_wc)) %>%  
-  arrange(sample, unitig, x) %>% 
-  select(sample, unitig, x, tstart, ma_wc) %>% 
-  tidyr::nest(wc_signal = c(x, tstart, ma_wc))
-
-ms <-
-  mean_shift_data %>% 
-  filter(sample == 'HG03683') %>% 
-  filter(unitig %in% c('utig4-1665', 'utig4-1666')) %>% 
-  # mutate(mean_shift = map(wc_signal, function(x) meanShiftR::meanShift(x$wc_signal)))
-  mutate(mean_shift = map(wc_signal, function(x) meanShiftR::meanShift(x$ma_wc)))
-
-tmp <-
-  ms %>% 
-  mutate(
-    assignment = map(mean_shift, function(x) x$assignment[,1]),
-    maxima = map(mean_shift, function(x) x$value[,1])
-    ) %>% 
-  select(-mean_shift) %>% 
-  tidyr::unnest(cols = c(wc_signal, assignment, maxima))
-
-
-ggplot(bp_df) +
-  # geom_histogram(aes(
-  #   tstart,
-  #   weight = wc_signal,
-  #   group = sign(wc_signal),
-  #   fill = as.factor(sign(wc_signal))
-  # ),
-  # binwidth = 100e3) +
-  geom_histogram(aes(
-    tstart,
-    weight = ma_wc,
-    group = sign(ma_wc),
-    fill = as.factor(sign(ma_wc))
-  ),
-  binwidth = 100e3) +
-  facet_wrap( ~ sample + unitig, scale = 'free') +
-  theme_classic(base_size = 16)
-
-
-# 
-# temp <- 
-#   bp_df %>% 
-#   filter(!is.na(delta_wc))%>%
-#   mutate(fft_delta_wc = fft(delta_wc)) #%>% 
+  filter(!is.na(delta_wc))%>%
+  mutate(fft_delta_wc = fft(delta_wc)) #%>% 
   # filter(!is.na(delta_wc))# %>% 
+
+
+temp %>%
+  filter(sample == 'HG02059') %>% 
+  ggplot() +
+  geom_line(aes(x = x, y=Mod(fft_delta_wc))) +
+  facet_wrap(~unitig, scales = 'free_x')
+
+
 # 
 # half_window_size <- 200
 # na_fill <- rep(NA, half_window_width)
@@ -489,12 +366,6 @@ ggplot(bp_df) +
 #   select(-positive_cumsum, -negative_cumsum,  -negative_window) %>% 
 #   # select(-positive_window) %>% 
 #   filter(!is.na(delta_wc))
-bp_df %>%
-  filter(sample == 'HG02059') %>% 
-  ggplot() +
-  geom_line(aes(x = x, y=ma_wc)) +
-  facet_wrap(~unitig, scales = 'free_x')
-
 
 bp_df %>%
   filter(sample == 'HG02059') %>% 
@@ -508,16 +379,19 @@ bp_df %>%
   geom_line(aes(x = x, y=delta_ma_wc/(2*half_window_width))) +
   facet_wrap(~unitig, scales = 'free_x')
  
+ bp_df %>%
+   filter(sample == 'HG02059') %>% 
+   ggplot() +
+   geom_line(aes(x = x, y=Mod(fft_delta_wc))) +
+   facet_wrap(~unitig, scales = 'free_x')
  
- # 
- # bp_df %>%
- #   filter(sample == 'HG02059') %>% 
- #   ggplot() +
- #   geom_line(aes(x = x, y=Mod(fft_delta_wc))) +
- #   facet_wrap(~unitig, scales = 'free_x')
- # 
  
 
+bp_df %>%
+  filter(sample == 'HG02059') %>% 
+  ggplot() +
+  geom_line(aes(x = x, y=ma_wc)) +
+  facet_wrap(~unitig, scales = 'free_x')
 
 
 ## breakseekR --------------------------------------------------------------
