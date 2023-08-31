@@ -695,21 +695,60 @@ cat('Detecting unitig orientation\n')
 
 mem_data_plane <- 
   get_chrom_cluster_data_planes(counts_df, cluster_df, unitig_lengths_df, supervision = 'PC1')
-    
+
+
 # It appears that I need to do clustering only on the first PC, which
 # corresponds to orientation, as otherwise, other dimensions can influence the
-# results and lead to grouping of a unitig and its inversion together.
+# results and lead to grouping of a unitig and its inversion together. *NOTE*
+# This isn't true for the case of the X and Y chromosomes. While the separation
+# between autosomal chromosomes is not visible in unfiltered mem data the X and
+# Y chromosomes separate (the same way that autosomal chromosomes do with
+# fastmap data.) This can lead to issues with just taking the sign of the first
+# PC, and has on one occasion (HGSVC 1.4.1 HG00512) lead to a misorientaiton of
+# a large unitig. To be more robust to this possibility, now we take the sign of
+# the projection onto the line perpendicular to the boundary plane. This works
+# becuase the boundary plane rotates with the data, and should be able to better
+# account for the increased spread with X and Y chromosomes. It's not foolproof
+# but it should be better, in part because it accounts for the length of each
+# unitig.
+
+# TODO the supervision with PC1 method is a little brittle for X and Y. Better
+# would be a way that works directly with repulsive pairs to clusters the two
+# orientations. Maybe something perpendicular to the mean vector between each
+# pair of inverses or something like that, though this would require some
+# thought with regards to the signs of the vectors. 
+
+perpendicular_decision_boundaries <-
+  mem_data_plane$plane_vectors %>% 
+  map('decision_boundary_perpendicular')
 
 strand_orientation_clusters_df <-
-  mem_data_plane$model_input %>% 
-  select(cluster, unitig, unitig_dir, PC1) %>% 
-  mutate(strand_cluster = sign(PC1)) %>% 
-  select(-PC1)
+  imap(perpendicular_decision_boundaries, function(x, nm) {
+    mat <-
+      mem_data_plane$model_input %>% 
+      filter(cluster == nm) %>% 
+      select(unitig_dir, PC1, PC2) %>% 
+      tibble::column_to_rownames('unitig_dir') %>% 
+      as.matrix()
+    # browser()
+    out <- sign(mat %*% x)
+    colnames(out) <- 'strand_cluster'
+    return(as_tibble(out, rownames = 'unitig_dir'))
+  })
+
+strand_orientation_clusters_df <-
+  strand_orientation_clusters_df %>% 
+  bind_rows(.id = 'cluster') %>% 
+  mutate(unitig = gsub('_inverted', '', unitig_dir)) %>% 
+  select(cluster, unitig, unitig_dir, strand_cluster)
+
+strand_orientation_clusters_df <-
+  strand_orientation_clusters_df %>% 
+  mutate(strand_cluster = ifelse(is.na(strand_cluster), 0,  strand_cluster))
 
 # I have discovered that some points are located truly at the origin (for
 # all PCs), and therefore do not separate on the first PC. What lol. 
 # TODO Figure out what leads to this. (HG03456)
-
 strand_orientation_clusters_df <- 
   strand_orientation_clusters_df %>% 
   mutate(strand_cluster = ifelse(strand_cluster != 0, strand_cluster, ifelse(grepl('_inverted', unitig_dir), -1, 1)))
