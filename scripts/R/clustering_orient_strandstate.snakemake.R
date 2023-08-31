@@ -265,16 +265,44 @@ exact_match_counts_df <-
 
 # weight the unitigs that have more alignments to be more likely to be
 # selected earlier by the contiBAIT clustering algorithm.
-mean_coverage <- 
-  counts_df %>% 
-  tidyr::complete(lib, unitig, fill=list(c=0, w=0)) %>% 
-  group_by(unitig) %>% 
-  summarise(coverage = mean(w+c), .groups="drop") 
+
+mean_coverage <-
+  counts_df %>%
+  tidyr::complete(lib, unitig, fill=list(c=0, w=0)) %>%
+  group_by(unitig) %>%
+  summarise(coverage = mean(w+c), .groups="drop")
+
+mean_coverage <-
+  mean_coverage %>%
+  mutate(unitig_range = spoof_range(unitig)) 
+
+vector_lengths <-
+  strand.freq@.Data %>% 
+  apply(1, function(x) sqrt(sum(x * x, na.rm=TRUE))) %>% 
+  tibble::enframe(name = 'unitig_range', value = 'vec_length')
 
 weights <-
-  mean_coverage %>% 
+  components_df %>% 
+  left_join(unitig_lengths_df) %>% 
+  group_by(component) %>% 
+  mutate(component_size = sum(length)) %>% 
+  ungroup() 
+
+weights <- 
+  weights %>% 
   mutate(unitig_range = spoof_range(unitig)) %>% 
-  with(set_names(coverage, unitig_range))
+  left_join(vector_lengths) %>% 
+  left_join(mean_coverage) %>% 
+  mutate(vec_length = round(vec_length)) 
+  
+weights <-
+  weights %>% 
+  arrange(component_size, vec_length, coverage, length) %>% 
+  mutate(weight = 1:n())
+
+weights <-
+  weights %>%
+  with(set_names(weight, unitig_range))
 
 # arrange weights by order in wfrac matrix
 weights <- weights[rownames(strand.states$strandMatrix)]
