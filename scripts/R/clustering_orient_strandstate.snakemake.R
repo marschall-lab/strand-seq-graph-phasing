@@ -485,28 +485,31 @@ while(any_assigned) {
       '\n'
     )
     
-    # TODO justify
-    length_factor <- 3
+    unclustered_sims <-
+      similarities[unclustered_unitigs, unclustered_unitigs, drop=FALSE] %>% 
+      abs()
     
-    long_unclustered_unitigs_df <- 
-      unitig_lengths_df %>% 
-      filter(unitig %in% unclustered_unitigs) %>% 
-      filter(length >= length_factor * segment_length_threshold)
+    unclustered_sims <-
+      unclustered_sims * upper.tri(unclustered_sims)
     
+    max_pair <- 
+      which(unclustered_sims == max(unclustered_sims, na.rm=TRUE), arr.ind = TRUE)
     
-    if(nrow(long_unclustered_unitigs_df) > 0) {
+    max_sim <-
+      unclustered_sims[max_pair[1], max_pair[2]]
+
+    if(max_sim > score_thresh) {
       any_assigned <- TRUE
       new_cluster_ix <- new_cluster_ix + 1
       
-      new_cluster_unitig <- slice_max(long_unclustered_unitigs_df, length, n=1)
-      cat('creating new cluster with unitig:', new_cluster_unitig$unitig,
-          'with length:', new_cluster_unitig$length, 
-          'longer than segment length threshold:', segment_length_threshold,
+      new_cluster_unitigs <- c(rownames(unclustered_sims)[max_pair[1]], colnames(unclustered_sims)[max_pair[2]])
+      cat('creating new cluster with unitigs:', new_cluster_unitigs,
+          'with similarity:', max_sim,
           '\n')
       
       cluster_df <-
         cluster_df %>%
-        mutate(cluster = ifelse(unitig == new_cluster_unitig$unitig, paste0('LGcosLong', new_cluster_ix), cluster))
+        mutate(cluster = ifelse(unitig %in% new_cluster_unitigs, paste0('LGcosLong', new_cluster_ix), cluster))
     }
   }
   
