@@ -505,8 +505,7 @@ rule count_haplotype_markers:
     input:
         mem = "sseq_alignment_counts/{sample}_sseq_mem_counts.csv",
         fastmap="sseq_alignment_counts/{sample}_sseq_fastmap_counts.csv",
-        connected_components='gfa/ccs/{sample}_exploded_ccs.tsv',
-        homology="homology/{sample}/{sample}_combined_mashmap_bubblegun_homology.tsv"
+        connected_components='gfa/ccs/{sample}_exploded_ccs.tsv'
     output:
         mc="haplotype_marker_counts/{sample}_haplotype_marker_counts.csv",
         lib="library_weights/{sample}_library_weights.csv"
@@ -526,7 +525,6 @@ rule count_haplotype_markers:
         (Rscript --vanilla {params.script} \\
         --mem-counts {input.mem} \\
         --fastmap-counts {input.fastmap} \\
-        --homology {input.homology} \\
         --connected-components {input.connected_components} \\
         --segment-length-threshold {params.segment_length_threshold} \\
         --expect-XY-separate {params.expect_XY_separate} \\
@@ -537,8 +535,7 @@ rule count_haplotype_markers:
 
 rule fudge_haplotype_markers:
     input:
-        hmc = "haplotype_marker_counts/{sample}_haplotype_marker_counts.csv",
-        homology="homology/{sample}/{sample}_combined_mashmap_bubblegun_homology.tsv"
+        hmc = "haplotype_marker_counts/{sample}_haplotype_marker_counts.csv"
     output:
         "haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.csv"
     params:
@@ -553,7 +550,6 @@ rule fudge_haplotype_markers:
         '''
         (Rscript --vanilla {params.script} \\
         --hmc {input.hmc} \\
-        --homology {input.homology} \\
         --output {output}) > {log} 2>&1
         '''
 ################################################################

@@ -93,7 +93,6 @@ expected_args <-
     ## Input
     '--mem-counts',
     '--fastmap-counts',
-    '--homology',
     '--connected-components',
     ## Output
     '--output-marker-counts',
@@ -154,7 +153,6 @@ source(file.path(get_script_dir(), "module_utils/phasing_utils.R"))
 
 mem_counts <- get_values("--mem-counts", singular=FALSE)
 fastmap_counts <- get_values("--fastmap-counts", singular=FALSE)
-# homology <- get_values("--homology", singular=TRUE)
 connected_components <- get_values('--connected-components', singular=TRUE)
 
 ## Parameters
