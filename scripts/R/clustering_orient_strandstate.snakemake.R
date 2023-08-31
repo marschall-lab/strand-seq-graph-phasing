@@ -757,7 +757,7 @@ strand_orientation_clusters_df <-
 bad <-
   strand_orientation_clusters_df %>% 
   group_by(unitig, strand_cluster) %>% 
-  filter(n() != 1)
+  filter(n() != 1 | 0 %in% strand_cluster)
 
 if(nrow(bad) > 0) {
   stop('Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
