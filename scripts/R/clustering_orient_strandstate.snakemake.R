@@ -1136,10 +1136,87 @@ stopifnot(nrow(marker_counts) == length(all_unitigs))
 stopifnot(setequal(all_unitigs, marker_counts$unitig))
 
 
-### Haplotype Size Evening --------------------------------------------------
 
-# TODO, flip haplotypes labels that make the overall haplotype sizes more even.
+## Haplotype Size Evening --------------------------------------------------
 
+# call obvious hets? Or just any? how will this affect with HOM?
+ratio_threshold <- 2
+
+hap_calls <- 
+  marker_counts %>% 
+  mutate(hap_1_counts = hap_1_counts + 1,
+         hap_2_counts = hap_2_counts + 1) %>% 
+  mutate(call = ifelse(hap_1_counts/hap_2_counts >= ratio_threshold, 1, NA)) %>% 
+  mutate(call = ifelse(hap_2_counts/hap_1_counts >= ratio_threshold, 0, call)) %>% 
+  filter(!is.na(call)) %>% 
+  mutate(original_call = call)
+
+hap_size_ratio_score <- 
+  hap_calls %>% 
+  count(call, wt = length) %>% 
+  with(n[1]/n[2]) %>% 
+  log() %>% 
+  abs()
+
+n_iter <- 100
+clusters <- 
+  hap_calls %>% 
+  pull_distinct(cluster) %>% 
+  set_names()
+
+for(unused in 1:n_iter) {
+  swap_scores <-
+    map_dbl(clusters, function(x) {
+      tmp_hap_calls <-
+        hap_calls %>% 
+        mutate(call = ifelse(cluster == x, abs(call-1), call))
+      
+      out <- 
+        tmp_hap_calls %>% 
+        count(call, wt = length) %>% 
+        with(n[1]/n[2]) %>% 
+        log() %>% 
+        abs()
+      
+      return(out)
+    })
+  
+  min_score <-
+    swap_scores[which.min(swap_scores)]
+  
+  if(min_score < hap_size_ratio_score) {
+    cat('swapping cluster:', names(min_score), '\n')
+    hap_size_ratio_score <- min_score
+    hap_calls <-
+      hap_calls %>% 
+      mutate(call = ifelse(cluster == names(min_score), abs(call-1), call))
+  }
+  
+}
+
+hap_calls <-
+  hap_calls %>% 
+  mutate(swap = !(call == original_call)) %>% 
+  distinct(cluster, swap)
+
+bad <-
+  hap_calls %>% 
+  count(cluster) %>% 
+  filter(n> 1)
+
+if(nrow(bad) > 0) {
+  stop('hap swapping bad')
+}
+
+marker_counts <-
+  marker_counts %>% 
+  left_join(hap_calls) %>% 
+  mutate(h1_temp = hap_1_counts, h2_temp = hap_2_counts) %>% 
+  mutate(
+    hap_1_counts = ifelse(swap, h2_temp, h1_temp),
+    hap_2_counts = ifelse(swap, h1_temp, h2_temp)
+  ) %>% 
+  select(-h1_temp, -h2_temp, -swap)
 
 ### CSV ---------------------------------------------------------------------
 
