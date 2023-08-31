@@ -35,7 +35,7 @@ def get_script_path(*args):
 ###################################
 
 wildcard_constraints:
-    sample='[^/]+'
+    sample='[^/_]+'
 
 include: 'rules/sample_table.smk'
 include: 'rules/collect_output.smk'
@@ -65,7 +65,9 @@ if reference:
     ALL_OUTPUT.append(expand("reference_alignments/{ref_name}/{sample}_{ref_name}_ref-aln.paf", sample=SAMPLES, ref_name=ref_name))
 
 rule all:
-    input: ALL_OUTPUT
+    input:
+        sample_sheet=ALL_OUTPUT,
+        breakpoints=expand("breakpoints/{sample}_breakpoint_windows.csv", sample=SAMPLES)
 
 ################################################
 ############ Unmerged SS Processing ############
@@ -747,4 +749,33 @@ rule yak_count_split_fasta:
         '''
         yak count -b37 -t{threads} -o {output.hap1} {input.hap1} > {log.hap1} 2>&1
         yak count -b37 -t{threads} -o {output.hap2} {input.hap2} > {log.hap2} 2>&1
+        '''
+
+
+
+#######################################
+############ Breakpointing ############
+#######################################
+
+rule locate_sseq_breakpoints:
+    input:
+        lib_weights = "library_weights/{sample}_library_weights.csv",
+        mem_alignments="sseq_alignment_counts/{sample}_sseq_mem_raw.csv",
+        hap_counts='haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.csv'
+    output:
+       "breakpoints/{sample}_breakpoint_windows.csv"
+    params:
+        script = get_script_path('R','locate_sseq_breakpoints.snakemake.R')
+    conda: 'envs/env_Renv.yaml'
+    resources:
+        mem_mb = lambda wildcards, attempt: 1024 * 24 * attempt,
+        walltime = lambda wildcards, attempt: f'{2 + attempt*attempt:02}:59:00'
+    log: "log/locate_sseq_breakpoints_{sample}.log"
+    shell:
+        '''
+        (Rscript --vanilla {params.script} \\
+        --lib-weights {input.lib_weights} \\
+        --haplotype-marker-counts {input.hap_counts} \\
+        --sseq-alignments {input.mem_alignments} \\
+        --output {output}) > {log} 2>&1
         '''
