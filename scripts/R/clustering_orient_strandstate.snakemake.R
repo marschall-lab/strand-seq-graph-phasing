@@ -1135,7 +1135,8 @@ marker_counts <-
 marker_counts <-
   marker_counts %>% 
   left_join(cluster_df, by='unitig') %>% 
-  left_join(unitig_lengths_df, by='unitig')
+  left_join(unitig_lengths_df, by='unitig') %>% 
+  left_join(components_df, by='unitig')
 
 marker_counts <- 
   marker_counts %>% 
