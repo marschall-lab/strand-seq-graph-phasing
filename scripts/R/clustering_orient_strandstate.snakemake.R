@@ -1020,11 +1020,20 @@ one_cluster_component_unitigs <-
   filter(component %in% one_cluster_components) %>% 
   pull_distinct(unitig)
 
+# Often better to not attempt to assign solo unitigs, which are often
+# misclustered. Often, the proper phasing can be inferred from the unitigs
+# surrounding the misclustered unitig. However, sometimes half of a chromosome
+# is all by itself in a cluster, and we still want to include those.
+length_threshold <-10e7
 one_haplotype_cluster_unitigs <-
   one_haplotype_cluster_unitigs %>%
-  map(function(x) {
+  imap(function(x, nm) {
+    unitig_length <- 
+      unitig_lengths_df %>% 
+      filter(unitig == x) %>% 
+      pull(length)
     if (length(x) == 1 && x %in% one_unitig_cluster_unitigs) {
-      if (!(x %in% one_cluster_component_unitigs)) {
+      if (!(x %in% one_cluster_component_unitigs) & !(nm == 'LGXY') & unitig_length <= length_threshold) {
         return(NA)
       }
     }
