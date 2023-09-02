@@ -743,33 +743,78 @@ mem_data_plane <-
 # pair of inverses or something like that, though this would require some
 # thought with regards to the signs of the vectors. 
 
-perpendicular_decision_boundaries <-
-  mem_data_plane$plane_vectors %>% 
-  map('decision_boundary_perpendicular')
+# FIXME The above has become a fixme, because there are now occasions where the
+# PAR is mis-clustered due to improper orientation. Mean Perependicular vector?
+# Thats also an imperfect solution ~ some sort of MEC style formulation?
 
-strand_orientation_clusters_df <-
-  imap(perpendicular_decision_boundaries, function(x, nm) {
-    mat <-
-      mem_data_plane$model_input %>% 
-      filter(cluster == nm) %>% 
-      select(unitig_dir, PC1, PC2) %>% 
-      tibble::column_to_rownames('unitig_dir') %>% 
-      as.matrix()
-    # browser()
-    out <- sign(mat %*% x)
-    colnames(out) <- 'strand_cluster'
-    return(as_tibble(out, rownames = 'unitig_dir'))
+
+cluster_counts <-
+  counts_df %>%
+  bind_with_inverted_unitigs() %>% # self-supervision
+  left_join(cluster_df, by='unitig') %>%
+  split(.$cluster)
+
+wfracs <-
+  cluster_counts %>%
+  map(function(x) with(x, make_wc_matrix(w,c,lib,unitig_dir,min_n=min_n)))  %>%
+  # filling with 0s doesn't seem to affect first PC too much, compared to
+  # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
+  map(function(x) {
+    # TODO fill 0 or not? If not fill 0, how to handle possible NA similarities?
+    # How to handle unitigs w/ a PC=0?
+    x[is.na(x)] <- 0
+    return(x)
+  })
+
+sims <-
+  map(wfracs, cosine_similarity)
+
+#if whole row is NA ~ then it had 0 for all wfracs.
+sims <-
+  map(sims, function(x) {
+    row_ix <-
+      apply(x, 1, function(xx) all(is.na(xx)))
+    
+    col_ix <-
+      apply(x, 2, function(xx) all(is.na(xx)))
+    
+    
+    x[!row_ix, !col_ix, drop=FALSE]
+  })
+
+dists <-
+  map(sims, function(x) as.dist(1-x))
+
+
+clusts <-
+  map(dists, function(x) {
+    hclust(x, method = 'complete') %>% 
+      cutree(k=2)
   })
 
 strand_orientation_clusters_df <-
-  strand_orientation_clusters_df %>% 
-  bind_rows(.id = 'cluster') %>% 
-  mutate(unitig = gsub('_inverted', '', unitig_dir)) %>% 
-  select(cluster, unitig, unitig_dir, strand_cluster)
+  clusts %>% 
+  map_dfr(tibble::enframe, 'unitig_dir', 'strand_cluster', .id='cluster') %>% 
+  mutate(unitig = gsub('_inverted$', '', unitig_dir)) %>% 
+  mutate(strand_cluster = ifelse(strand_cluster==1, -1, 1))
+
+# add back in any unitigs remoed at ealier step
+strand_orientation_clusters_df <-
+  strand_orientation_clusters_df %>%
+  left_join(
+    cluster_counts %>%
+      bind_rows() %>%
+      distinct(unitig, unitig_dir, cluster)
+  )
 
 strand_orientation_clusters_df <-
+  strand_orientation_clusters_df %>%
+  mutate(strand_cluster = ifelse(is.na(strand_cluster), 0, strand_cluster))
+
+# TODO, a comparison to PC1 clustering, with a possible message if they differ
+strand_orientation_clusters_df <-
   strand_orientation_clusters_df %>% 
-  mutate(strand_cluster = ifelse(is.na(strand_cluster), 0,  strand_cluster))
+  select(cluster, unitig, unitig_dir, strand_cluster)
 
 # I have discovered that some points are located truly at the origin (for
 # all PCs), and therefore do not separate on the first PC. What lol. 
