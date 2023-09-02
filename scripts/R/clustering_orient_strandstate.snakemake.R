@@ -234,8 +234,8 @@ cat('Running contiBAIT QC\n')
 strand.states <-
   preprocessStrandTable(
     strand.freq,
-    filterThreshold = 0.7,
-    lowQualThreshold = 0.8,
+    # filterThreshold = 0.7,
+    # lowQualThreshold = 0.8,
     minLib = 20
   )
 
@@ -312,6 +312,7 @@ cat('Running contiBAIT clustering\n')
 # debugonce(clusterContigs, signature = 'StrandStateMatrix')
 clust <-
   clusterContigs(strand.states$strandMatrix,
+                 # similarityCutoff = 0.8,
                  recluster = 1000,
                  randomWeight = weights,
                  clusterBy = 'hetero',
@@ -367,7 +368,7 @@ cluster_component_fractions <-
   ungroup()
 
 # Arbitrary threshold
-component_fraction_threshold <- 0.02
+component_fraction_threshold <- 0.15
 
 micro_component_cluster_df <-
   cluster_component_fractions %>%
