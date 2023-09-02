@@ -806,6 +806,7 @@ get_chrom_cluster_data_planes <- function(counts_df, cluster_df, unitig_lengths_
 
     })
   
+  # TODO weighted PCA instead of weighted GLM after PCA?
   glms <-
     map(model_input, function(x){
       w <- x$length
@@ -837,6 +838,7 @@ get_chrom_cluster_data_planes <- function(counts_df, cluster_df, unitig_lengths_
           x$rotation[, 1:2] %*% vec
         })
       
+      # What is this check for/ how does it work?
       stopifnot(all(rownames(projections[[1]]) == rownames(projections[[2]])))
       
       out <-

@@ -105,7 +105,7 @@ invert_hex <- function(hex_code) {
 
 # Distances ---------------------------------------------------------------
 
-
+# TODO weighted cosine similarity?
 cosine_similarity_ <- function(x, y, min_overlaps=5, scale=TRUE) {
   stopifnot(all_have_same_length(x, y))
   
