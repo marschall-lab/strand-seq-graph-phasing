@@ -397,17 +397,23 @@ cluster_df <-
 ## Cosine Cluster Merging ----------------------------------------------------
 
 cat('Cosine cluster merging\n')
-
 cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.5)
 
 cluster_df <- merge_similar_clusters(counts_df, cluster_df, similarity_threshold = 0.66)
 
-### Cosine Unassigned -----------------------------------------------------
+
+## High Sim Pairing --------------------------------------------------------
+#TODO some sort of single linage clustering? I have noticed that often, a noisy
+#unitig will be really smiilar to about a third of the unitigs in a cluster, but
+#surprisingly dissmilar from the other two thirds of the unitigs in the cluster.
+#When using average linkage, the two thirds unitigs will make the unitig appear
+#dissimilar from the cluster. However, if you look at like 7 nearest neighbors,
+#all those neighbors are way more similar than every other unitig, and come from
+#the same cluster. Attempt to harness that somehow?
+
+## Cosine Unassigned -----------------------------------------------------
 
 cat('Assigning "high-noise" unitigs using cosine similarity \n')
-
-
-
 #TODO make this parameter more visible. Explain why only 5
 min_n <- 5
 
@@ -447,7 +453,8 @@ while(any_assigned || (length_quantile_threshold <= 1 || score_thresh >= 0.5)) {
   scores <-
     map(candidate_cluster_unitigs, function(x) {
       unclustered_unitigs <- unclustered_unitigs[!(unclustered_unitigs %in% x)]
-      apply(abs(similarities[unclustered_unitigs, x, drop=FALSE]), 1, mean, na.rm=TRUE)
+      sims <- abs(similarities[unclustered_unitigs, x, drop=FALSE])
+      apply(sims, 1, mean, na.rm=TRUE)
     })
   
   # convert to df
@@ -543,12 +550,16 @@ while(any_assigned || (length_quantile_threshold <= 1 || score_thresh >= 0.5)) {
 }
 
 
-### POCC-----------------------------------------------------------
+## Max-Based Assignment ----------------------------------------------------
+
+# TODO Assign a unitig to a cluster if it has a very high similarity with any of the individual members?
+
+## POCC-----------------------------------------------------------
 
 cat('Propagating one cluster components\n')
 cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
 
-### Cosine Cluster Merging ----------------------------------------------------
+## Cosine Cluster Merging ----------------------------------------------------
 
 cat('Cosine cluster merging\n')
 # Sometimes, some of the newly created clusters will should be merged
@@ -556,7 +567,8 @@ cat('Cosine cluster merging\n')
 cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.5)
 cluster_df <- merge_similar_clusters(counts_df, cluster_df, similarity_threshold = 0.66)
 
-### NA Cluster --------------------------------------------------------------
+
+## NA Cluster --------------------------------------------------------------
 # TODO why do these form?
 
 cluster_df <-
@@ -690,7 +702,13 @@ small_clusters <-
 
 cluster_df <-
   cluster_df %>%
-  mutate(cluster = ifelse(cluster %in% small_clusters & grepl('LGcos', cluster), NA, cluster)) %>%
+  mutate(cluster = ifelse(cluster %in% small_clusters & grepl('LGcos', cluster), NA, cluster)) 
+
+# Assign NA cluster -------------------------------------------------------
+
+
+cluster_df <-
+  cluster_df %>%
   mutate(cluster = ifelse(is.na(cluster), paste0('LGNA2_', unitig), cluster))
 
 # Orientation Detection w/ Inverted Unitigs -------------------------------
@@ -719,6 +737,10 @@ cat('Detecting unitig orientation\n')
 # instead of a discretized space (eg, k-modes clustering on strand states)
 # better for tasks when there are strong prior assumptions?
 
+# TODO (for fun) an algorithm to derive the proper WC library weights vector from mem
+# data. A cheap solution could be just to filter the data by mapq to "reveal"
+# the WC signal. However, I am curious to see if there is a way to derive the WC
+# library weights without that.
 mem_data_plane <- 
   get_chrom_cluster_data_planes(counts_df, cluster_df, unitig_lengths_df, supervision = 'PC1')
 
@@ -913,41 +935,41 @@ is_one_haplotype_cluster <-
       left_join(unitig_lengths_df, by='unitig') %>% 
       filter(length >= 1e6) %>% 
       pull_distinct(unitig) 
-
-      if(length(unitigs) < 1) {
-        cat('No adequately long unitigs for number of clusters detection:', nm, '\n')
-        return(NA)
-      }
-
-      wc <-
-        sort_counts %>%
-        with(make_wc_matrix(w,c,lib,unitig, min_n=1))
-
-      unitig_vector_lengths <-
-        wc %>%
-        apply(1, function(x) (sqrt(sum(x^2, na.rm=T))))
-
-      print(unitig_vector_lengths)
-
-      threshold <-
-        max(unitig_vector_lengths) - 0.2 *  max(unitig_vector_lengths)
-      
-      #FIXME A genuine one-haplotype cluster may be flagged by this incorrectly.
-      #If something fails this check, it needs to be looked at in unweighted
-      #data space as well. Similarly, a one haplotype cluster may look very WC
-      #after down-weighting WW libraries. OR maybe not I have run tests with
-      #manually created one-haplotype clusters and it seems fine...
-      
-      # TODO Minimum vector length needs to be scaled by
-      #num libraries
-      min_vector_length <- 4
-      unitigs <-
-        names(unitig_vector_lengths)[unitig_vector_lengths > min_vector_length & unitig_vector_lengths > threshold]
-
-      if(length(unitigs) < 1) {
-        cat('Too few adequately low-noise unitigs for number of clusters detection:', nm, '\n')
-        return(NA)
-      }
+    
+    if(length(unitigs) < 1) {
+      cat('No adequately long unitigs for number of clusters detection:', nm, '\n')
+      return(NA)
+    }
+    
+    wc <-
+      sort_counts %>%
+      with(make_wc_matrix(w,c,lib,unitig, min_n=1))
+    
+    unitig_vector_lengths <-
+      wc %>%
+      apply(1, function(x) (sqrt(sum(x^2, na.rm=T))))
+    
+    print(unitig_vector_lengths)
+    
+    threshold <-
+      max(unitig_vector_lengths) - 0.2 *  max(unitig_vector_lengths)
+    
+    #FIXME A genuine one-haplotype cluster may be flagged by this incorrectly.
+    #If something fails this check, it needs to be looked at in unweighted
+    #data space as well. Similarly, a one haplotype cluster may look very WC
+    #after down-weighting WW libraries. OR maybe not I have run tests with
+    #manually created one-haplotype clusters and it seems fine...
+    
+    # TODO Minimum vector length needs to be scaled by
+    #num libraries
+    min_vector_length <- 4
+    unitigs <-
+      names(unitig_vector_lengths)[unitig_vector_lengths > min_vector_length & unitig_vector_lengths > threshold]
+    
+    if(length(unitigs) < 1) {
+      cat('Too few adequately low-noise unitigs for number of clusters detection:', nm, '\n')
+      return(NA)
+    }
     
     fake_cluster_df <-
       tibble(unitig = unitigs) %>%
@@ -1062,45 +1084,45 @@ one_haplotype_clusters <-
 # Assign to haplotype alternating  by size.
 one_haplotype_cluster_counts <-
   imap(one_haplotype_clusters, function(clust, n) {
-  
-  counts <-
-    em_counts[[clust]] %>%
-    filter(!grepl('inverted', unitig_dir))
-  
-  swapping_unitigs <- 
-    one_haplotype_cluster_unitigs[[clust]]
-  
-  # stopifnot(length(swapping_unitig) == 1)
-
-  swaps <- 
-    counts %>% 
-    filter(unitig %in% swapping_unitigs) %>% 
-    group_by(lib) %>% 
-    summarise(c=sum(c), w=sum(w), .groups='drop') %>% 
-    mutate(swap = c > w) %>% 
-    distinct(lib, swap)
-  
-  counts <-
-    counts %>% 
-    left_join(swaps, by='lib') %>% 
-    mutate(tmp_c = ifelse(swap, c, w),
-           tmp_w = ifelse(swap, w, c)
-           )
-  if ((n %% 2) == 1) {
+    
+    counts <-
+      em_counts[[clust]] %>%
+      filter(!grepl('inverted', unitig_dir))
+    
+    swapping_unitigs <- 
+      one_haplotype_cluster_unitigs[[clust]]
+    
+    # stopifnot(length(swapping_unitig) == 1)
+    
+    swaps <- 
+      counts %>% 
+      filter(unitig %in% swapping_unitigs) %>% 
+      group_by(lib) %>% 
+      summarise(c=sum(c), w=sum(w), .groups='drop') %>% 
+      mutate(swap = c > w) %>% 
+      distinct(lib, swap)
+    
     counts <-
       counts %>% 
-      mutate(c = tmp_c, w = tmp_w)
-  } else {
-    counts <-
-      counts %>% 
-      mutate(c = tmp_w, w = tmp_c)
-  }
-  
-  counts %>% 
-    group_by(unitig) %>% 
-    summarise(n = sum(n), c=sum(c), w=sum(w)) %>% 
-    select(unitig, n, c, w)
-})
+      left_join(swaps, by='lib') %>% 
+      mutate(tmp_c = ifelse(swap, c, w),
+             tmp_w = ifelse(swap, w, c)
+      )
+    if ((n %% 2) == 1) {
+      counts <-
+        counts %>% 
+        mutate(c = tmp_c, w = tmp_w)
+    } else {
+      counts <-
+        counts %>% 
+        mutate(c = tmp_w, w = tmp_c)
+    }
+    
+    counts %>% 
+      group_by(unitig) %>% 
+      summarise(n = sum(n), c=sum(c), w=sum(w)) %>% 
+      select(unitig, n, c, w)
+  })
 
 # In case there are 0 uni clusters.
 one_haplotype_cluster_counts <-
