@@ -419,7 +419,14 @@ similarities <-
 # TODO
 new_cluster_ix <- 0
 any_assigned <- TRUE
-while(any_assigned) {
+# Use coverage instead of length?
+length_quantile_threshold <- 1 # 0.1
+score_thresh <- 0.5
+
+# TODO fix this while condition so that a break is not needed
+while(any_assigned || (length_quantile_threshold <= 1 || score_thresh >= 0.5)) {
+
+  
   any_assigned <- FALSE
   
   unclustered_unitigs <-
@@ -460,8 +467,8 @@ while(any_assigned) {
     scores_df %>% 
     filter(score == max(score, na.rm = TRUE)) %>% 
     slice_head(n=1) # break ties
-    
-  score_thresh <- 0.5
+  
+
   if(max_score$score > score_thresh) {
     any_assigned <- TRUE
     
@@ -485,8 +492,20 @@ while(any_assigned) {
       '\n'
     )
     
+    cat(
+      'Unitig length quantile threshold:',
+      length_quantile_threshold,
+      '\n'
+    )
+    
+    unitigs_to_consider <-
+      unitig_lengths_df %>% 
+      slice_max(order_by=length, prop=length_quantile_threshold) %>% 
+      pull(unitig) %>% 
+      intersect(unclustered_unitigs)
+    
     unclustered_sims <-
-      similarities[unclustered_unitigs, unclustered_unitigs, drop=FALSE] %>% 
+      similarities[unitigs_to_consider, unitigs_to_consider, drop=FALSE] %>% 
       abs()
     
     unclustered_sims <-
@@ -497,8 +516,8 @@ while(any_assigned) {
     
     max_sim <-
       unclustered_sims[max_pair[1], max_pair[2]]
-
-    if(max_sim > score_thresh) {
+    
+    if(!is.na(max_sim) && max_sim > score_thresh) {
       any_assigned <- TRUE
       new_cluster_ix <- new_cluster_ix + 1
       
@@ -510,6 +529,12 @@ while(any_assigned) {
       cluster_df <-
         cluster_df %>%
         mutate(cluster = ifelse(unitig %in% new_cluster_unitigs, paste0('LGcosLong', new_cluster_ix), cluster))
+    } else {
+      if(length_quantile_threshold == 1L) {
+        break
+      }
+      length_quantile_threshold <- length_quantile_threshold + 0.1
+      if(length_quantile_threshold > 1) length_quantile_threshold <- 1L
     }
   }
   
