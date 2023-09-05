@@ -88,8 +88,8 @@ to_look_at <-
 raw_counts <-
   list.files('sseq_alignment_counts/', full.names = TRUE, pattern='mem_raw.csv') %>%
   # list.files('sseq_alignment_counts/', full.names = TRUE, pattern='fastmap_raw.csv') %>%
-  set_names(function(x) hutils::trim_common_affixes(basename(x)))  #%>% 
-  # `[`(sample)
+  set_names(function(x) hutils::trim_common_affixes(basename(x)))  %>% 
+  `[`(sample)
 
 # raw_counts <- raw_counts[sample]
 # raw_counts <- raw_counts[1]
@@ -106,11 +106,11 @@ if(n_threads > 1) {
 with_progress({
   p <- progressor(steps = length(raw_counts))
 
-mapq_threshold <- 6
+mapq_threshold <- 10
 raw_counts_df <-
   raw_counts %>% 
   import_mapper(function(x) {
-    out <- readr::read_csv(x)
+    out <- readr::read_csv(x, lazy = TRUE)
     out %<>% 
       filter(mapq >= mapq_threshold) %>% 
       semi_join(to_look_at, by=c('sample', 'unitig'))
