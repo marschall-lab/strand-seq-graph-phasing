@@ -1277,7 +1277,8 @@ marker_counts <-
 stopifnot(nrow(marker_counts) == length(all_unitigs))
 stopifnot(setequal(all_unitigs, marker_counts$unitig))
 
-
+stopifnot(!anyNA(marker_counts$hap_1_counts))
+stopifnot(!anyNA(marker_counts$hap_2_counts))
 
 ## Haplotype Size Evening --------------------------------------------------
 
@@ -1286,6 +1287,7 @@ ratio_threshold <- 2
 
 hap_calls <- 
   marker_counts %>% 
+  filter(!is.na(cluster)) %>%
   mutate(hap_1_counts = hap_1_counts + 1,
          hap_2_counts = hap_2_counts + 1) %>% 
   mutate(call = ifelse(hap_1_counts/hap_2_counts >= ratio_threshold, 1, NA)) %>% 
@@ -1352,7 +1354,7 @@ if(nrow(bad) > 0) {
 
 marker_counts <-
   marker_counts %>% 
-  left_join(hap_calls) %>% 
+  left_join(hap_calls, by=c('cluster')) %>%
   mutate(h1_temp = hap_1_counts, h2_temp = hap_2_counts) %>% 
   mutate(
     hap_1_counts = ifelse(swap, h2_temp, h1_temp),
@@ -1360,6 +1362,11 @@ marker_counts <-
   ) %>% 
   select(-h1_temp, -h2_temp, -swap)
 
+stopifnot(!anyNA(marker_counts$hap_1_counts))
+stopifnot(!anyNA(marker_counts$hap_2_counts))
+
+stopifnot(all(as.integer(marker_counts$hap_1_counts) == marker_counts$hap_1_counts))
+stopifnot(all(as.integer(marker_counts$hap_2_counts) == marker_counts$hap_2_counts))
 ### CSV ---------------------------------------------------------------------
 
 marker_counts <-
