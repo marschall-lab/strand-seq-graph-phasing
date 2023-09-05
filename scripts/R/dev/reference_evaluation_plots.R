@@ -15,6 +15,8 @@ calculate_n50 <- function(lengths) {
 
 library(dplyr)
 library(purrr)
+library(furrr)
+library(progressr)
 library(pafr)
 library(ggplot2)
 library(ggokabeito)
@@ -29,56 +31,78 @@ reference_alignments <- list.files('reference_alignments/T2Tv11_hg002Yv2_chm13/'
 
 
 reference_alignments <-
-  list.files('reference_alignments/T2Tv11_hg002Yv2_chm13/', full.names = TRUE) %>% 
-  # reference_alignments %>% 
+  list.files('reference_alignments/T2Tv11_hg002Yv2_chm13/', full.names = TRUE) %>%
+  # reference_alignments %>%
   set_names(hutils::trim_common_affixes(.))
 
 
-reference_alignments <-
-  reference_alignments %>%
-  map(pafr::read_paf,
-      tibble = TRUE,
-      include_tags = FALSE) %>% 
-  bind_rows(.id='sample')
+n_threads <- 10
+if(n_threads > 1) {
+  library(furrr)
+  plan(multisession, workers=n_threads)
+  import_mapper <- furrr::future_map
+} else {
+  import_mapper <- purrr::map
+}
 
+with_progress({
+  p <- progressor(steps = length(reference_alignments))
 
-# take the first alignment listed each time. I think there is an order to them
-# as output by minimap so this seems okay?
-reference_alignments <-
-  reference_alignments %>% 
-  group_by(sample, qname) %>% 
-  slice_head(n=1) %>% 
-  dplyr::rename(unitig = qname)
+  reference_alignments <-
+    reference_alignments %>%
+    import_mapper(
+      function(x) {
+        p()
+        out <- pafr::read_paf(x, tibble = TRUE, include_tags = FALSE)
 
-reference_alignments <-
-reference_alignments %>% 
-  mutate(tname = factor(tname, levels = c(paste0('chr', 1:22), 'chrX', 'chrY', 'chrM')))
+        # take the first alignment listed each time. I think there is an order to them
+        # as output by minimap so this seems okay?
+        out <-
+          out %>%
+          group_by(qname) %>%
+          slice_head(n=1) %>%
+          dplyr::rename(unitig = qname)
+
+        out <-
+          out %>%
+          mutate(tname = factor(tname, levels = c(paste0('chr', 1:22), 'chrX', 'chrY', 'chrM')))
+
+        return(out)
+      }) %>%
+    bind_rows(.id='sample')
+})
+
+if(n_threads > 1) {
+  # close workers
+  plan(sequential)
+}
+
 ## Haplotype Marker Counts -------------------------------------------------
 
 
-haplotype_marker_counts <- list.files('haplotype_marker_counts/', full.names = TRUE, pattern = 'fudged_haplotype_marker_counts.csv$') %>% 
+haplotype_marker_counts <- list.files('haplotype_marker_counts/', full.names = TRUE, pattern = 'fudged_haplotype_marker_counts.csv$') %>%
   set_names(hutils::trim_common_affixes(.))
 
 
 haplotype_marker_counts <-
-  haplotype_marker_counts %>% 
-  map(readr::read_csv) %>% 
+  haplotype_marker_counts %>%
+  map(readr::read_csv) %>%
   bind_rows(.id='sample')
 
 haplotype_marker_counts <-
-  haplotype_marker_counts %>% 
+  haplotype_marker_counts %>%
   filter(!grepl('good_frac', sample) | grepl('frac-100', sample))
 ## Connected Components ----------------------------------------------------
 
-ccs <- list.files('gfa/ccs', full.names = TRUE) %>% 
+ccs <- list.files('gfa/ccs', full.names = TRUE) %>%
   set_names(hutils::trim_common_affixes(.))
-  
-ccs <-
-  ccs %>% 
-  map(readr::read_tsv) %>% 
-  bind_rows(.id='sample') 
 
-ccs <- 
+ccs <-
+  ccs %>%
+  map(readr::read_tsv) %>%
+  bind_rows(.id='sample')
+
+ccs <-
   ccs %>% mutate(component = ifelse(member_largest_component, 0, component))
 
 
@@ -86,28 +110,28 @@ ccs <-
 
 
 rukki_paths <-
-  list.files('rukki',recursive = TRUE,  full.names = TRUE, pattern = '*rukki_paths.tsv') %>% 
+  list.files('rukki',recursive = TRUE,  full.names = TRUE, pattern = '*rukki_paths.tsv') %>%
   set_names(function(x) hutils::trim_common_affixes(basename(x)))
 
 rukki_paths <-
-  rukki_paths %>% 
+  rukki_paths %>%
   map_dfr(readr::read_tsv, .id='sample')
 
 rukki_paths <-
-  rukki_paths %>% 
-  tidyr::separate_longer_delim(path, delim = ',') %>% 
-  group_by(sample, name) %>% 
-  mutate(order = 1:n()) %>% 
-  ungroup() %>% 
-  dplyr::rename(unitig = path) %>% 
+  rukki_paths %>%
+  tidyr::separate_longer_delim(path, delim = ',') %>%
+  group_by(sample, name) %>%
+  mutate(order = 1:n()) %>%
+  ungroup() %>%
+  dplyr::rename(unitig = path) %>%
   mutate(unitig = gsub("[+-]+$", '', unitig))
 
 
 rukki_paths <-
-  rukki_paths %>% 
-  mutate(is_gap = grepl('\\[', unitig)) %>% 
-  group_by(sample, name) %>% 
-  mutate(run = cumsum(is_gap)) %>% 
+  rukki_paths %>%
+  mutate(is_gap = grepl('\\[', unitig)) %>%
+  group_by(sample, name) %>%
+  mutate(run = cumsum(is_gap)) %>%
   ungroup()
 
 
@@ -122,51 +146,50 @@ rukki_paths <-
 
 
 rukki_paths <-
-  rukki_paths %>% 
-  mutate(is_not_gap = !is_gap) 
+  rukki_paths %>%
+  mutate(is_not_gap = !is_gap)
 
 ## Rukki Annotations -------------------------------------------------------
 
 rukki_annotations <-
-  list.files('rukki',recursive = TRUE,  full.names = TRUE, pattern = '*out_final_ann.csv') %>% 
+  list.files('rukki',recursive = TRUE,  full.names = TRUE, pattern = '*out_final_ann.csv') %>%
   set_names(function(x) hutils::trim_common_affixes(basename(x)))
 
 rukki_annotations <-
-  rukki_annotations %>% 
+  rukki_annotations %>%
   map_dfr(readr::read_tsv, .id='sample')
 
-
 rukki_annotations <-
-  rukki_annotations %>% 
-  select(sample, node, assignment, info) %>% 
+  rukki_annotations %>%
+  select(sample, node, assignment, info) %>%
   dplyr::rename(unitig = node, annotation = assignment)
 # ccn50 -------------------------------------------------------------------
 ccn502 <-
-  reference_alignments %>% 
-  left_join(ccs, by=c('sample', 'unitig')) %>% 
-  group_by(sample, component) %>% 
-  summarise(qlen = sum(qlen), .groups='drop') %>% 
-  group_by(sample) %>% 
-  summarise(ccn502 = calculate_n50(qlen/2)) %>% 
+  reference_alignments %>%
+  left_join(ccs, by=c('sample', 'unitig')) %>%
+  group_by(sample, component) %>%
+  summarise(qlen = sum(qlen), .groups='drop') %>%
+  group_by(sample) %>%
+  summarise(ccn502 = calculate_n50(qlen/2)) %>%
   ungroup()
 
 xxx <-
-  ccn502 %>% 
-  filter(sample == 'NA24385') %>% 
+  ccn502 %>%
+  filter(sample == 'NA24385') %>%
   pull(ccn502)
 
 ccn502 <-
-  ccn502 %>% 
+  ccn502 %>%
   mutate(ccn502 = ifelse(grepl('NA24385_', sample), xxx,ccn502))
 
 # Join --------------------------------------------------------------------
 
-left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>% 
-  # filter(!grepl('^Length less than', exclusion)) %>% 
-  split(.$sample) %>% 
+left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>%
+  # filter(!grepl('^Length less than', exclusion)) %>%
+  split(.$sample) %>%
   iwalk(function(x, nm) {
-    x %>% 
-      select(unitig, everything()) %>% 
+    x %>%
+      select(unitig, everything()) %>%
       readr::write_csv(glue::glue('rmc/{nm}_ref_marker_counts.csv'))
   })
 
@@ -175,64 +198,83 @@ left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'uniti
 
 pilot_regex <- 'HG00733(?!r)|HG02953|HG00171|NA21487|HG02666|HG00358|NA19983'
 
+new_samples <-
+  c(
+    'HG00096',
+    'HG00512',
+    'HG00733R1',
+    'HG00733R2',
+    'HG01596',
+    'HG01890',
+    'HG02011',
+    'HG02492',
+    'HG03371',
+    'HG03456',
+    'HG03732',
+    'NA18534',
+    'NA19650',
+    'NA19705',
+    'NA20509'
+  )
+
 # Qlen Historgrams --------------------------------------------------------
 
-reference_alignments %>% 
-  semi_join(haplotype_marker_counts, by='sample') %>% 
-  ungroup() %>% 
-  # filter(!grepl('^NA24385_', sample)) %>% 
-  # filter(grepl(pilot_regex, sample, perl = TRUE)) %>% 
+reference_alignments %>%
+  semi_join(haplotype_marker_counts, by='sample') %>%
+  ungroup() %>%
+  # filter(!grepl('^NA24385_', sample)) %>%
+  # filter(grepl(pilot_regex, sample, perl = TRUE)) %>%
   ggplot() +
-  geom_vline(xintercept = log10(250000), linetype='dashed', alpha=0.5) + 
-  geom_histogram(aes(log10(qlen))) + 
-  facet_wrap(~sample, ncol = 5, scale='free_y') + 
+  geom_vline(xintercept = log10(250000), linetype='dashed', alpha=0.5) +
+  geom_histogram(aes(log10(qlen))) +
+  facet_wrap(~sample, ncol = 5, scale='free_y') +
   scale_y_continuous(expand = expansion(mult=c(0,0.1))) +
   xlab('Log10 Unitig Size (verkko ~ hpc, hifiasm ~ not hpc)') +
-  theme_bw(base_size = 16) +
+  theme_bw(base_size = 9) +
   theme(axis.title.y = element_blank())
 
 # # Contig Histogram
-# reference_alignments %>% 
-#   filter(!grepl('^NA24385_', sample)) %>% 
-#   left_join(ccs, by=c('sample', 'unitig')) %>% 
-#   group_by(sample, component) %>% 
-#   summarise(qlen = sum(qlen)) %>% 
+# reference_alignments %>%
+#   filter(!grepl('^NA24385_', sample)) %>%
+#   left_join(ccs, by=c('sample', 'unitig')) %>%
+#   group_by(sample, component) %>%
+#   summarise(qlen = sum(qlen)) %>%
 #   ggplot() +
-#   geom_vline(xintercept = log10(250000), linetype='dashed', alpha=0.7) + 
-#   geom_histogram(aes(log10(qlen)), bins=40) + 
-#   facet_wrap(~sample, scales='free_y') + 
+#   geom_vline(xintercept = log10(250000), linetype='dashed', alpha=0.7) +
+#   geom_histogram(aes(log10(qlen)), bins=40) +
+#   facet_wrap(~sample, scales='free_y') +
 #   scale_y_continuous(expand = expansion(mult=c(0,0.1))) +
 #   xlab('Log10 Connected Component Size (hpc)') +
 #   theme_bw()
 
 
 # Marker Ratio Histograms -------------------------------------------------
-# 
+#
 # # Titration improvent plot
 # plot_data <-
-#   left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>% 
+#   left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>%
 #   mutate(marker_ratio = log2((1+hap_1_counts)/(1+hap_2_counts)))
-# 
-# plot_data %>% 
-#   filter(grepl('^NA24385_', sample)) %>% 
-#   filter(!(hap_1_counts==0 & hap_2_counts == 0)) %>% 
+#
+# plot_data %>%
+#   filter(grepl('^NA24385_', sample)) %>%
+#   filter(!(hap_1_counts==0 & hap_2_counts == 0)) %>%
 #   mutate(fraction = case_when(
 #     grepl('frac-0', sample) ~ 0,
 #     grepl('frac-25', sample) ~ 25,
 #     grepl('frac-50', sample) ~ 50,
 #     grepl('frac-75', sample) ~ 75,
 #     grepl('frac-100', sample) ~ 100
-#   )) %>% 
+#   )) %>%
 #   mutate(rep = case_when(
 #     grepl('rep-0', sample) ~ 1,
 #     grepl('rep-1', sample) ~ 1,
 #     grepl('rep-2', sample) ~ 2,
 #     grepl('rep-3', sample) ~ 3,
 #     grepl('rep-4', sample) ~ 4
-#   )) %>% 
-#   filter(rep == 1) %>% 
+#   )) %>%
+#   filter(rep == 1) %>%
 #   ggplot() +
-#   geom_histogram(aes(marker_ratio)) + 
+#   geom_histogram(aes(marker_ratio)) +
 #   scale_y_continuous(expand = expansion(mult=c(0,0.1))) +
 #   facet_grid( cols=vars(fraction)) +
 #   xlab('Log2 Marker Ratio') +
@@ -241,11 +283,11 @@ reference_alignments %>%
 # 2D chromosome cluster plot ----------------------------------------------
 
 # plot_data <-
-#   full_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>% 
-#   group_by(sample, cluster, tname, tlen, attempted) %>% 
-#   summarise(qlen = sum(qlen)) %>% 
+#   full_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>%
+#   group_by(sample, cluster, tname, tlen, attempted) %>%
+#   summarise(qlen = sum(qlen)) %>%
 #   ungroup()
-# 
+#
 
 # Simple Cluster-Chrom Size -----------------------------------------------
 plot_data <-
@@ -254,26 +296,26 @@ plot_data <-
   summarise(qlen = sum(qlen), n=n(),  .groups='drop')
 
 plot_data <-
-  plot_data %>% 
-  group_by(sample, tname) %>% 
+  plot_data %>%
+  group_by(sample, tname) %>%
   summarise(`Total` = sum(qlen),
             `Largest Cluster` = max(qlen),
             `Below Threshold` = sum(qlen[is.na(cluster)]), .groups='drop')
 
-plot_data <- 
-  plot_data %>% 
-  tidyr::pivot_longer(-(sample:tname), names_to = 'measure', values_to = 'bp') %>% 
+plot_data <-
+  plot_data %>%
+  tidyr::pivot_longer(-(sample:tname), names_to = 'measure', values_to = 'bp') %>%
   mutate(Mbp = bp / 1e6)
 
-plot_data <-  plot_data %>% 
-  filter(tname != 'chrM') %>% 
-  filter(!is.na(tname)) %>% 
-  mutate(tname = gsub('chr', '', tname)) %>% 
-  mutate(tname = factor(tname, levels = c(1:22, 'X', 'Y'))) 
+plot_data <-  plot_data %>%
+  filter(tname != 'chrM') %>%
+  filter(!is.na(tname)) %>%
+  mutate(tname = gsub('chr', '', tname)) %>%
+  mutate(tname = factor(tname, levels = c(1:22, 'X', 'Y')))
 
-plot_data %>% 
+plot_data %>%
   filter(!grepl('^NA24385_', sample)) %>%
-  # filter(grepl(pilot_regex, sample, perl = TRUE)) %>% 
+  # filter(grepl(pilot_regex, sample, perl = TRUE)) %>%
   ggplot() +
   # geom_point(aes(x = tname, y = Mbp, color=measure), size=5.5, shape='-') +
   geom_col(aes(x = tname, y=Mbp, fill=measure), position = 'identity') +
@@ -283,7 +325,7 @@ plot_data %>%
   theme_bw() +
   theme(legend.position = 'bottom',
         legend.title = element_blank(),
-        axis.title.x = element_blank(),        
+        axis.title.x = element_blank(),
         panel.grid.major.x = element_blank(),
         panel.grid.minor.x = element_blank())
 
@@ -293,13 +335,13 @@ plot_data %>%
 #   left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>%
 #   group_by(sample, cluster, tname, tlen) %>%
 #   summarise(qlen = sum(qlen), n=n(),  .groups='drop')
-# 
+#
 # plot_data <-
 #   plot_data %>%
 #   # filter(grepl('^NA24385_', sample))
 #   filter(grepl(pilot_regex, sample, perl=TRUE))
-# 
-# 
+#
+#
 # colors <-
 #   plot_data %>%
 #   filter(!is.na(cluster)) %>%
@@ -314,7 +356,7 @@ plot_data %>%
 # #   group_by(sample, cluster) %>%
 # #   mutate(color_cluster = ifelse(n == 1, NA, color_cluster)) %>%
 # #   ungroup()
-# 
+#
 # plot_data <-
 #   plot_data %>%
 #   left_join(colors) %>%
@@ -324,7 +366,7 @@ plot_data %>%
 #   filter(!is.na(tname)) %>%
 #   mutate(tname = gsub('chr', '', tname)) %>%
 #   mutate(tname = factor(tname, levels = c(1:22, 'X', 'Y')))
-# 
+#
 # plot_data %>%
 #   ggplot() +
 #   geom_col(
@@ -382,26 +424,26 @@ plot_data %>%
 #         panel.grid.minor.x = element_blank(),)
 
 # Perc Chrom Correct ------------------------------------------------------
-# 
+#
 # plot_data <-
 #   left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>%
 #   group_by(sample, cluster, tname, tlen, attempted) %>%
 #   summarise(qlen = sum(qlen),  .groups='drop') %>%
 #   group_by(sample, tname) %>%
 #   mutate(perc = qlen/sum(qlen))
-# 
+#
 # # plot_data <-
 # #   plot_data %>%
 # #   filter(!grepl('^NA24385_', sample))
-# 
-# 
+#
+#
 # colors <-
 #   plot_data %>%
 #   filter(!is.na(cluster)) %>%
 #   group_by(sample, tname) %>%
 #   arrange(desc(qlen)) %>%
 #   mutate(color_cluster = LETTERS[1:n()])
-# 
+#
 # plot_data %>%
 #   left_join(colors) %>%
 #   mutate(attempted = as.factor(attempted)) %>%
@@ -460,8 +502,8 @@ plot_data %>%
 #   # distinct(sample, cluster, tname) %>%
 #   # filter(!is.na(cluster)) %>%
 #   count(sample, cluster, tname, wt = qlen)
-# 
-# 
+#
+#
 # plot_data <-
 #   plot_data %>%
 #   mutate(tname = as.character(tname)) %>%
@@ -471,15 +513,15 @@ plot_data %>%
 #   mutate(perc = n / sum(n)) %>%
 #   # filter(perc != 1) %>%
 #   ungroup()
-# 
+#
 # plot_data <-
 #   plot_data %>%
-#   filter(!is.na(perc)) %>% 
+#   filter(!is.na(perc)) %>%
 #   group_by(sample, cluster) %>%
 #   mutate(major_class=tname[which.max(perc)]) %>%
 #   filter(major_class != tname) %>%
 #   ungroup()
-# 
+#
 # plot_data %>%
 #   # filter(!grepl('^NA24385_', sample)) %>%
 #   filter(!is.na(cluster)) %>%
@@ -491,33 +533,33 @@ plot_data %>%
 
 
 # # Unclustered Error Fractions ---------------------------------------------
-# 
-# 
-# 
+#
+#
+#
 # plot_data <-
 #   left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>%
-#   mutate(below_threshold = exclusion == 'Length less than threshold: 250000') %>% 
-#   mutate(below_threshold = ifelse(is.na(below_threshold), FALSE, below_threshold)) %>% 
-#   mutate(unclustered = is.na(cluster) & !below_threshold) %>% 
-#   mutate(cluster_exclusion = ifelse(below_threshold, 'threshold', ifelse(unclustered, 'unclustered', 'clustered'))) %>% 
-#   # distinct(sample, cluster, tname) %>% 
-#   # filter(!is.na(cluster)) %>% 
+#   mutate(below_threshold = exclusion == 'Length less than threshold: 250000') %>%
+#   mutate(below_threshold = ifelse(is.na(below_threshold), FALSE, below_threshold)) %>%
+#   mutate(unclustered = is.na(cluster) & !below_threshold) %>%
+#   mutate(cluster_exclusion = ifelse(below_threshold, 'threshold', ifelse(unclustered, 'unclustered', 'clustered'))) %>%
+#   # distinct(sample, cluster, tname) %>%
+#   # filter(!is.na(cluster)) %>%
 #   count(sample, cluster, tname, cluster_exclusion, wt = qlen)
-# 
-# 
+#
+#
 # plot_data <-
 #   plot_data %>%
-#   mutate(tname = as.character(tname)) %>% 
+#   mutate(tname = as.character(tname)) %>%
 #   mutate(tname = ifelse(tname %in% c('chrX', 'chrY'), 'chrXY', tname)) %>%
-#   mutate(tname = factor(tname, levels = c(paste0('chr', 1:22), 'chrXY', 'chrM'))) %>% 
-#   group_by(sample,cluster, tname, cluster_exclusion) %>% 
-#   summarise(n = sum(n), .groups = 'drop') %>% 
+#   mutate(tname = factor(tname, levels = c(paste0('chr', 1:22), 'chrXY', 'chrM'))) %>%
+#   group_by(sample,cluster, tname, cluster_exclusion) %>%
+#   summarise(n = sum(n), .groups = 'drop') %>%
 #   group_by(sample, tname) %>%
 #   mutate(perc = n / sum(n)) %>%
-#   # filter(perc != 1) %>% 
-#   filter(!is.na(perc)) %>% 
+#   # filter(perc != 1) %>%
+#   filter(!is.na(perc)) %>%
 #   ungroup()
-# 
+#
 # plot_data <-
 #   bind_rows(
 #     plot_data %>%
@@ -526,39 +568,39 @@ plot_data %>%
 #       mutate(major_class=tname[which.max(perc)]) %>%
 #       filter(major_class != tname) %>%
 #       ungroup(),
-# 
+#
 #     plot_data %>%
 #       filter(cluster_exclusion != 'clustered')
 #   )
-# 
+#
 # plot_data <-
 #   plot_data %>%
 #   filter(!grepl('^NA24385_', sample))
-# 
+#
 # plot_data <-
-#   plot_data %>% 
-#   filter(cluster_exclusion != 'threshold') %>% 
-#   # filter(!grepl('^NA24385_', sample))%>% 
+#   plot_data %>%
+#   filter(cluster_exclusion != 'threshold') %>%
+#   # filter(!grepl('^NA24385_', sample))%>%
 #   filter(!grepl('hifiasm', sample))%>%
-#   # filter(grepl(pilot_regex, sample, perl=TRUE)) %>% 
-#   filter(!is.na(tname)) %>% 
-#   filter(tname != 'chrM') 
-# 
+#   # filter(grepl(pilot_regex, sample, perl=TRUE)) %>%
+#   filter(!is.na(tname)) %>%
+#   filter(tname != 'chrM')
+#
 # # plot_data <-
-# #   plot_data %>% 
-# #   group_by(sample, tname) %>% 
-# #   summarise(perc=sum(perc)) %>% 
+# #   plot_data %>%
+# #   group_by(sample, tname) %>%
+# #   summarise(perc=sum(perc)) %>%
 # #   ungroup()
-# 
+#
 # label_data <-
-#   plot_data%>% 
-#   group_by(sample, tname) %>% 
-#   summarise(perc=sum(perc)) %>% 
-#   group_by(sample) %>% 
-#   slice_max(order_by = perc) %>% 
+#   plot_data%>%
+#   group_by(sample, tname) %>%
+#   summarise(perc=sum(perc)) %>%
+#   group_by(sample) %>%
+#   slice_max(order_by = perc) %>%
 #   ungroup()
-#  
-# #filter(!is.na(major_class)) %>% 
+#
+# #filter(!is.na(major_class)) %>%
 # ggplot(mapping = aes(x=tname, y=perc)) +
 #   geom_col(data=plot_data) +
 #   geom_text(aes(label = paste0(round(100*perc, 1), '%')), nudge_y = 0.03, data=label_data) +
@@ -575,29 +617,29 @@ plot_data %>%
 #     axis.title.x = element_blank(),
 #     axis.text.x = element_text(angle = 45, hjust=1),
 #   )
-# 
-# 
-# 
-# plot_data %>% 
-#   filter(cluster_exclusion != 'threshold') %>% 
-#   filter(grepl('^NA24385_', sample)) %>% 
+#
+#
+#
+# plot_data %>%
+#   filter(cluster_exclusion != 'threshold') %>%
+#   filter(grepl('^NA24385_', sample)) %>%
 #   mutate(fraction = case_when(
 #     grepl('frac-0', sample) ~ 0,
 #     grepl('frac-25', sample) ~ 25,
 #     grepl('frac-50', sample) ~ 50,
 #     grepl('frac-75', sample) ~ 75,
 #     grepl('frac-100', sample) ~ 100
-#   )) %>% 
+#   )) %>%
 #   mutate(rep = case_when(
 #     grepl('rep-0', sample) ~ 1,
 #     grepl('rep-1', sample) ~ 1,
 #     grepl('rep-2', sample) ~ 2,
 #     grepl('rep-3', sample) ~ 3,
 #     grepl('rep-4', sample) ~ 4
-#   )) %>% 
-#   filter(!is.na(tname)) %>% 
-#   filter(tname != 'chrM') %>% 
-#   #filter(!is.na(major_class)) %>% 
+#   )) %>%
+#   filter(!is.na(tname)) %>%
+#   filter(tname != 'chrM') %>%
+#   #filter(!is.na(major_class)) %>%
 #   ggplot() +
 #   geom_col(aes(x=tname, y=perc)) +
 #   facet_grid(rows = vars(rep), cols=vars(fraction)) +
@@ -613,34 +655,33 @@ plot_data %>%
 #     axis.title.x = element_blank(),
 #     axis.text.x = element_text(angle = 45, hjust=1),
 #   )
-# 
-# 
+#
+#
 
 # Chrom - Error ---------------------------------------------
 
-
-
 plot_data <-
-  left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>% 
+  left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>%
+  # filter(sample %in% new_samples) %>%
   mutate(color = case_when(qlen < 250000 ~ 'threshold',
                            hap_1_counts == 0 & hap_2_counts == 0 ~ 'uncounted',
                            TRUE ~ 'misclustered'))
 
 plot_data <-
   plot_data %>%
-  mutate(tname = as.character(tname)) %>% 
+  mutate(tname = as.character(tname)) %>%
   mutate(tname = ifelse(tname %in% c('chrX', 'chrY'), 'chrXY', tname)) %>%
-  mutate(tname = factor(tname, levels = c(paste0('chr', 1:22), 'chrXY', 'chrM'))) 
+  mutate(tname = factor(tname, levels = c(paste0('chr', 1:22), 'chrXY', 'chrM')))
 
 plot_data <-
-  plot_data %>% 
-  group_by(sample, cluster, tname, color) %>% 
-  summarise(n = sum(qlen), .groups = 'drop') %>% 
+  plot_data %>%
+  group_by(sample, cluster, tname, color) %>%
+  summarise(n = sum(qlen), .groups = 'drop') %>%
   group_by(sample, tname) %>%
   mutate(perc = n / sum(n)) %>%
-  # filter(perc != 1) %>% 
-  ungroup() %>% 
-  filter(!is.na(perc)) 
+  # filter(perc != 1) %>%
+  ungroup() %>%
+  filter(!is.na(perc))
 
 plot_data <-
   bind_rows(
@@ -650,7 +691,7 @@ plot_data <-
       mutate(major_class=tname[which.max(perc)]) %>%
       filter(major_class != tname) %>%
       ungroup(),
-    
+
     plot_data %>%
       filter(color != 'misclustered')
   )
@@ -660,13 +701,13 @@ plot_data <-
 #   filter(!grepl('^NA24385_', sample))
 
 plot_data <-
-  plot_data %>% 
+  plot_data %>%
   # filter(color != 'threshold') %>%
-  # filter(!grepl('^NA24385_', sample))%>% 
+  # filter(!grepl('^NA24385_', sample))%>%
   filter(!grepl('hifiasm', sample))%>%
-  # filter(grepl(pilot_regex, sample, perl=TRUE)) %>% 
-  filter(!is.na(tname)) %>% 
-  filter(tname != 'chrM') 
+  # filter(grepl(pilot_regex, sample, perl=TRUE)) %>%
+  filter(!is.na(tname)) %>%
+  filter(tname != 'chrM')
 
 plot_data <-
   plot_data %>%
@@ -675,15 +716,15 @@ plot_data <-
   ungroup()
 
 label_data <-
-  plot_data%>% 
-  group_by(sample, tname) %>% 
-  summarise(perc=sum(perc)) %>% 
-  # group_by(sample, color) %>% 
-  group_by(sample) %>% 
-  slice_max(order_by = perc) %>% 
+  plot_data%>%
+  group_by(sample, tname) %>%
+  summarise(perc=sum(perc)) %>%
+  # group_by(sample, color) %>%
+  group_by(sample) %>%
+  slice_max(order_by = perc) %>%
   ungroup()
 
-#filter(!is.na(major_class)) %>% 
+#filter(!is.na(major_class)) %>%
 ggplot(mapping = aes(x = tname, y = perc)) +
   geom_vline(
     xintercept = c('chr13', 'chr14', 'chr15', 'chr21', 'chr22'),
@@ -691,7 +732,7 @@ ggplot(mapping = aes(x = tname, y = perc)) +
     linetype = 'dashed'
   ) +
   geom_col(aes(fill = color), color='black', linewidth=0.2, data = plot_data) +
-  geom_text(aes(label = paste0(round(100 * perc, 1), '%')), nudge_y = 0.03, data =
+  geom_text(aes(label = paste0(round(100 * perc, 1), '%')), size=2, nudge_y = 0.1, data =
               label_data) +
   facet_wrap( ~ sample, ncol = 5) +
   scale_y_continuous(expand = expansion(mult=c(0,0.1))) +
@@ -699,7 +740,7 @@ ggplot(mapping = aes(x = tname, y = perc)) +
   xlab('Chromosome') +
   scale_fill_okabe_ito() +
   # theme_gray() +
-  theme_bw(base_size = 14) +
+  theme_bw(base_size = 5) +
   # theme_bw() +
   theme(
     # strip.background = element_rect(color='black'),
@@ -708,7 +749,7 @@ ggplot(mapping = aes(x = tname, y = perc)) +
     # panel.grid.minor.y = element_blank(),
     axis.title.x = element_blank(),
     axis.text.x = element_text(angle = 45, hjust = 1),
-  ) 
+  )
 
 
 
@@ -716,35 +757,36 @@ ggplot(mapping = aes(x = tname, y = perc)) +
 # XY opposite phasing -----------------------------------------------------
 
 plot_data <-
-  left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>% 
-  filter(qlen >= 250000) %>% 
+  left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>%
+  # filter(sample %in% new_samples) %>%
+  filter(qlen >= 250000) %>%
   filter(!grepl('hifiasm', sample))
 
 y_chr_sums <-
-  plot_data %>% 
-  group_by(sample) %>% 
-  filter(tname == 'chrY') %>% 
+  plot_data %>%
+  group_by(sample) %>%
+  filter(tname == 'chrY') %>%
   summarise(length = sum(qlen))
 
 y_chr_sums <-
-  y_chr_sums %>% 
+  y_chr_sums %>%
   filter(length > 3e7)
 
 plot_data <-
-  plot_data %>% 
-  # group_by(sample) %>% 
-  semi_join(y_chr_sums, by='sample') %>% 
+  plot_data %>%
+  # group_by(sample) %>%
+  semi_join(y_chr_sums, by='sample') %>%
   filter(tname %in% c('chrY', 'chrX'))
 
 # plot_data <-
 #   # plot_data >%
-#   # # filter(grepl(pilot_regex, sample, perl=TRUE)) %>% 
+#   # # filter(grepl(pilot_regex, sample, perl=TRUE)) %>%
 #   # filter(!is.na(tname))
 
 plot_data <-
-  plot_data %>% 
+  plot_data %>%
   mutate(hap_1_counts = hap_1_counts + 1,
-         hap_2_counts = hap_2_counts + 1) %>% 
+         hap_2_counts = hap_2_counts + 1) %>%
   mutate(rat = (hap_1_counts - hap_2_counts)/(hap_1_counts+hap_2_counts))
 
 plot_data %>%
@@ -775,9 +817,9 @@ plot_data %>%
 # Marker Ratio Rukki Plots ------------------------------------------------------
 
 plot_data <-
-  left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>% 
-  left_join(rukki_paths, by=c('sample', 'unitig')) %>% 
-  filter(qlen >= 250000) %>% 
+  left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>%
+  left_join(rukki_paths, by=c('sample', 'unitig')) %>%
+  filter(qlen >= 250000) %>%
   filter(!grepl('hifiasm', sample))
 
 plot_data <-
@@ -790,47 +832,47 @@ ggplot(plot_data) +
   facet_wrap(~sample) +
   geom_vline(xintercept = 0, linetype = 'dotted')
 
-plot_data %>% 
-  filter(is.na(assignment)) %>% 
+plot_data %>%
+  filter(is.na(assignment)) %>%
   ggplot() +
   geom_histogram(aes(rat, weight=qlen)) +
   facet_wrap(~sample) +
   geom_vline(xintercept = 0, linetype = 'dotted')
 
 # Chrom-Cluster Entropies -------------------------------------------------
-# 
+#
 # plot_data <-
-#   left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) 
-# 
-# 
+#   left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig'))
+#
+#
 # plot_data <-
 #   plot_data %>%
 #   filter(!is.na(cluster))
-# 
+#
 # plot_data <-
-#   plot_data %>% 
-#   mutate(tname = as.character(tname)) %>% 
+#   plot_data %>%
+#   mutate(tname = as.character(tname)) %>%
 #   mutate(tname = ifelse(tname %in% c('chrX', 'chrY'), 'chrXY', tname)) %>%
-#   mutate(tname = factor(tname, levels = c(paste0('chr', 1:22), 'chrXY', 'chrM'))) %>% 
-#   group_by(sample,cluster, tname) %>% 
-#   summarise(qlen = sum(qlen), .groups = 'drop') %>% 
+#   mutate(tname = factor(tname, levels = c(paste0('chr', 1:22), 'chrXY', 'chrM'))) %>%
+#   group_by(sample,cluster, tname) %>%
+#   summarise(qlen = sum(qlen), .groups = 'drop') %>%
 #   group_by(sample, tname) %>%
 #   mutate(perc = qlen / sum(qlen)) %>%
-#   # filter(perc != 1) %>% 
+#   # filter(perc != 1) %>%
 #   ungroup()
-# 
+#
 # plot_data <-
-#   plot_data %>% 
-#   mutate(entropy2 = -1*perc*log2(perc)) %>% 
-#   group_by(sample, tname) %>% 
+#   plot_data %>%
+#   mutate(entropy2 = -1*perc*log2(perc)) %>%
+#   group_by(sample, tname) %>%
 #   summarise(entropy2 = sum(entropy2, na.rm=TRUE), .groups='drop')
-# 
-# plot_data %>% 
-#   filter(tname != 'chrM') %>% 
-#   filter(!is.na(tname)) %>% 
+#
+# plot_data %>%
+#   filter(tname != 'chrM') %>%
+#   filter(!is.na(tname)) %>%
 #   ggplot() +
 #   geom_col(aes(x = tname, y=entropy2)) +
-#   facet_wrap(~sample) + 
+#   facet_wrap(~sample) +
 #   theme_bw() +
 #   theme(
 #     # strip.background = element_rect(color='black'),
@@ -851,29 +893,29 @@ n50s <-
 
 pn50s <-
   rukki_paths %>%
-  group_by(sample, name, run) %>% 
-  summarise(node_len = sum(node_len * is_not_gap), .groups = 'drop') %>% 
-  group_by(sample) %>% 
+  group_by(sample, name, run) %>%
+  summarise(node_len = sum(node_len * is_not_gap), .groups = 'drop') %>%
+  group_by(sample) %>%
   summarise(pn50 = calculate_n50(node_len))
 
 sn50s <-
   rukki_paths %>%
-  group_by(sample, name) %>% 
-  summarise(node_len = sum(node_len * is_not_gap), .groups = 'drop') %>% 
-  group_by(sample) %>% 
+  group_by(sample, name) %>%
+  summarise(node_len = sum(node_len * is_not_gap), .groups = 'drop') %>%
+  group_by(sample) %>%
   summarise(sn50 = calculate_n50(node_len))
 
-length_stats <- 
-  n50s %>% 
-  full_join(pn50s, by='sample') %>% 
-  full_join(sn50s, by='sample') 
-# 
+length_stats <-
+  n50s %>%
+  full_join(pn50s, by='sample') %>%
+  full_join(sn50s, by='sample')
+#
 # stopifnot(all(length_stats$n50 <= length_stats$pn50))
 # stopifnot(all(length_stats$pn50 <= length_stats$sn50))
 
-length_stats <- 
-  length_stats %>% 
-  tidyr::pivot_longer(cols = -sample, names_to = 'statistic', values_to = 'value') %>% 
+length_stats <-
+  length_stats %>%
+  tidyr::pivot_longer(cols = -sample, names_to = 'statistic', values_to = 'value') %>%
   left_join(ccn502, by='sample')
 
 length_stats %>%
@@ -904,9 +946,9 @@ length_stats %>%
 
 
 # Rukki Histograms --------------------------------------------------------
-rukki_paths %>% 
-  filter(!is_gap) %>% 
-  left_join(reference_alignments) %>% 
+rukki_paths %>%
+  filter(!is_gap) %>%
+  left_join(reference_alignments) %>%
   ggplot() +
   geom_histogram(aes(qlen, fill=assignment)) +
   geom_vline(aes(xintercept = 250000)) +
@@ -916,18 +958,18 @@ rukki_paths %>%
 
 # Rukki Assignment Sizes --------------------------------------------------
 
-rukki_paths %>% 
-  filter(!is_gap) %>% 
-  left_join(reference_alignments) %>% 
+rukki_paths %>%
+  filter(!is_gap) %>%
+  left_join(reference_alignments) %>%
   ggplot() +
   geom_col(aes(x=assignment,y=qlen)) +
   facet_wrap(~ sample)
 
 
-rukki_paths %>% 
-  left_join(reference_alignments) %>% 
-  filter(!is_gap) %>% 
-  count(sample, assignment, wt=qlen)  %>% filter(is.na(assignment)) %>% 
+rukki_paths %>%
+  left_join(reference_alignments) %>%
+  filter(!is_gap) %>%
+  count(sample, assignment, wt=qlen)  %>% filter(is.na(assignment)) %>%
   arrange(desc(n))
 # Rukki Path-Marker Concordance -----------------------------------------------
 
@@ -936,20 +978,20 @@ rukki_paths %>%
 marker_calls <-
   haplotype_marker_counts %>%
   mutate(
-    marker_assignment = 
+    marker_assignment =
       case_when(hap_1_counts > hap_2_counts ~ 'HAPLOTYPE1',
                 hap_2_counts > hap_1_counts ~ 'HAPLOTYPE2',
                 hap_1_counts == hap_2_counts ~'HOM',
                 TRUE ~ NA)
-    )# %>% 
-  
+    )# %>%
+
 #select(-hap_1_counts, -hap_2_counts)
 
 
 
 plot_data <-
   rukki_paths %>%
-  mutate(assignment = ifelse(is.na(assignment), 'NA', assignment)) %>% 
+  mutate(assignment = ifelse(is.na(assignment), 'NA', assignment)) %>%
   mutate(
     swapped_assignment =
       case_when(
@@ -960,15 +1002,15 @@ plot_data <-
   ) %>%
   left_join(marker_calls, by = c('sample', 'unitig')) %>%
   left_join(reference_alignments, by = c('sample', 'unitig')) %>%
-  filter(is_not_gap) %>% 
-  # filter(!is.na(marker_assignment)) %>% 
-  # filter(!grepl('na_unused', name)) %>% 
+  filter(is_not_gap) %>%
+  # filter(!is.na(marker_assignment)) %>%
+  # filter(!grepl('na_unused', name)) %>%
   group_by(sample, name) %>%
   mutate(
     disagreement = ifelse(assignment != marker_assignment, node_len, 0),
     swapped_disagreement = ifelse(swapped_assignment != marker_assignment, node_len, 0)
   ) %>%
-  ungroup() # %>% 
+  ungroup() # %>%
   # mutate(
   #   final_disagreement = ifelse(
   #     disagreement < swapped_disagreement,
@@ -976,11 +1018,11 @@ plot_data <-
   #     swapped_disagreement
   #   )
   # )
-  # 
+  #
 
 
 plot_data %>%
-  left_join(rukki_annotations) %>% 
+  left_join(rukki_annotations) %>%
   filter(!grepl('^NA24385_', sample)) %>%
   filter(!grepl('hifiasm', sample)) %>%
   # filter(annotation != 'HOM') %>%
@@ -1006,21 +1048,21 @@ plot_data %>%
 
 
 plot_data %>%
-  left_join(rukki_annotations) %>% 
+  left_join(rukki_annotations) %>%
   # filter(annotation == 'HOM')  %>%
   # filter(annotation == 'ISSUE') %>%
-  # filter(disagreement != 0) %>% 
-  filter(!grepl('^NA24385_', sample)) %>% 
-  filter(!grepl('hifiasm', sample)) %>% 
-  filter(hap_1_counts + hap_2_counts >= 5) %>% 
-  # filter(node_len >= 500000) %>% 
-  arrange(desc(disagreement)) %>% 
-  select(sample, name, unitig, assignment, node_len, hap_1_counts, hap_2_counts, marker_assignment,disagreement) %>% 
+  # filter(disagreement != 0) %>%
+  filter(!grepl('^NA24385_', sample)) %>%
+  filter(!grepl('hifiasm', sample)) %>%
+  filter(hap_1_counts + hap_2_counts >= 5) %>%
+  # filter(node_len >= 500000) %>%
+  arrange(desc(disagreement)) %>%
+  select(sample, name, unitig, assignment, node_len, hap_1_counts, hap_2_counts, marker_assignment,disagreement) %>%
   filter(sample == 'HG02587')
 
 
 
-# 
+#
 # plot_data %>%
 #   filter(grepl('^NA24385_', sample)) %>%
 #   # filter(final_disagreement != 0) %>%
@@ -1038,57 +1080,56 @@ plot_data %>%
 marker_calls <-
   haplotype_marker_counts %>%
   mutate(
-    marker_assignment = 
+    marker_assignment =
       case_when(hap_1_counts > hap_2_counts ~ 'HAPLOTYPE1',
                 hap_2_counts > hap_1_counts ~ 'HAPLOTYPE2',
                 hap_1_counts == hap_2_counts ~'HOM', # Given the rukki lables as HAP1, HAP2, or NA, this will always produce disagreement
                 TRUE ~ NA)
-  )# %>% 
+  )# %>%
 
 hom_nodes <-
-  rukki_paths %>% 
-  filter(is_not_gap) %>% 
-  group_by(sample, unitig) %>% 
-  mutate(n = n()) %>% 
-  filter('HAPLOTYPE1' %in% assignment & 'HAPLOTYPE2' %in% assignment) %>% 
+  rukki_paths %>%
+  filter(is_not_gap) %>%
+  group_by(sample, unitig) %>%
+  mutate(n = n()) %>%
+  filter('HAPLOTYPE1' %in% assignment & 'HAPLOTYPE2' %in% assignment) %>%
   ungroup() %>%
-  filter(n == 2) %>% 
-  distinct(sample, unitig) %>% 
+  filter(n == 2) %>%
+  distinct(sample, unitig) %>%
   mutate(is_hom = TRUE)
 
 issue_nodes <-
-  rukki_paths %>% 
-  filter(is.na(assignment)) %>% 
-  left_join(select(haplotype_marker_counts, sample, unitig, length)) %>% 
-  distinct(sample, unitig) %>% 
+  rukki_paths %>%
+  filter(is.na(assignment)) %>%
+  left_join(select(haplotype_marker_counts, sample, unitig, length)) %>%
+  distinct(sample, unitig) %>%
   mutate(is_issue = TRUE)
 
 stopifnot(nrow(semi_join(hom_nodes, issue_nodes)) == 0)
 
 plot_data <-
   rukki_paths %>%
-  mutate(assignment = ifelse(is.na(assignment), 'NA', assignment)) %>% 
+  # filter(sample %in% new_samples) %>%
+  mutate(assignment = ifelse(is.na(assignment), 'NA', assignment)) %>%
   left_join(marker_calls, by = c('sample', 'unitig')) %>%
   left_join(reference_alignments, by = c('sample', 'unitig')) %>%
-  filter(is_not_gap) %>% 
+  filter(is_not_gap) %>%
   group_by(sample, name) %>%
   mutate(
     disagreement = ifelse(assignment != marker_assignment, node_len, 0)
   ) %>%
   ungroup()
-# Hom Fractions 
+# Hom Fractions
+plot_data <-
+  plot_data %>%
+  filter(!is.na(tname)) %>%
+  filter(tname != 'chrM')
 
 
 plot_data <-
-  plot_data %>% 
-  filter(!is.na(tname)) %>% 
-  filter(tname != 'chrM') 
-
-
-plot_data <-
-  plot_data %>% 
-  left_join(hom_nodes) %>% 
-  left_join(issue_nodes) %>% 
+  plot_data %>%
+  left_join(hom_nodes) %>%
+  left_join(issue_nodes) %>%
   mutate(color = case_when(
     is_hom ~ 'RUKKI_HOM',
     is_issue ~ 'RUKKI_NA',
@@ -1098,11 +1139,31 @@ plot_data <-
   ))
 
 
-plot_data %>% 
-  group_by(sample, tname, color) %>% 
-  summarise(length = sum(length, na.rm = TRUE), .groups = 'drop') %>% 
+plot_data %>%
+  group_by(sample, tname, color) %>%
+  summarise(length = sum(length, na.rm = TRUE), .groups = 'drop') %>%
   ggplot() +
   geom_col(aes(x=tname, y=length, fill=color), color = 'black', linewidth=0.2) +
+  facet_wrap(~sample, scales = 'free_x') +
+  theme_bw(base_size = 11) +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_okabe_ito(order = c(3,1,2,4,5,6,7,8))
+
+
+
+# Autosomal Haplotype Balance
+plot_data %>%
+  filter(as.character(tname) %in% paste0('chr', 1:22)) %>%
+  group_by(sample, tname, marker_assignment)  %>%
+  summarise(length = sum(length, na.rm = TRUE), .groups = 'drop') %>%
+  tidyr::pivot_wider(names_from='marker_assignment', values_from='length') %>%
+  mutate(HAPLOTYPE1 = HAPLOTYPE1 + HOM, HAPLOTYPE2 = HAPLOTYPE2 + HOM) %>%
+  mutate(HAP_RAT = log2(HAPLOTYPE1 / HAPLOTYPE2)) %>%
+  ggplot() +
+  geom_vline(xintercept = c('chr13','chr14','chr15','chr21','chr22'), linetype='dashed') +
+  geom_col(aes(x=tname, y=HAP_RAT), color = 'black', linewidth=0.2) +
   facet_wrap(~sample, scales = 'free_x') +
   theme_bw(base_size = 11) +
   theme(axis.title.x = element_blank(),
@@ -1115,8 +1176,8 @@ plot_data %>%
 # Rukki NA24385 Sensitivity -----------------------------------------------
 
 # Need to think harder, as nodes can appear in multiple paths
-# 
-# 
+#
+#
 # bulk <-
 #   rukki_paths %>%
 #   mutate(
@@ -1129,70 +1190,70 @@ plot_data %>%
 #   ) %>%
 #   filter(grepl('^NA24385_', sample))  %>%
 #   filter(is_not_gap)
-# 
+#
 # ref <-
 #   bulk %>%
 #   filter(grepl('frac-100', sample)) %>%
-#   select(unitig, assignment) 
-# 
+#   select(unitig, assignment)
+#
 # swapped_ref <-
 #   bulk %>%
 #   filter(grepl('frac-100', sample)) %>%
-#   select(unitig, swapped_assignment) %>% 
+#   select(unitig, swapped_assignment) %>%
 #   rename(assignment = swapped_assignment)
-#   # mutate(swapped_assignment = assignment) %>% 
-#   # select(-assignment) %>% 
+#   # mutate(swapped_assignment = assignment) %>%
+#   # select(-assignment) %>%
 #   # rename(assignment = swapped_assignment)
-# 
+#
 # # need to think about switched names for haplotype assignments
 # ref_bulk <-
-#   bulk %>% 
+#   bulk %>%
 #   anti_join(ref, by=c('unitig', 'assignment'))
-# 
+#
 # swapped_ref_bulk <-
-#   bulk %>% 
+#   bulk %>%
 #   anti_join(swapped_ref, by=c('unitig', 'assignment'))
-# 
+#
 # rbc <-
-#   ref_bulk %>% 
-#   left_join(haplotype_marker_counts, by=c('sample', 'unitig')) %>% 
-#   left_join(reference_alignments, by=c('sample', 'unitig')) %>% 
-#   group_by(sample, cluster, tname) %>% 
+#   ref_bulk %>%
+#   left_join(haplotype_marker_counts, by=c('sample', 'unitig')) %>%
+#   left_join(reference_alignments, by=c('sample', 'unitig')) %>%
+#   group_by(sample, cluster, tname) %>%
 #   summarise(qlen_ref=sum(qlen), .groups='drop')
-# 
+#
 # srbc <-
-#   swapped_ref_bulk %>% 
-#   left_join(haplotype_marker_counts, by=c('sample', 'unitig')) %>% 
-#   left_join(reference_alignments, by=c('sample', 'unitig')) %>% 
-#   group_by(sample, cluster, tname) %>% 
+#   swapped_ref_bulk %>%
+#   left_join(haplotype_marker_counts, by=c('sample', 'unitig')) %>%
+#   left_join(reference_alignments, by=c('sample', 'unitig')) %>%
+#   group_by(sample, cluster, tname) %>%
 #   summarise(swapped_qlen_ref=sum(qlen), .groups='drop')
-# 
+#
 # plot_data <-
-#   full_join(rbc, srbc, by=c('sample', 'cluster', 'tname')) %>% 
+#   full_join(rbc, srbc, by=c('sample', 'cluster', 'tname')) %>%
 #   mutate(
 #     qlen_ref = tidyr::replace_na(qlen_ref, 0),
 #     swapped_qlen_ref = tidyr::replace_na(swapped_qlen_ref, 0)
-#     ) %>% 
+#     ) %>%
 #   mutate(qlen = ifelse(qlen_ref < swapped_qlen_ref, qlen_ref, swapped_qlen_ref))
-# 
-# 
+#
+#
 # plot_data <-
-#   plot_data %>% 
-#   group_by(sample, tname) %>% 
+#   plot_data %>%
+#   group_by(sample, tname) %>%
 #   summarise(qlen = sum(qlen))
-# 
+#
 # total_assembly_size <-
-#   reference_alignments %>% 
+#   reference_alignments %>%
 #   filter(sample == 'NA24385') %>%
-#   group_by(tname) %>% 
-#   summarise(tot_size = sum(qlen)) 
-# 
+#   group_by(tname) %>%
+#   summarise(tot_size = sum(qlen))
+#
 # plot_data <-
-#   plot_data %>% 
-#   left_join(total_assembly_size) %>% 
+#   plot_data %>%
+#   left_join(total_assembly_size) %>%
 #   mutate(perc= qlen / tot_size)
-# 
-# 
+#
+#
 # plot_data %>%
 #   mutate(fraction = case_when(
 #     grepl('frac-0', sample) ~ 0,
@@ -1222,7 +1283,7 @@ plot_data %>%
 #     axis.text.x = element_text(angle = 45, hjust = 1),
 #     axis.title.x = element_blank()
 #   )
-# # 
+# #
 # bulk <-
 #   left_join(bulk, ref, by='unitig')
 
@@ -1255,7 +1316,7 @@ plot_data %>%
       "Switch Error (%)",
       "Hamming Error (%)"
     )
-  )) %>% 
+  )) %>%
   ggplot(aes(x = `Haplotype Group`, y = value, shape = as.factor(`Haplotype ID`))) +
   geom_point(size=3) +
   facet_wrap( ~ statistic, scales = 'free') +
