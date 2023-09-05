@@ -16,52 +16,52 @@ strip_range <- function(x) {
 
 bind_with_inverted_unitigs <- function(counts_df) {
   counts_df <-
-    counts_df %>% 
-    # binned_counts_df %>% 
-    # marginalize_wc_counts %>% 
+    counts_df %>%
+    # binned_counts_df %>%
+    # marginalize_wc_counts %>%
     mutate(n=c+w, unitig_dir = unitig)
-  
+
   counts_df <-
-    counts_df %>% 
+    counts_df %>%
     bind_rows(
-      counts_df %>% 
+      counts_df %>%
         mutate(unitig_dir = paste0(unitig, '_inverted'),
                c = n-c,
                w = n-w)
     )
-  
+
   return(counts_df)
 }
 
 whats_covered <- function(crick_coverage_ratio, coverage_ratio_threshold=0.75) {
-  
+
   if(is.na(crick_coverage_ratio)) {
     return(NA)
   }
-  
+
   if(crick_coverage_ratio >= coverage_ratio_threshold) {
     return('crick')
   }
-  
+
   if(crick_coverage_ratio <= 1-coverage_ratio_threshold) {
     return('watson')
   }
-  
+
   return(NA)
-  
+
 }
 make_bandage_colors <- function(color_hex, counts_1, counts_2) {
-  
+
   stopifnot(length(color_hex) == 1)
   stopifnot(length(counts_1) == 1)
   stopifnot(length(counts_2) == 1)
-  
-  pal_f <- colorRamp(c(color_hex, 'grey', invert_hex(color_hex))) 
-  
+
+  pal_f <- colorRamp(c(color_hex, 'grey', invert_hex(color_hex)))
+
   if(is.na(counts_1) | is.na(counts_2)) {
     return('black')
   }
-  
+
   if(counts_1 == 0 & counts_2 == 0) {
     rgb_color <- pal_f(0.5)
     # alpha <- round(0.1 * 255)
@@ -70,9 +70,9 @@ make_bandage_colors <- function(color_hex, counts_1, counts_2) {
     rgb_color <- pal_f(ratio)
     # alpha <- round(ratio * 255)
   }
-  
+
   color <- rgb(rgb_color[1], rgb_color[2], rgb_color[3], maxColorValue=255)
-  
+
   return(color)
 }
 
@@ -97,7 +97,7 @@ expected_args <-
     ## Output
     '--output-marker-counts',
     '--output-lib',
-    
+
     ## Params
     '--segment-length-threshold',
     '--expect-XY-separate',
@@ -111,10 +111,10 @@ arg_idx <- c(arg_idx, length(args) + 1) # edge case of last tag
 get_values <- function(arg, singular=TRUE){
   idx <- which(args == arg)
   stopifnot(length(idx) == 1)
-  
+
   next_idx <- arg_idx[which.max(arg_idx > idx)]
   values <- args[(idx + 1):(next_idx - 1)]
-  
+
   # More than one value? return list. One value ~ remove from list structure. It
   # is probably bad practice to return two different types like that, but most
   # arguments have single values and it makes the code less annoying to look at.
@@ -124,7 +124,7 @@ get_values <- function(arg, singular=TRUE){
   } else {
     # stopifnot(length(values)>1)
   }
-  
+
   return(values)
 }
 
@@ -171,7 +171,7 @@ output_lib <- get_values('--output-lib')
 
 cat('Reading connected components\n')
 
-components_df <- 
+components_df <-
   readr::read_tsv(connected_components)
 
 ## Alignment Counts  ---------------------------------------------------------
@@ -184,23 +184,23 @@ exact_match_counts_df <-
 
 stopifnot(setequal(pull_distinct(counts_df, unitig), pull_distinct(exact_match_counts_df, unitig)))
 
-unitig_lengths_df <- 
-  counts_df %>% 
+unitig_lengths_df <-
+  counts_df %>%
   distinct(unitig, length)
 
 long_unitigs_df <-
-  unitig_lengths_df %>% 
-  filter(length >= segment_length_threshold) %>% 
+  unitig_lengths_df %>%
+  filter(length >= segment_length_threshold) %>%
   distinct(unitig)
 
 counts_df <-
   counts_df %>%
-  filter(length >= segment_length_threshold) %>% 
-  select(-length) 
+  filter(length >= segment_length_threshold) %>%
+  select(-length)
 
 exact_match_counts_df <-
-  exact_match_counts_df %>% 
-  filter(length >= segment_length_threshold) %>% 
+  exact_match_counts_df %>%
+  filter(length >= segment_length_threshold) %>%
   select(-length)
 
 
@@ -208,9 +208,9 @@ exact_match_counts_df <-
 
 ## ContiBAIT QC ------------------------------------------------------------
 
-strand.freq <- 
-  with(counts_df, make_wc_matrix(w, c, lib, unitig)) %>% 
-  spoof_rownames() %>% 
+strand.freq <-
+  with(counts_df, make_wc_matrix(w, c, lib, unitig)) %>%
+  spoof_rownames() %>%
   StrandFreqMatrix()
 
 
@@ -239,8 +239,8 @@ strand.states <-
     minLib = 20
   )
 
-lib_names <- 
-  counts_df %>% 
+lib_names <-
+  counts_df %>%
   pull_distinct(lib)
 
 included_libraries <- colnames(strand.states$strandMatrix)
@@ -274,30 +274,30 @@ mean_coverage <-
 
 mean_coverage <-
   mean_coverage %>%
-  mutate(unitig_range = spoof_range(unitig)) 
+  mutate(unitig_range = spoof_range(unitig))
 
 vector_lengths <-
-  strand.freq@.Data %>% 
-  apply(1, function(x) sqrt(sum(x * x, na.rm=TRUE))) %>% 
+  strand.freq@.Data %>%
+  apply(1, function(x) sqrt(sum(x * x, na.rm=TRUE))) %>%
   tibble::enframe(name = 'unitig_range', value = 'vec_length')
 
 weights <-
-  components_df %>% 
-  left_join(unitig_lengths_df) %>% 
-  group_by(component) %>% 
-  mutate(component_size = sum(length)) %>% 
-  ungroup() 
+  components_df %>%
+  left_join(unitig_lengths_df) %>%
+  group_by(component) %>%
+  mutate(component_size = sum(length)) %>%
+  ungroup()
 
-weights <- 
-  weights %>% 
-  mutate(unitig_range = spoof_range(unitig)) %>% 
-  left_join(vector_lengths) %>% 
-  left_join(mean_coverage) %>% 
-  mutate(vec_length = round(vec_length)) 
-  
 weights <-
-  weights %>% 
-  arrange(component_size, vec_length, coverage, length) %>% 
+  weights %>%
+  mutate(unitig_range = spoof_range(unitig)) %>%
+  left_join(vector_lengths) %>%
+  left_join(mean_coverage) %>%
+  mutate(vec_length = round(vec_length))
+
+weights <-
+  weights %>%
+  arrange(component_size, vec_length, coverage, length) %>%
   mutate(weight = 1:n())
 
 weights <-
@@ -317,7 +317,7 @@ clust <-
                  randomWeight = weights,
                  clusterBy = 'hetero',
                  verbose = FALSE)
- 
+
 ## Detect Haploid Clusters ----------------------------------------------
 
 # debugonce(findSexGroups, signature = c('LinkageGroupList', 'StrandStateMatrix'))
@@ -334,16 +334,16 @@ if(length(grep('^sex', names(clust), value = TRUE)) > 1) {
 ## Enframe -----------------------------------------------------------------
 
 cluster_df <-
-  set_names(clust@.Data, clust@names) %>% 
-  map(~tibble(unitig = strip_range(.x))) %>% 
+  set_names(clust@.Data, clust@names) %>%
+  map(~tibble(unitig = strip_range(.x))) %>%
   bind_rows(.id = 'cluster')
 
 cluster_df <-
-  cluster_df %>% 
+  cluster_df %>%
   distinct(cluster, unitig)
 
 cluster_df <-
-  cluster_df %>% 
+  cluster_df %>%
   right_join(long_unitigs_df, by='unitig')
 
 # Cluster Refinement ------------------------------------------------------
@@ -355,16 +355,16 @@ cat('Refining Clusters\n')
 cat('Removing micro clusters: \n')
 
 cluster_component_fractions <-
-  components_df %>% 
-  left_join(cluster_df, by='unitig') %>% 
+  components_df %>%
+  left_join(cluster_df, by='unitig') %>%
   left_join(unitig_lengths_df, by = 'unitig')
 
 cluster_component_fractions <-
-  cluster_component_fractions %>% 
-  group_by(component, cluster) %>% 
-  summarise(length = sum(length), .groups="drop") %>% 
-  group_by(component) %>% 
-  mutate(perc_length = length/sum(length)) %>% 
+  cluster_component_fractions %>%
+  group_by(component, cluster) %>%
+  summarise(length = sum(length), .groups="drop") %>%
+  group_by(component) %>%
+  mutate(perc_length = length/sum(length)) %>%
   ungroup()
 
 # Arbitrary threshold
@@ -373,23 +373,23 @@ component_fraction_threshold <- 0.15
 micro_component_cluster_df <-
   cluster_component_fractions %>%
   filter(!is.na(cluster)) %>%
-  # filter(!(cluster %in% par_clusters)) %>% 
-  # filter(cluster %in% one_component_clusters) %>% 
+  # filter(!(cluster %in% par_clusters)) %>%
+  # filter(cluster %in% one_component_clusters) %>%
   filter(perc_length <= component_fraction_threshold)
 
 micro_component_clusters <-
-  micro_component_cluster_df %>% 
+  micro_component_cluster_df %>%
   pull_distinct(cluster)
 
 cat('No. micro clusters: ', length(micro_component_clusters), '\n')
 
 micro_component_cluster_unitigs <-
-  left_join(components_df, cluster_df, by='unitig') %>% 
-  semi_join(micro_component_cluster_df, by = c('component', 'cluster')) %>% 
+  left_join(components_df, cluster_df, by='unitig') %>%
+  semi_join(micro_component_cluster_df, by = c('component', 'cluster')) %>%
   pull(unitig)
 
 cluster_df <-
-  cluster_df  %>% 
+  cluster_df  %>%
   mutate(cluster = ifelse(unitig %in% micro_component_cluster_unitigs, NA, cluster))
 
 
@@ -418,9 +418,9 @@ cat('Assigning "high-noise" unitigs using cosine similarity \n')
 min_n <- 5
 
 #TODO NA handling of values? What if all NA
-similarities <- 
-  counts_df %>% 
-  with(make_wc_matrix(w, c, lib, unitig, min_n=min_n)) %>% 
+similarities <-
+  counts_df %>%
+  with(make_wc_matrix(w, c, lib, unitig, min_n=min_n)) %>%
   cosine_similarity()
 
 # TODO
@@ -433,53 +433,53 @@ score_thresh <- 0.5
 # TODO fix this while condition so that a break is not needed
 while(any_assigned || (length_quantile_threshold <= 1 || score_thresh >= 0.5)) {
 
-  
+
   any_assigned <- FALSE
-  
+
   unclustered_unitigs <-
-    cluster_df %>% 
-    filter(is.na(cluster)) %>% 
+    cluster_df %>%
+    filter(is.na(cluster)) %>%
     pull(unitig)
-  
+
   if(length(unclustered_unitigs) == 0) {
     break
   }
-  
+
   candidate_cluster_unitigs <-
     cluster_df %>%
     left_join(components_df, by='unitig') %>%
     with(split(unitig, cluster))
-  
+
   scores <-
     map(candidate_cluster_unitigs, function(x) {
       unclustered_unitigs <- unclustered_unitigs[!(unclustered_unitigs %in% x)]
       sims <- abs(similarities[unclustered_unitigs, x, drop=FALSE])
       apply(sims, 1, mean, na.rm=TRUE)
     })
-  
+
   # convert to df
   scores_df <-
-    scores %>% 
-    map(tibble::enframe, name='unitig', value='score') %>% 
-    map(~mutate(.x, unitig = as.character(unitig))) %>% 
+    scores %>%
+    map(tibble::enframe, name='unitig', value='score') %>%
+    map(~mutate(.x, unitig = as.character(unitig))) %>%
     bind_rows(.id='cluster')
-  
-  
+
+
   if(all(is.na(scores_df$score))) {
     cat('No valid similarity scores\n')
     break
   }
-  
+
   # TODO what if all NA
   max_score <-
-    scores_df %>% 
-    filter(score == max(score, na.rm = TRUE)) %>% 
+    scores_df %>%
+    filter(score == max(score, na.rm = TRUE)) %>%
     slice_head(n=1) # break ties
-  
+
 
   if(max_score$score > score_thresh) {
     any_assigned <- TRUE
-    
+
     cat(
       'Assigning unitig:',
       max_score$unitig,
@@ -489,7 +489,7 @@ while(any_assigned || (length_quantile_threshold <= 1 || score_thresh >= 0.5)) {
       max_score$score,
       '\n'
     )
-    
+
     cluster_df <-
       cluster_df %>%
       mutate(cluster = ifelse(unitig == max_score$unitig, max_score$cluster, cluster))
@@ -499,41 +499,41 @@ while(any_assigned || (length_quantile_threshold <= 1 || score_thresh >= 0.5)) {
       score_thresh,
       '\n'
     )
-    
+
     cat(
       'Unitig length quantile threshold:',
       length_quantile_threshold,
       '\n'
     )
-    
+
     unitigs_to_consider <-
-      unitig_lengths_df %>% 
-      slice_max(order_by=length, prop=length_quantile_threshold) %>% 
-      pull(unitig) %>% 
+      unitig_lengths_df %>%
+      slice_max(order_by=length, prop=length_quantile_threshold) %>%
+      pull(unitig) %>%
       intersect(unclustered_unitigs)
-    
+
     unclustered_sims <-
-      similarities[unitigs_to_consider, unitigs_to_consider, drop=FALSE] %>% 
+      similarities[unitigs_to_consider, unitigs_to_consider, drop=FALSE] %>%
       abs()
-    
+
     unclustered_sims <-
       unclustered_sims * upper.tri(unclustered_sims)
-    
-    max_pair <- 
+
+    max_pair <-
       which(unclustered_sims == max(unclustered_sims, na.rm=TRUE), arr.ind = TRUE)
-    
+
     max_sim <-
       unclustered_sims[max_pair[1], max_pair[2]]
-    
+
     if(!is.na(max_sim) && max_sim > score_thresh) {
       any_assigned <- TRUE
       new_cluster_ix <- new_cluster_ix + 1
-      
+
       new_cluster_unitigs <- c(rownames(unclustered_sims)[max_pair[1]], colnames(unclustered_sims)[max_pair[2]])
       cat('creating new cluster with unitigs:', new_cluster_unitigs,
           'with similarity:', max_sim,
           '\n')
-      
+
       cluster_df <-
         cluster_df %>%
         mutate(cluster = ifelse(unitig %in% new_cluster_unitigs, paste0('LGcosLong', new_cluster_ix), cluster))
@@ -545,8 +545,8 @@ while(any_assigned || (length_quantile_threshold <= 1 || score_thresh >= 0.5)) {
       if(length_quantile_threshold > 1) length_quantile_threshold <- 1L
     }
   }
-  
-  
+
+
 }
 
 
@@ -579,13 +579,13 @@ cluster_df <-
 ## Unusual Unitigs ---------------------------------------------------------
 
 high_wc_unitigs <-
-  strand.states$AWCcontigs@seqnames %>% 
+  strand.states$AWCcontigs@seqnames %>%
   as.character()
 
 low_wc_unitigs <-
-  cluster_df %>% 
-  filter(grepl('^sex', cluster)) %>% 
-  pull_distinct(unitig) %>% 
+  cluster_df %>%
+  filter(grepl('^sex', cluster)) %>%
+  pull_distinct(unitig) %>%
   setdiff(high_wc_unitigs)
 
 ## PAR Detection -----------------------------------------------------------
@@ -598,18 +598,18 @@ cat('Detecting PAR\n')
 
 haploid_component_fractions_df <-
   cluster_df %>%
-  left_join(components_df, by='unitig') %>% 
-  left_join(unitig_lengths_df, b='unitig') %>% 
-  group_by(component) %>% 
-  filter(any(grepl('^sex', cluster))) %>% 
+  left_join(components_df, by='unitig') %>%
+  left_join(unitig_lengths_df, b='unitig') %>%
+  group_by(component) %>%
+  filter(any(grepl('^sex', cluster))) %>%
   ungroup()
 
 haploid_component_fractions_df <-
-  haploid_component_fractions_df %>% 
-  group_by(component, cluster) %>% 
-  summarise(length = sum(length), .groups="drop") %>% 
-  group_by(component) %>% 
-  mutate(perc = length/sum(length)) %>% 
+  haploid_component_fractions_df %>%
+  group_by(component, cluster) %>%
+  summarise(length = sum(length), .groups="drop") %>%
+  group_by(component) %>%
+  mutate(perc = length/sum(length)) %>%
   ungroup()
 
 # TODO handle warning when nrow(haploid_component_fractions_df) == 0
@@ -629,17 +629,17 @@ perc_threshold <- 0.90
 # cluster among clustered unitigs, and occupies more than `perc_threshold`
 # percent of a component
 haploid_components <-
-  haploid_component_fractions_df %>% 
-  filter(!is.na(cluster)) %>% 
-  group_by(component) %>% 
-  filter(perc == max(perc) & grepl('^sex', cluster) & perc >= perc_threshold) %>% 
-  ungroup() %>% 
-  pull_distinct(component) 
+  haploid_component_fractions_df %>%
+  filter(!is.na(cluster)) %>%
+  group_by(component) %>%
+  filter(perc == max(perc) & grepl('^sex', cluster) & perc >= perc_threshold) %>%
+  ungroup() %>%
+  pull_distinct(component)
 
 haploid_component_unititgs <-
-  components_df %>% 
-  filter(component %in% haploid_components) %>% 
-  semi_join(long_unitigs_df, by='unitig') %>% 
+  components_df %>%
+  filter(component %in% haploid_components) %>%
+  semi_join(long_unitigs_df, by='unitig') %>%
   pull(unitig)
 
 # expect_XY_separate ~ only perform PAR detection for assemblies where the XY
@@ -648,15 +648,15 @@ haploid_component_unititgs <-
 # shoould not be attempted. The condition that the haploid cluster be the
 # largest likely would prevent anything from going wrong, but this flag is here
 # to be extra safe.
-par_clusters <- 
-  cluster_df %>% 
+par_clusters <-
+  cluster_df %>%
   left_join(unitig_lengths_df) %>%
   filter(length < 2.8e6) %>% # size check
-  filter(unitig %in% haploid_component_unititgs) %>% 
-  filter(!grepl('^sex', cluster)) %>% 
+  filter(unitig %in% haploid_component_unititgs) %>%
+  filter(!grepl('^sex', cluster)) %>%
   filter(!is.na(cluster)) %>%
-  filter(expect_XY_separate) %>% 
-  pull_distinct(cluster) 
+  filter(expect_XY_separate) %>%
+  pull_distinct(cluster)
 
 
 cat('No. PAR clusters detected: ', length(par_clusters), '\n')
@@ -665,19 +665,19 @@ if(length(par_clusters) > 1) {
   WARNINGS <-
     c(WARNINGS,
       "more than 1 PAR cluster, haven't thought about what will happen in this case")
-  
+
 }
 
 ### Haploid Propagation------------------------------------------------------
 
 par_unitigs <-
-  cluster_df %>% 
-  filter(cluster %in% par_clusters) %>% 
+  cluster_df %>%
+  filter(cluster %in% par_clusters) %>%
   pull(unitig)
 
 # PAR and haploid need to be oriented together.
 cluster_df <-
-  cluster_df %>% 
+  cluster_df %>%
   mutate(cluster = ifelse(cluster %in% par_clusters | grepl('^sex', cluster), 'LGXY', cluster))
 
 # cluster_df <-
@@ -690,19 +690,19 @@ cluster_df <-
 threshold <- 1e7
 
 cluster_sizes <-
-  cluster_df %>% 
-  left_join(unitig_lengths_df) %>% 
-  group_by(cluster) %>% 
+  cluster_df %>%
+  left_join(unitig_lengths_df) %>%
+  group_by(cluster) %>%
   summarise(length = sum(length), .groups = 'drop')
 
 small_clusters <-
-  cluster_sizes %>% 
-  filter(length < threshold) %>% 
+  cluster_sizes %>%
+  filter(length < threshold) %>%
   pull(cluster)
 
 cluster_df <-
   cluster_df %>%
-  mutate(cluster = ifelse(cluster %in% small_clusters & grepl('LGcos', cluster), NA, cluster)) 
+  mutate(cluster = ifelse(cluster %in% small_clusters & grepl('LGcos', cluster), NA, cluster))
 
 # Assign NA cluster -------------------------------------------------------
 
@@ -715,7 +715,7 @@ cluster_df <-
 
 cat('Detecting unitig orientation\n')
 # Add inverted version of every unitig to dataset. Guarantees that there will
-# unitigs in both orientations when clustering 
+# unitigs in both orientations when clustering
 
 # TODO need to double check /rerun the strand orientation clustering. If The
 # haploid and PAR clusters are oriented separately ~ chance that they could
@@ -741,7 +741,7 @@ cat('Detecting unitig orientation\n')
 # data. A cheap solution could be just to filter the data by mapq to "reveal"
 # the WC signal. However, I am curious to see if there is a way to derive the WC
 # library weights without that.
-mem_data_plane <- 
+mem_data_plane <-
   get_chrom_cluster_data_planes(counts_df, cluster_df, unitig_lengths_df, supervision = 'PC1')
 
 
@@ -764,7 +764,7 @@ mem_data_plane <-
 # would be a way that works directly with repulsive pairs to clusters the two
 # orientations. Maybe something perpendicular to the mean vector between each
 # pair of inverses or something like that, though this would require some
-# thought with regards to the signs of the vectors. 
+# thought with regards to the signs of the vectors.
 
 # FIXME The above has become a fixme, because there are now occasions where the
 # PAR is mis-clustered due to improper orientation. Mean Perependicular vector?
@@ -797,11 +797,11 @@ sims <-
   map(sims, function(x) {
     row_ix <-
       apply(x, 1, function(xx) all(is.na(xx)))
-    
+
     col_ix <-
       apply(x, 2, function(xx) all(is.na(xx)))
-    
-    
+
+
     x[!row_ix, !col_ix, drop=FALSE]
   })
 
@@ -811,14 +811,14 @@ dists <-
 
 clusts <-
   map(dists, function(x) {
-    hclust(x, method = 'complete') %>% 
+    hclust(x, method = 'complete') %>%
       cutree(k=2)
   })
 
 strand_orientation_clusters_df <-
-  clusts %>% 
-  map_dfr(tibble::enframe, 'unitig_dir', 'strand_cluster', .id='cluster') %>% 
-  mutate(unitig = gsub('_inverted$', '', unitig_dir)) %>% 
+  clusts %>%
+  map_dfr(tibble::enframe, 'unitig_dir', 'strand_cluster', .id='cluster') %>%
+  mutate(unitig = gsub('_inverted$', '', unitig_dir)) %>%
   mutate(strand_cluster = ifelse(strand_cluster==1, -1, 1))
 
 # add back in any unitigs remoed at ealier step
@@ -836,20 +836,20 @@ strand_orientation_clusters_df <-
 
 # TODO, a comparison to PC1 clustering, with a possible message if they differ
 strand_orientation_clusters_df <-
-  strand_orientation_clusters_df %>% 
+  strand_orientation_clusters_df %>%
   select(cluster, unitig, unitig_dir, strand_cluster)
 
 # I have discovered that some points are located truly at the origin (for
-# all PCs), and therefore do not separate on the first PC. What lol. 
+# all PCs), and therefore do not separate on the first PC. What lol.
 # TODO Figure out what leads to this. (HG03456)
-strand_orientation_clusters_df <- 
-  strand_orientation_clusters_df %>% 
+strand_orientation_clusters_df <-
+  strand_orientation_clusters_df %>%
   mutate(strand_cluster = ifelse(strand_cluster != 0, strand_cluster, ifelse(grepl('_inverted', unitig_dir), -1, 1)))
 
 # Warning that checks that every unitig and its invert are in opposite clusters
 bad <-
-  strand_orientation_clusters_df %>% 
-  group_by(unitig, strand_cluster) %>% 
+  strand_orientation_clusters_df %>%
+  group_by(unitig, strand_cluster) %>%
   filter(n() != 1 | 0 %in% strand_cluster)
 
 if(nrow(bad) > 0) {
@@ -874,7 +874,7 @@ em_counts <-
   exact_match_counts_df %>%
   bind_with_inverted_unitigs() %>%
   left_join(cluster_df, by='unitig') %>%
-  split(.$cluster) 
+  split(.$cluster)
 
 ## One Haplotype Clusters --------------------------------------------------
 
@@ -893,38 +893,38 @@ is_one_haplotype_cluster <-
     sort_counts <-
       x %>%
       filter(!grepl('inverted', unitig_dir))
-    
+
     unitigs <-
-      sort_counts %>% 
+      sort_counts %>%
       pull_distinct(unitig)
-    
+
     if(length(unitigs) == 1) {
       cat('One unitig cluster:', nm, '\n')
       return(unitigs)
     }
-    
-    
-    sort_counts <- 
-      sort_counts %>% 
-      left_join(fastmap_data_plane$weights, by=c('cluster', 'lib')) %>% 
+
+
+    sort_counts <-
+      sort_counts %>%
+      left_join(fastmap_data_plane$weights, by=c('cluster', 'lib')) %>%
       mutate(p_weight = ifelse(is.na(p_weight), 0, p_weight))
-    
+
     # TODO this weight thing isn't quite right.
     sort_counts <-
-      sort_counts %>% 
+      sort_counts %>%
       mutate( # pseudo_counts
         p_c = ifelse(sign(p_weight) == 1, c/p_weight, w/abs(p_weight)),
         p_w = ifelse(sign(p_weight) == 1, w/p_weight, c/abs(p_weight))
-      ) 
-    
+      )
+
     # scale marker ratio to original N
     sort_counts <-
-      sort_counts %>% 
+      sort_counts %>%
       mutate(
         c = ifelse(p_c + p_w == 0, 0, p_c/(p_c + p_w) * n),
         w = ifelse(p_c + p_w == 0, 0, p_w/(p_c + p_w) * n)
-      )%>% 
-      select(-p_c, -p_w) %>% 
+      )%>%
+      select(-p_c, -p_w) %>%
       mutate(c = as.integer(ceiling(c)), w=as.integer(ceiling(w)))
 
 
@@ -932,45 +932,45 @@ is_one_haplotype_cluster <-
     # Trying to sort on good, big unitigs that are often present in verkko graphs.
     unitigs <-
       sort_counts %>%
-      left_join(unitig_lengths_df, by='unitig') %>% 
-      filter(length >= 1e6) %>% 
-      pull_distinct(unitig) 
-    
+      left_join(unitig_lengths_df, by='unitig') %>%
+      filter(length >= 1e6) %>%
+      pull_distinct(unitig)
+
     if(length(unitigs) < 1) {
       cat('No adequately long unitigs for number of clusters detection:', nm, '\n')
       return(NA)
     }
-    
+
     wc <-
       sort_counts %>%
       with(make_wc_matrix(w,c,lib,unitig, min_n=1))
-    
+
     unitig_vector_lengths <-
       wc %>%
       apply(1, function(x) (sqrt(sum(x^2, na.rm=T))))
-    
+
     print(unitig_vector_lengths)
-    
+
     threshold <-
       max(unitig_vector_lengths) - 0.2 *  max(unitig_vector_lengths)
-    
+
     #FIXME A genuine one-haplotype cluster may be flagged by this incorrectly.
     #If something fails this check, it needs to be looked at in unweighted
     #data space as well. Similarly, a one haplotype cluster may look very WC
     #after down-weighting WW libraries. OR maybe not I have run tests with
     #manually created one-haplotype clusters and it seems fine...
-    
+
     # TODO Minimum vector length needs to be scaled by
     #num libraries
     min_vector_length <- 4
     unitigs <-
       names(unitig_vector_lengths)[unitig_vector_lengths > min_vector_length & unitig_vector_lengths > threshold]
-    
+
     if(length(unitigs) < 1) {
       cat('Too few adequately low-noise unitigs for number of clusters detection:', nm, '\n')
       return(NA)
     }
-    
+
     fake_cluster_df <-
       tibble(unitig = unitigs) %>%
       mutate(cluster = unitig)
@@ -1006,23 +1006,23 @@ is_one_haplotype_cluster <-
   })
 
 one_haplotype_cluster_unitigs <-
-  is_one_haplotype_cluster %>% 
-  discard(function(x) length(x) == 0) %>% 
+  is_one_haplotype_cluster %>%
+  discard(function(x) length(x) == 0) %>%
   discard(function(x) all(is.na(x)))
 
-two_haplotype_clusters <- 
-  cluster_df %>% 
-  pull_distinct(cluster) %>% 
+two_haplotype_clusters <-
+  cluster_df %>%
+  pull_distinct(cluster) %>%
   setdiff(names(one_haplotype_cluster_unitigs))
 
 ### Filter One-haplotype Clusters -------------------------------------------
 
 # Want to filter out one unitig cluster on a components with other clusters
 one_unitig_cluster_unitigs <-
-  cluster_df %>% 
-  group_by(cluster) %>% 
-  filter(n() == 1) %>% 
-  ungroup() %>% 
+  cluster_df %>%
+  group_by(cluster) %>%
+  filter(n() == 1) %>%
+  ungroup() %>%
   pull_distinct(unitig)
 
 # TODO maybe make this a percentage of component threshold, like a one unitig cluster makes
@@ -1037,98 +1037,98 @@ one_cluster_components <-
   pull(component)
 
 one_cluster_component_unitigs <-
-  cluster_df %>% 
+  cluster_df %>%
   left_join(components_df, by='unitig') %>%
-  filter(component %in% one_cluster_components) %>% 
+  filter(component %in% one_cluster_components) %>%
   pull_distinct(unitig)
 
 # Often better to not attempt to assign solo unitigs, which are often
 # misclustered. Often, the proper phasing can be inferred from the unitigs
 # surrounding the misclustered unitig. However, sometimes half of a chromosome
 # is all by itself in a cluster, and we still want to include those.
-length_threshold <-10e7
+length_threshold <-10e6
 one_haplotype_cluster_unitigs <-
   one_haplotype_cluster_unitigs %>%
   imap(function(x, nm) {
-    unitig_length <- 
-      unitig_lengths_df %>% 
-      filter(unitig == x) %>% 
+    unitig_length <-
+      unitig_lengths_df %>%
+      filter(unitig == x) %>%
       pull(length)
     if (length(x) == 1 && x %in% one_unitig_cluster_unitigs) {
       if (!(x %in% one_cluster_component_unitigs) & !(nm == 'LGXY') & unitig_length <= length_threshold) {
         return(NA)
       }
     }
-    
+
     return(x)
-    
+
   })
 
 one_haplotype_cluster_unitigs <-
-  one_haplotype_cluster_unitigs %>% 
-  discard(function(x) all(is.na(x))) 
+  one_haplotype_cluster_unitigs %>%
+  discard(function(x) all(is.na(x)))
 
 ### Count one-haplotype clusters --------------------------------------------
 
 
 # arrange by size
 one_haplotype_clusters <-
-  cluster_df %>% 
-  filter(cluster %in% names(one_haplotype_cluster_unitigs)) %>% 
-  left_join(unitig_lengths_df, by='unitig') %>% 
-  group_by(cluster) %>% 
-  summarise(length=sum(length), .groups='drop') %>% 
-  arrange(length) %>% 
+  cluster_df %>%
+  filter(cluster %in% names(one_haplotype_cluster_unitigs)) %>%
+  left_join(unitig_lengths_df, by='unitig') %>%
+  group_by(cluster) %>%
+  summarise(length=sum(length), .groups='drop') %>%
+  arrange(length) %>%
   pull(cluster)
 
 # Assign to haplotype alternating  by size.
 one_haplotype_cluster_counts <-
   imap(one_haplotype_clusters, function(clust, n) {
-    
+
     counts <-
       em_counts[[clust]] %>%
       filter(!grepl('inverted', unitig_dir))
-    
-    swapping_unitigs <- 
+
+    swapping_unitigs <-
       one_haplotype_cluster_unitigs[[clust]]
-    
+
     # stopifnot(length(swapping_unitig) == 1)
-    
-    swaps <- 
-      counts %>% 
-      filter(unitig %in% swapping_unitigs) %>% 
-      group_by(lib) %>% 
-      summarise(c=sum(c), w=sum(w), .groups='drop') %>% 
-      mutate(swap = c > w) %>% 
+
+    swaps <-
+      counts %>%
+      filter(unitig %in% swapping_unitigs) %>%
+      group_by(lib) %>%
+      summarise(c=sum(c), w=sum(w), .groups='drop') %>%
+      mutate(swap = c > w) %>%
       distinct(lib, swap)
-    
+
     counts <-
-      counts %>% 
-      left_join(swaps, by='lib') %>% 
+      counts %>%
+      left_join(swaps, by='lib') %>%
       mutate(tmp_c = ifelse(swap, c, w),
              tmp_w = ifelse(swap, w, c)
       )
     if ((n %% 2) == 1) {
       counts <-
-        counts %>% 
+        counts %>%
         mutate(c = tmp_c, w = tmp_w)
     } else {
       counts <-
-        counts %>% 
+        counts %>%
         mutate(c = tmp_w, w = tmp_c)
     }
-    
-    counts %>% 
-      group_by(unitig) %>% 
-      summarise(n = sum(n), c=sum(c), w=sum(w)) %>% 
+
+    counts %>%
+      group_by(unitig) %>%
+      summarise(n = sum(n), c=sum(c), w=sum(w)) %>%
       select(unitig, n, c, w)
   })
 
 # In case there are 0 uni clusters.
 one_haplotype_cluster_counts <-
-  one_haplotype_cluster_counts %>% 
+  one_haplotype_cluster_counts %>%
   bind_rows(tibble(unitig = character(), n=integer(), c=double(), w=double()))
-          
+
 
 ## Two Haplotype Clusters --------------------------------------------------
 
@@ -1138,45 +1138,45 @@ one_haplotype_cluster_counts <-
 hmc <-
   imap(em_counts[two_haplotype_clusters], function(counts, nm){
     # browser()
-    
-    weights <- 
-      fastmap_data_plane$weights %>% 
+
+    weights <-
+      fastmap_data_plane$weights %>%
       filter(cluster == nm)
-    
-    out <- 
-      counts %>% 
-      filter(!grepl('inverted', unitig_dir)) %>% 
-      right_join(weights, by='lib') 
+
+    out <-
+      counts %>%
+      filter(!grepl('inverted', unitig_dir)) %>%
+      right_join(weights, by='lib')
 
     # TODO this weights thing isn't quite right.
     out <-
-      out %>% 
+      out %>%
       mutate( # pseudo_counts
         p_c = ifelse(sign(b_weight) == 1, b_weight^2 * c, b_weight^2 * w),
         p_w = ifelse(sign(b_weight) == 1, b_weight^2 * w, b_weight^2 * c)
-      ) %>% 
+      ) %>%
       group_by(unitig) %>%
       summarise(p_c = sum(p_c), p_w = sum(p_w), n=sum(n)) %>%
       ungroup()
 
     # scale marker ratio to original N
     out <-
-      out %>% 
+      out %>%
       mutate(
         c = ifelse(p_c + p_w == 0, 0, p_c/(p_c + p_w) * n),
         w = ifelse(p_c + p_w == 0, 0, p_w/(p_c + p_w) * n)
-      )%>% 
-      select(-p_c, -p_w) 
+      )%>%
+      select(-p_c, -p_w)
     # Previously, this was select(-p_c, -p_w, n), which appeared to act exactly
     # the same as select(-p_c, -p_w), despite the apparent bug of the n at
     # the end of the select!
-    
+
     return(out)
   })
 
 marker_counts <-
-  bind_rows(hmc) %>% 
-  bind_rows(tibble(unitig = character(), n=integer(), c=double(), w=double())) %>% 
+  bind_rows(hmc) %>%
+  bind_rows(tibble(unitig = character(), n=integer(), c=double(), w=double())) %>%
   bind_rows(one_haplotype_cluster_counts)
 
 # Export ------------------------------------------------------------------
@@ -1189,9 +1189,9 @@ cat('Exporting\n')
 ### Join in Excluded Unitigs ------------------------------------------------
 all_unitigs <- unitig_lengths_df$unitig
 
-short_unitigs <- 
-  unitig_lengths_df %>% 
-  anti_join(long_unitigs_df, by='unitig') %>% 
+short_unitigs <-
+  unitig_lengths_df %>%
+  anti_join(long_unitigs_df, by='unitig') %>%
   pull(unitig)
 
 short_unitigs_df <-
@@ -1208,7 +1208,7 @@ haploid_unitigs_df <-
   tibble(unitig = low_wc_unitigs,
          exclusion = 'Too few WC Libraries')
 
-accounted_unitigs <- 
+accounted_unitigs <-
   c(marker_counts$unitig,
     short_unitigs_df$unitig,
     failed_qc_unitigs_df$unitig,
@@ -1235,23 +1235,23 @@ marker_counts <-
 ### Additional Information --------------------------------------------------
 
 marker_counts <-
-  marker_counts %>% 
-  left_join(cluster_df, by='unitig') %>% 
-  left_join(unitig_lengths_df, by='unitig') %>% 
+  marker_counts %>%
+  left_join(cluster_df, by='unitig') %>%
+  left_join(unitig_lengths_df, by='unitig') %>%
   left_join(components_df, by='unitig')
 
-marker_counts <- 
-  marker_counts %>% 
-  left_join(filter(strand_orientation_clusters_df, strand_cluster==1), by=c('unitig', 'cluster')) %>% 
-  select(-strand_cluster) %>% 
-  mutate(unitig_dir = ifelse(grepl('inverted$', unitig_dir), -1, 1)) %>% 
+marker_counts <-
+  marker_counts %>%
+  left_join(filter(strand_orientation_clusters_df, strand_cluster==1), by=c('unitig', 'cluster')) %>%
+  select(-strand_cluster) %>%
+  mutate(unitig_dir = ifelse(grepl('inverted$', unitig_dir), -1, 1)) %>%
   dplyr::rename(unitig_orientation = unitig_dir)
 
 # first three columns: name, counts_1, counts_2 for rukki
 marker_counts <-
-  marker_counts %>% 
-  dplyr::rename(hap_1_counts = c, hap_2_counts = w) %>% 
-  select(unitig, hap_1_counts, hap_2_counts, everything(), exclusion) %>% 
+  marker_counts %>%
+  dplyr::rename(hap_1_counts = c, hap_2_counts = w) %>%
+  select(unitig, hap_1_counts, hap_2_counts, everything(), exclusion) %>%
   arrange(cluster)
 
 ### Bandage Cluster Colors -----------------------------------------------------
@@ -1262,8 +1262,8 @@ cluster_palette <-
   mutate(Color = rainbow(n()))
 
 marker_counts <-
-  marker_counts %>% 
-  left_join(cluster_palette, by='cluster') %>% 
+  marker_counts %>%
+  left_join(cluster_palette, by='cluster') %>%
   mutate(Color = pmap_chr(list(Color, hap_1_counts, hap_2_counts), make_bandage_colors))
 
 # fill NA with 0 for rukki?
@@ -1285,67 +1285,67 @@ stopifnot(!anyNA(marker_counts$hap_2_counts))
 # call obvious hets? Or just any? how will this affect with HOM?
 ratio_threshold <- 2
 
-hap_calls <- 
-  marker_counts %>% 
+hap_calls <-
+  marker_counts %>%
   filter(!is.na(cluster)) %>%
   mutate(hap_1_counts = hap_1_counts + 1,
-         hap_2_counts = hap_2_counts + 1) %>% 
-  mutate(call = ifelse(hap_1_counts/hap_2_counts >= ratio_threshold, 1, NA)) %>% 
-  mutate(call = ifelse(hap_2_counts/hap_1_counts >= ratio_threshold, 0, call)) %>% 
-  filter(!is.na(call)) %>% 
+         hap_2_counts = hap_2_counts + 1) %>%
+  mutate(call = ifelse(hap_1_counts/hap_2_counts >= ratio_threshold, 1, NA)) %>%
+  mutate(call = ifelse(hap_2_counts/hap_1_counts >= ratio_threshold, 0, call)) %>%
+  filter(!is.na(call)) %>%
   mutate(original_call = call)
 
-hap_size_ratio_score <- 
-  hap_calls %>% 
-  count(call, wt = length) %>% 
-  with(n[1]/n[2]) %>% 
-  log() %>% 
+hap_size_ratio_score <-
+  hap_calls %>%
+  count(call, wt = length) %>%
+  with(n[1]/n[2]) %>%
+  log() %>%
   abs()
 
 n_iter <- 100
-clusters <- 
-  hap_calls %>% 
-  pull_distinct(cluster) %>% 
+clusters <-
+  hap_calls %>%
+  pull_distinct(cluster) %>%
   set_names()
 
 for(unused in 1:n_iter) {
   swap_scores <-
     map_dbl(clusters, function(x) {
       tmp_hap_calls <-
-        hap_calls %>% 
+        hap_calls %>%
         mutate(call = ifelse(cluster == x, abs(call-1), call))
-      
-      out <- 
-        tmp_hap_calls %>% 
-        count(call, wt = length) %>% 
-        with(n[1]/n[2]) %>% 
-        log() %>% 
+
+      out <-
+        tmp_hap_calls %>%
+        count(call, wt = length) %>%
+        with(n[1]/n[2]) %>%
+        log() %>%
         abs()
-      
+
       return(out)
     })
-  
+
   min_score <-
     swap_scores[which.min(swap_scores)]
-  
+
   if(min_score < hap_size_ratio_score) {
     cat('swapping cluster:', names(min_score), '\n')
     hap_size_ratio_score <- min_score
     hap_calls <-
-      hap_calls %>% 
+      hap_calls %>%
       mutate(call = ifelse(cluster == names(min_score), abs(call-1), call))
   }
-  
+
 }
 
 hap_calls <-
-  hap_calls %>% 
-  mutate(swap = !(call == original_call)) %>% 
+  hap_calls %>%
+  mutate(swap = !(call == original_call)) %>%
   distinct(cluster, swap)
 
 bad <-
-  hap_calls %>% 
-  count(cluster) %>% 
+  hap_calls %>%
+  count(cluster) %>%
   filter(n> 1)
 
 if(nrow(bad) > 0) {
@@ -1353,13 +1353,14 @@ if(nrow(bad) > 0) {
 }
 
 marker_counts <-
-  marker_counts %>% 
+  marker_counts %>%
   left_join(hap_calls, by=c('cluster')) %>%
-  mutate(h1_temp = hap_1_counts, h2_temp = hap_2_counts) %>% 
+  mutate(swap = ifelse(is.na(swap), FALSE, swap)) %>%  #unitigs without clusters
+  mutate(h1_temp = hap_1_counts, h2_temp = hap_2_counts) %>%
   mutate(
     hap_1_counts = ifelse(swap, h2_temp, h1_temp),
     hap_2_counts = ifelse(swap, h1_temp, h2_temp)
-  ) %>% 
+  ) %>%
   select(-h1_temp, -h2_temp, -swap)
 
 stopifnot(!anyNA(marker_counts$hap_1_counts))
@@ -1370,7 +1371,7 @@ stopifnot(all(as.integer(marker_counts$hap_2_counts) == marker_counts$hap_2_coun
 ### CSV ---------------------------------------------------------------------
 
 marker_counts <-
-  marker_counts %>% 
+  marker_counts %>%
   select(unitig, hap_1_counts, hap_2_counts, everything())
   
 readr::write_csv(marker_counts, output_counts)
@@ -1379,19 +1380,19 @@ readr::write_csv(marker_counts, output_counts)
 ## Library Weights ---------------------------------------------------------
 
 mem_weights <-
-  mem_data_plane$weights %>% 
-  select(-b_weight) %>% 
+  mem_data_plane$weights %>%
+  select(-b_weight) %>%
   dplyr::rename(ww_weight_mem = p_weight)
 
 fastmap_weights <-
-  fastmap_data_plane$weights %>% 
+  fastmap_data_plane$weights %>%
   dplyr::rename(
     ww_weight_fastmap = p_weight,
     wc_weight_fastmap = b_weight
     )
 
 library_weights <-
-  full_join(mem_weights, fastmap_weights,by=c('cluster', 'lib')) 
+  full_join(mem_weights, fastmap_weights,by=c('cluster', 'lib'))
 
 # TODO schema checks
 
