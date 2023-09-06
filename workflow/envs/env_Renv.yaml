@@ -3,3 +3,4 @@ dependencies:
     - r-igraph>=1.4.1
     - r-tidyverse>=2.0.0
     - r-pafr>=0.0.2
+    - r-zoo>=1.8
