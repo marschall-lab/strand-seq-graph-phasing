@@ -1052,7 +1052,7 @@ one_haplotype_cluster_unitigs <-
   imap(function(x, nm) {
     unitig_length <-
       unitig_lengths_df %>%
-      filter(unitig == x) %>%
+      filter(unitig %in% x) %>%
       pull(length)
     if (length(x) == 1 && x %in% one_unitig_cluster_unitigs) {
       if (!(x %in% one_cluster_component_unitigs) & !(nm == 'LGXY') & unitig_length <= length_threshold) {
