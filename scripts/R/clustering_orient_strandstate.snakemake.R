@@ -821,10 +821,10 @@ strand_orientation_clusters_df <-
   mutate(unitig = gsub('_inverted$', '', unitig_dir)) %>%
   mutate(strand_cluster = ifelse(strand_cluster==1, -1, 1))
 
-# add back in any unitigs remoed at ealier step
+# add back in any unitigs removed at ealier step
 strand_orientation_clusters_df <-
   strand_orientation_clusters_df %>%
-  left_join(
+  right_join(
     cluster_counts %>%
       bind_rows() %>%
       distinct(unitig, unitig_dir, cluster)
