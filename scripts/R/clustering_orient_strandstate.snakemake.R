@@ -777,8 +777,22 @@ cluster_counts <-
   left_join(cluster_df, by='unitig') %>%
   split(.$cluster)
 
+# Handle one unitig clusters separately.This is a little bit of a hack to handle
+# some clusters that only have one unitigs and are particularly poorly behaved.
+# It probably is resulting from a lack of consistency across thresholds. EG, a
+# unitig that fails all thresholds at this step somehow passed a threshold
+# earlier.
+n_unitigs_per_cluster <- 
+  cluster_counts %>% 
+  map(function(x) n_distinct(x$unitig_dir))
+
+one_unitig_clusters <-
+  n_unitigs_per_cluster %>% 
+  keep(function(x) x==2) %>% 
+  names()
+  
 wfracs <-
-  cluster_counts %>%
+  cluster_counts[!names(cluster_counts) %in% one_unitig_clusters] %>%
   map(function(x) with(x, make_wc_matrix(w,c,lib,unitig_dir,min_n=min_n)))  %>%
   # filling with 0s doesn't seem to affect first PC too much, compared to
   # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
