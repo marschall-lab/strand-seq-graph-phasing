@@ -141,7 +141,7 @@ rule pear_merge_mates:
         mem_mb = lambda wildcards, attempt: 4096 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     log: "log/pear_merge_mates_{sample}_{lib}.log"
-    shell: "(pear -f {input.fq1} -r {input.fq2} -t 101 -o ss/merged/{wildcards.sample}/{wildcards.lib}) > {log} 2>&1"
+    shell: "(pear -f {input.fq1} -r {input.fq2} -o ss/merged/{wildcards.sample}/{wildcards.lib}) > {log} 2>&1"
 
 rule concat_assembled_with_first_pair_of_unassembled:
     input:
