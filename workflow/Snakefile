@@ -325,18 +325,18 @@ def sample2mergedss(wildcards):
     return fpath
 
 rule fastmap_ss_reads_to_unitigs:
-	input:
-		unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
-		unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
-		SSreads=sample2mergedss
-	output: "bwa_alignments/fastmap/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
-	conda: 'envs/env_cl.yaml'
+    input:
+        unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
+        unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
+        SSreads=sample2mergedss
+    output: "bwa_alignments/fastmap/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
+    conda: 'envs/env_cl.yaml'
     threads: 2
-	resources:
-		mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
-		walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
-	log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
-	shell: "(bwa fastmap -w 1 -l 75 {input.unitigs} {input.SSreads} > {output}) > {log} 2>&1"
+    resources:
+        mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
+    log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
+    shell: "(bwa fastmap -w 1 -l 75 {input.unitigs} {input.SSreads} > {output}) > {log} 2>&1"
 
 ###################################################
 ############ Acrocentric Tangle Removal ###########
