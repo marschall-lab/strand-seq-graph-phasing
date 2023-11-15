@@ -50,6 +50,21 @@ extract_exact_matches <- function(fastmap_file) {
     lines %>% 
     keep(function(x) length(x) == 2) # one header and one match line
   
+  if(length(lines) ==0) {
+    # Maybe this should be an error even?
+    warning(paste('File': fastmap_file, 'has no alignments to the assembly. Is there a mismatch between the reads and assembly?'))
+    out <- tibble(
+      qname=character(),
+      qlen=integer(),
+      unitig=character(),
+      strand=character(),
+      lpos=integer(),
+      rpos=integer(),
+      n_matches=integer(),
+      tstart=character() # should change it so this function returns integer here but this is what it seems to be for now.
+    )
+    return(out)
+  }
   # SQ tags designate a particular read and the read length. 
   # SQ - Read Name - Read Length
   
