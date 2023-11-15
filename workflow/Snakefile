@@ -783,8 +783,8 @@ rule split_assembly_for_yak:
 
 rule duplicate_sequences_for_yak:
     input:
-        hap1 = temp('fasta/{sample}/{sample}_unitigs_hap1.fasta'),
-        hap2 = temp('fasta/{sample}/{sample}_unitigs_hap2.fasta')
+        hap1 = 'fasta/{sample}/{sample}_unitigs_hap1.fasta',
+        hap2 = 'fasta/{sample}/{sample}_unitigs_hap2.fasta'
     output:
         hap1=temp('fasta/{sample}/{sample}_unitigs_hap1_dup.fasta'),
         hap2=temp('fasta/{sample}/{sample}_unitigs_hap2_dup.fasta')
