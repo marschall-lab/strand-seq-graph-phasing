@@ -19,6 +19,7 @@ rule homopolymer_compress_ref:
     params:
         script=get_script_path('python','homopolymer_compress_fasta.py')
     conda:'../envs/env_pyenv.yaml'
+    threads: 1
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
@@ -43,7 +44,7 @@ rule map_unitigs_to_ref:
     output: "reference_alignments/{ref_name}/{sample}_{ref_name}_ref-aln.paf"
     conda: '../envs/env_cl.yaml'
     resources:
-        mem_mb=lambda wildcards, attempt: 1024 * 96 * attempt,
+        mem_mb=lambda wildcards, attempt, threads: 1024 * 96 * attempt / threads if div_mem else 1024 * 96 * attempt,
         walltime=lambda wildcards, attempt: f'{8 + attempt * attempt:02}:59:00'
     log: "log/map_unitigs_to_ref_{sample}_{ref_name}.log"
     threads: 12
