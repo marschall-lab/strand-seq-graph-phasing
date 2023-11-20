@@ -710,7 +710,7 @@ rule split_haplotype_annotations:
     shell:
         '''
         awk -F'\t' '$2 == "HAPLOTYPE1" || $2 == "HOM" {{print $1}}' "{input}" > {output.hap1}
-        awk -F'\t' '$2 == "HAPLOTYPE1" || $2 == "HOM" {{print $1}}' "{input}" > {output.hap2}
+        awk -F'\t' '$2 == "HAPLOTYPE2" || $2 == "HOM" {{print $1}}' "{input}" > {output.hap2}
         '''
 
 rule split_assembly_for_yak:
