@@ -12,6 +12,8 @@ segment_length_threshold = config["segmentLengthThreshold"]
 
 deploy_offline = config["deploy_offline"]
 
+div_mem = config.get("div_mem", False)
+
 scripts_dir = config["scripts_dir"]
 
 reference = config.get('reference', None)
@@ -209,7 +211,7 @@ rule gfa_to_fasta:
     output: "fasta/{sample}/{sample}_unitigs-hpc.fasta"
     threads: 2
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 6 * attempt,
+        mem_mb = lambda wildcards, attempt, threads: 1024 * 6 * attempt / threads if div_mem else 1024 * 6 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     log: "log/gfa_to_fasta_{sample}.log"
     shell:
@@ -257,7 +259,7 @@ rule bwa_align_unmerged_ss_to_unitigs:
     threads: 6
     conda:'envs/env_cl.yaml'
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        mem_mb = lambda wildcards, attempt, threads: 1024 * 16 * attempt / threads if div_mem else 1024 * 16 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     log:
         bwa="log/bwa_align_unmerged_ss_to_unitigs_bwa_{sample}_{lib}.log",
@@ -325,18 +327,18 @@ def sample2mergedss(wildcards):
     return fpath
 
 rule fastmap_ss_reads_to_unitigs:
-	input:
-		unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
-		unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
-		SSreads=sample2mergedss
-	output: "bwa_alignments/fastmap/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
-	conda: 'envs/env_cl.yaml'
+    input:
+        unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
+        unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
+        SSreads=sample2mergedss
+    output: "bwa_alignments/fastmap/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
+    conda: 'envs/env_cl.yaml'
     threads: 2
-	resources:
-		mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
-		walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
-	log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
-	shell: "(bwa fastmap -w 1 -l 75 {input.unitigs} {input.SSreads} > {output}) > {log} 2>&1"
+    resources:
+        mem_mb=lambda wildcards, attempt, threads: 1024 * 8 * attempt / threads if div_mem else 1024 * 8 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
+    log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
+    shell: "(bwa fastmap -w 1 -l 75 {input.unitigs} {input.SSreads} > {output}) > {log} 2>&1"
 
 ###################################################
 ############ Acrocentric Tangle Removal ###########
@@ -388,7 +390,7 @@ rule mashmap_assembly_to_self:
     conda:'envs/env_mashmap.yaml'
     threads: 8
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 24 * attempt,
+        mem_mb = lambda wildcards, attempt, threads: 1024 * 24 * attempt / threads if div_mem else 1024 * 24 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     log: "log/mashmap_{sample}.log"
     benchmark: "benchmark/mashmap_{sample}.benchmark"
@@ -412,11 +414,10 @@ rule minimap_assembly_to_self:
     input: "fasta/{sample}/{sample}_unitigs-hpc.fasta"
     output: "homology/{sample}/{sample}_minimap.paf"
     conda: 'envs/env_cl.yaml'
-    threads: 1
-    resources:
-        mem_mb=lambda wildcards, attempt: 1024 * 96 * attempt,
-        walltime=lambda wildcards, attempt: f'{8 + attempt * attempt:02}:59:00'
     threads: 24
+    resources:
+        mem_mb=lambda wildcards, attempt, threads: 1024 * 96 * attempt / threads if div_mem else 1024 * 96 * attempt,
+        walltime=lambda wildcards, attempt: f'{8 + attempt * attempt:02}:59:00'
     log: "log/minimap_homology_{sample}.log"
     benchmark: "benchmark/minimap_homology_{sample}.benchmark"
     shell: '(minimap2 -DP -k19 -w19 -m200 {input} {input} > {output}) > {log} 2>&1'
@@ -758,7 +759,7 @@ rule split_haplotype_annotations:
     shell:
         '''
         awk -F'\t' '$2 == "HAPLOTYPE1" || $2 == "HOM" {{print $1}}' "{input}" > {output.hap1}
-        awk -F'\t' '$2 == "HAPLOTYPE1" || $2 == "HOM" {{print $1}}' "{input}" > {output.hap2}
+        awk -F'\t' '$2 == "HAPLOTYPE2" || $2 == "HOM" {{print $1}}' "{input}" > {output.hap2}
         '''
 
 rule split_assembly_for_yak:
@@ -782,8 +783,8 @@ rule split_assembly_for_yak:
 
 rule duplicate_sequences_for_yak:
     input:
-        hap1 = temp('fasta/{sample}/{sample}_unitigs_hap1.fasta'),
-        hap2 = temp('fasta/{sample}/{sample}_unitigs_hap2.fasta')
+        hap1 = 'fasta/{sample}/{sample}_unitigs_hap1.fasta',
+        hap2 = 'fasta/{sample}/{sample}_unitigs_hap2.fasta'
     output:
         hap1=temp('fasta/{sample}/{sample}_unitigs_hap1_dup.fasta'),
         hap2=temp('fasta/{sample}/{sample}_unitigs_hap2_dup.fasta')
@@ -804,7 +805,7 @@ rule yak_count_split_fasta:
     conda:'envs/env_yak.yaml'
     threads: 24
     resources:
-        mem_mb = lambda wildcards,attempt: 1024 * 128 * attempt,
+        mem_mb = lambda wildcards,attempt, threads: 1024 * 128 * attempt / threads if div_mem else 1024 * 128 * attempt,
         walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log:
         hap1="log/yak_count_fasta_hap1_{sample}.log",
