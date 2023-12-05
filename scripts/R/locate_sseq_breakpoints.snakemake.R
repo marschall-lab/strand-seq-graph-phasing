@@ -125,7 +125,7 @@ haplotype_marker_counts <- get_values('--haplotype-marker-counts')
 # ratio_threshold <- as.numeric(get_values('--marker-ratio-threshold'))
 ratio_threshold <- 6
 # pvalue_threshold <- as.numeric(get_values('--peak-pvalue-threshold'))
-pvalue_threshold <- 1e-20
+pvalue_threshold <- 1e-10
 # half_window_width <- as.integer(get_values('--half-window-width'))
 half_window_width <- 150
 
