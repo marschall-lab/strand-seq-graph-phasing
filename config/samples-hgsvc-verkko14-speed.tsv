@@ -1,0 +1,2 @@
+sample	strandseq_dir	gfa	coverage	hpc	assembler	expect_XY_separate
+NA24385	/gpfs/project/projects/medbioinf/projects/mihen108/input/sample_strandseq/NA24385	/gpfs/project/projects/medbioinf/projects/mihen108/input/HGSVC_verkko14/NA24385.ps-none.wd/assembly.homopolymer-compressed.gfa	/gpfs/project/projects/medbioinf/projects/mihen108/input/HGSVC_verkko14/NA24385.ps-none.wd/assembly.hifi-coverage.csv	TRUE	verkko	TRUE
