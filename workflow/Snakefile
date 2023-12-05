@@ -307,7 +307,6 @@ rule fastmap_ss_reads_to_unitigs:
         unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
         SSreads=sample2mergedss
     output: "bwa_alignments/fastmap/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
-    threads: 2
     conda: 'envs/env_cl.yaml'
     resources:
         mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
