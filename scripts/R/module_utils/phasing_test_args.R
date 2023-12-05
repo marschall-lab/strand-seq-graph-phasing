@@ -11,17 +11,17 @@ base_args <- c(
   "--file=~/Documents/GitHub/strand-seq-graph-phasing/scripts/R/clustering_orient_strandstate.snakemake.R",
   "--args"
 )
-# NA19129 -----------------------------------------------------------------
+# NA19983 -----------------------------------------------------------------
 
 
 args <-
   c(base_args,
     "--mem-counts"                                                                                                                          ,
-    "sseq_alignment_counts/NA19129_sseq_mem_counts.csv"                                                                                     ,
+    "sseq_alignment_counts/NA19983_sseq_mem_counts.csv"                                                                                     ,
     "--fastmap-counts"                                                                                                                      ,
-    "sseq_alignment_counts/NA19129_sseq_fastmap_counts.csv"                                                                                 ,
+    "sseq_alignment_counts/NA19983_sseq_fastmap_counts.csv"                                                                                 ,
     "--connected-components"                                                                                                                ,
-    "gfa/ccs/NA19129_exploded_ccs.tsv"                                                                                                      ,
+    "gfa/ccs/NA19983_exploded_ccs.tsv"                                                                                                      ,
     "--segment-length-threshold"                                                                                                            ,
     "250000"                                                                                                                                ,
     "--expect-XY-separate"                                                                                                                  ,
@@ -29,9 +29,33 @@ args <-
     "--threads"                                                                                                                             ,
     "1"                                                                                                                                     ,
     "--output-marker-counts"                                                                                                                ,
-    "haplotype_marker_counts/NA19129_haplotype_marker_counts.csv"                                                                           ,
+    "haplotype_marker_counts/NA19983_haplotype_marker_counts.csv"                                                                           ,
     "--output-lib"                                                                                                                          ,
-    "library_weights/NA19129_library_weights.csv"
+    "library_weights/NA19983_library_weights.csv"
+  )
+
+
+
+# WHarvey -----------------------------------------------------------------
+
+args <-
+  c(base_args,
+    "--mem-counts"                                                                                                                          ,
+    '/Users/henglinm/Downloads/NA19983_count_haplotypes/sseq_alignment_counts/NA19983_sseq_mem_counts.csv'                                                                                     ,
+    "--fastmap-counts"                                                                                                                      ,
+    '/Users/henglinm/Downloads/NA19983_count_haplotypes/sseq_alignment_counts/NA19983_sseq_fastmap_counts.csv'                                                                                  ,
+    "--connected-components"                                                                                                                ,
+    '/Users/henglinm/Downloads/NA19983_count_haplotypes/gfa/ccs/NA19983_exploded_ccs.tsv'                                                                                                      ,
+    "--segment-length-threshold"                                                                                                            ,
+    "250000"                                                                                                                                ,
+    "--expect-XY-separate"                                                                                                                  ,
+    "True"                                                                                                                                  ,
+    "--threads"                                                                                                                             ,
+    "1"                                                                                                                                     ,
+    "--output-marker-counts"                                                                                                                ,
+    "haplotype_marker_counts/NA18936_haplotype_marker_counts.csv"                                                                           ,
+    "--output-lib"                                                                                                                          ,
+    "library_weights/NA18936_library_weights.csv"
   )
 
 # Functions ---------------------------------------------------------------
@@ -46,7 +70,7 @@ export_clusters_test <- function() {
 
   ref <-
     pafr::read_paf(
-      'reference_alignments/T2Tv11_hg002Yv2_chm13/NA19129_T2Tv11_hg002Yv2_chm13_ref-aln.paf',
+      'reference_alignments/T2Tv11_hg002Yv2_chm13/NA19983_T2Tv11_hg002Yv2_chm13_ref-aln.paf',
       tibble = TRUE,
       include_tags = FALSE) %>%
     group_by(qname) %>%
