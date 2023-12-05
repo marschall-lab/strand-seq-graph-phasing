@@ -183,7 +183,6 @@ rule homopolymer_compress_merged_ss:
 rule gfa_to_fasta:
     input: lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa']
     output: "fasta/{sample}/{sample}_unitigs-hpc.fasta"
-    threads: 2
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 6 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
