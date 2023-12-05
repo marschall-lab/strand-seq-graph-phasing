@@ -148,6 +148,10 @@ haplotype_marker_counts <-
 
 # Import and Filter Counts ------------------------------------------------
 
+# Attempt to filter to HOM-looking unitigs, which may also be those that contain
+# suspicious haplotype switches. As long as the hap switches are balanced.
+# Filter out unitigs with 0 alignments, as then there is no evidence that they
+# could be suspicious?
 haplotype_marker_counts <-
   haplotype_marker_counts %>% 
   filter(!(hap_1_counts + hap_2_counts == 0)) %>%
@@ -159,7 +163,7 @@ haplotype_marker_counts <-
 haplotype_marker_counts <-
   haplotype_marker_counts %>% 
   mutate(rat = hap_1_counts/hap_2_counts) %>% 
-  mutate(pos_rat = exp(abs(log(rat))))
+  mutate(pos_rat = exp(abs(log(rat)))) # ~ max(h1, h2)/min(h1, h2)
 
 to_look_at <- 
   haplotype_marker_counts %>% 
@@ -240,7 +244,8 @@ raw_counts_df %<>%
 
 # Pooled Binomial Convolution ---------------------------------------------
 
-# TODO parallelize  Test statistic for binomial difference of proportions
+# TODO parallelize  
+# Test statistic for binomial difference of proportions
 bp_df <-
   raw_counts_df %>% 
   group_by(unitig) %>% 
@@ -402,7 +407,7 @@ if(nrow(peak_windows) > 0) {
   p <- 
     plot_data %>%
     filter(wc_signal != 0) %>% 
-    semi_join(unitigs_with_big_state_switches) %>% 
+    semi_join(unitigs_with_big_state_switches) %>%
     ggplot()  +
     geom_histogram(aes(
       tstart,

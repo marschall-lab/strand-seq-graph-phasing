@@ -91,7 +91,7 @@ haplotype_marker_counts <-
 
 haplotype_marker_counts <-
   haplotype_marker_counts %>%
-  filter(!grepl('good_frac', sample) | grepl('frac-100', sample))
+  filter(!grepl('good-frac', sample) | grepl('frac-100', sample))
 ## Connected Components ----------------------------------------------------
 
 ccs <- list.files('gfa/ccs', full.names = TRUE) %>%
@@ -111,7 +111,7 @@ ccs <-
 
 rukki_paths <-
   list.files('rukki',recursive = TRUE,  full.names = TRUE, pattern = '*rukki_paths.tsv') %>%
-  set_names(function(x) hutils::trim_common_affixes(basename(x)))
+  purrr::set_names(function(x) hutils::trim_common_affixes(basename(x)))
 
 rukki_paths <-
   rukki_paths %>%

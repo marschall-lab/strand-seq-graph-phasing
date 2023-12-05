@@ -302,18 +302,19 @@ def sample2mergedss(wildcards):
     return fpath
 
 rule fastmap_ss_reads_to_unitigs:
-	input:
-		unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
-		unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
-		SSreads=sample2mergedss
-	output: "bwa_alignments/fastmap/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
-	threads: 2
-	conda: 'envs/env_cl.yaml'
-	resources:
-		mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
-		walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
-	log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
-	shell: "(bwa fastmap -w 1 -l 75 {input.unitigs} {input.SSreads} > {output}) > {log} 2>&1"
+    input:
+        unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
+        unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
+        SSreads=sample2mergedss
+    output: "bwa_alignments/fastmap/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
+    threads: 2
+    conda: 'envs/env_cl.yaml'
+    resources:
+        mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
+    log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
+    benchmark: "benchmark/map_SS_reads_to_unitigs_{sample}_{lib}.benchmark"
+    shell: "(bwa fastmap -w 1 -l 75 {input.unitigs} {input.SSreads} > {output}) > {log} 2>&1"
 
 ###################################################
 ############ Acrocentric Tangle Removal ###########
@@ -643,6 +644,7 @@ rule duplicate_sequences_for_yak:
             cat {input.hap2} >> {output.hap2}
         done
         '''
+
 rule yak_count_split_fasta:
     input:
         hap1='fasta/{sample}/{sample}_unitigs_hap1_dup.fasta',

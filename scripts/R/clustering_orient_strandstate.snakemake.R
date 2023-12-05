@@ -685,7 +685,7 @@ cluster_df <-
 #   mutate(cluster = ifelse(grepl('^sex', cluster), 'LGXY', cluster))
 
 
-### Small Cluster Removal --------------------------------------------
+## Small Cluster Removal --------------------------------------------
 
 threshold <- 1e7
 
