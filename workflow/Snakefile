@@ -230,7 +230,7 @@ rule bwa_align_unmerged_ss_to_unitigs:
         mate1=lambda wildcards: sample2unmergedss(wildcards, 1),
         mate2=lambda wildcards: sample2unmergedss(wildcards, 2)
     output: temp("temp_bwa_alignments/mem/{sample}/{lib}.bam")
-    threads: 6
+    threads: 8
     conda:'envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
