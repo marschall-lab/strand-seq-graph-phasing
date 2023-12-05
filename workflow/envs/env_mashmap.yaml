@@ -1,4 +1,0 @@
-name: env_mashmap
-dependencies:
-# Mir added because it wasn't in Maryam's file
-  - mashmap>=3.0

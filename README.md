@@ -2,12 +2,7 @@
 
 ## Getting the workflow working on HHU Hilbert cluster:
 
-There are two difficulties with setting up this workflow on Hilbert: The `R` and `BubbleGun` conda environments. 
-
-Due to Hilbert's difficulties with R bioconductor packages (which attempt to connect to the internet during installation), the cluster cannot create the conda environment needed for `R` rules. Instead, a `.sif` [Singularity](https://docs.sylabs.io/guides/latest/user-guide/) file, corresponding to the environment in `workflow/envs/env_Renv2.yaml`, has to be used. Peter has already created this file, but it still needs to be accounted for during setup.  
-
-`BubbleGun` is a package that is only available from `pip`, and not from conda. Accordingly, the `BubbleGun` environment has to be set-up as a special case described below.
-
+Due to Hilbert's difficulties with R bioconductor packages (which attempt to connect to the internet during installation), the cluster cannot create the conda environment needed for `R` rules. Instead, a `.sif` [Singularity](https://docs.sylabs.io/guides/latest/user-guide/) file, corresponding to the environment in `workflow/envs/env_Renv2.yaml`, has to be used.
 
 ### Step-by-step how Mir gets the workflow set up on HHU Hilbert
 
@@ -25,19 +20,7 @@ conda env create -p env/snakemake_runner/ -f workflow/envs/env_snakemake.yaml
 
 Before running the pipeline, remember to activate this conda environment.
 
-5. Setup the `BubbleGun` conda environment:
-
-   1. Run snakemake with `--conda-create-envs-only`
-   2. `cd` to `wd/.snakemake/conda/`
-   3. To figure out which conda environment corresponds to the 
-      `BubbleGun` environment, investigate the .yaml files and look for which one contains the `BubbleGun` package. `conda activate` that environment.
-   4. Use `pip` to install BubbleGun, according to [this link](https://wiki.hhu.de/display/HPC/Python),
-   using the command:
-```
-PIP_CONFIG_FILE=/software/python/pip.conf pip install --user BubbleGun==1.1.3
-```
-
-6. Adjust config file and sample sheet. Reference config yaml is `config/config.yaml`. Reference sample sheet is `config/samples-hgsvc-verkko14.tsv`
+5. Adjust config file and sample sheet. Reference config yaml is `config/config.yaml`. Reference sample sheet is `config/samples-hgsvc-verkko14.tsv`
 
 Hopefully the pipeline should work after this.
 
@@ -106,17 +89,15 @@ snakemake \\
 
 `-d` Path to working directory
 
-`--configfiles` Path to yaml
+`--configfiles` Path to config .yaml
 
 `--config samples=` Path to sample sheet. Overrides the config file.
 
 `--profile` Path to Hilbert cluster profile
 
-`--use-singularity --singularity-args "-B ..."` Used when using Singularity for the R environments. Unfortunately, when the singularity container can have trouble locating paths outside of the working directory, and thus may fail to locate the scripts folder. If that occurs, the path to the scripts folder needs to be explicitly bound in singularity: `-B /path/to/scripts/folder/:/path/to/scripts/folder/`.
+`--use-singularity --singularity-args "-B ..."` Used when using Singularity for the R environments. Unfortunately, the singularity container can have trouble locating paths outside of the working directory, and thus may fail to locate the scripts folder. If that occurs, the path to the scripts folder needs to be explicitly bound in singularity: `-B /path/to/scripts/folder/:/path/to/scripts/folder/`.
 
-`--restart-times` While the resource allocation for each rule generally works on the first attempt, some rules occasionally need more memory for. 3 restarts generally works to provide enough memory for the pipeline to finish.
-
-`--restart-times` While the resource allocation for each rule generally works on the first attempt, some rules occasionally need more memory for. 2 restarts generally works to provide enough memory for the pipeline to finish.
+`--restart-times` While the resource allocation for each rule generally works on the first attempt, some rules occasionally need more memory. 3 restarts generally works to provide enough memory for the pipeline to finish.
 
 ## Warnings
 

@@ -1,3 +1,0 @@
-name: env_gfa
-dependencies:
-  - gfapy=1.2.3
