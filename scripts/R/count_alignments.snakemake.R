@@ -134,14 +134,14 @@ counts_df <- import_mapper(mem_alignment_files, function(bam){
   
   # filter any ss_reads that map to too many unitigs
   # dplyr::filter with lots of groups can be very slow -> duplicated is faster
-  duplicated_qnames <-
-    with(aln, qname[duplicated(qname)])
+  is_duplicated_qname <-
+    with(aln, duplicated(qname))
   
-  if(any(duplicated_qnames)) {
+  if(any(is_duplicated_qname)) {
     cat('Duplicated qnames found in:', basename(bam), '\n')
     aln <-
       aln %>%
-      filter(!(qname %in% duplicated_qnames))
+      filter(!is_duplicated_qname)
   }
   
   # to simplify, only keep alignments where both mates land on the same rname
