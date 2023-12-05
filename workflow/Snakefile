@@ -655,7 +655,7 @@ rule yak_count_split_fasta:
     threads: 24
     conda:'envs/env_yak.yaml'
     resources:
-        mem_mb = lambda wildcards,attempt: 1024 * 128 * attempt,
+        mem_mb = lambda wildcards,attempt: 1024 * 64 * attempt,
         walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log:
         hap1="log/yak_count_fasta_hap1_{sample}.log",
