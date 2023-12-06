@@ -1,4 +1,5 @@
 name: env_mashmap
 dependencies:
 # Mir added because it wasn't in Maryam's file
+  - gsl==2.7
   - mashmap>=3.0
