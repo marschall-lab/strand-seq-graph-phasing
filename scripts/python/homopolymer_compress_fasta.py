@@ -60,7 +60,7 @@ def maxrun(x):
 with pysam.FastxFile(args.input[0]) as fin,  open(args.output[0], mode='w') as fout:
     for read in fin:
         # print(read.name)
-        logger.info(read.name)
+        # logger.info(read.name)
         hc = homopolymer_compress(read.sequence)
         read.sequence = hc
         fout.write(str(read) + '\n')
