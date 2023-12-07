@@ -53,7 +53,9 @@ sample	strandseq_dir	gfa	coverage	hpc	assembler	expect_XY_separate
 
 `scripts_dir: str` Path to folder containing R and python scripts. This is the folder `scripts` in the project folder.
 
-`reference: str, None` Path to reference alignment. If provided, the assembly will be aligned to the reference using `minimap2`
+`reference: str (optional)` Path to reference alignment. If provided, the assembly will be aligned to the reference using `minimap2`
+
+`per_thread_memory: bool (optional)` If `True`, memory specified for each rule is divided by the number of threads. 
 
 The last two parameters only apply to the rules which run R scripts:
 

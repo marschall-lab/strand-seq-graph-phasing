@@ -16,6 +16,10 @@ scripts_dir = config["scripts_dir"]
 
 reference = config.get('reference', None)
 
+## Resources
+
+per_thread_memory = config.get("per_thread_memory", False)
+
 ################################
 ########## Variables ###########
 ################################
@@ -84,6 +88,9 @@ rule unzip_ss:
     input: sample2ss
     output: temp("ss/unmerged/{sample}/{lib}_{pair}.fasta")
     conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log: "log/unzip_ss_{sample}_{lib}_{pair}.log"
     shell:
         '''
@@ -95,6 +102,9 @@ rule add_ss_libname_unmerged:
     input: "ss/unmerged/{sample}/{lib}_{pair}.fasta"
     output: temp("ss/unmerged/{sample}/{lib}_{pair}.renamed.fasta")
     conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log: "log/add_ss_libname_{sample}_{lib}_{pair}.log"
     shell:
         '''
@@ -107,8 +117,10 @@ rule homopolymer_compress_unmerged_ss:
     params:
         script=get_script_path('python','homopolymer_compress_fasta.py')
     conda:'envs/env_pyenv.yaml'
+    resources:
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log: "log/compress_unmerged_ss_{sample}_{lib}_{pair}.log"
-
     shell:
         '''
         (python3 {params.script} \\
@@ -138,8 +150,8 @@ rule pear_merge_mates:
         "ss/merged/{sample}/{lib}.unassembled.reverse.fastq"
     conda:'envs/env_cl.yaml'
     resources:
-        mem_mb = lambda wildcards, attempt: 4096 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log: "log/pear_merge_mates_{sample}_{lib}.log"
     benchmark: "benchmark/pear_merge_mates_{sample}_{lib}.benchmark"
     shell: "(pear -f {input.fq1} -r {input.fq2} -o ss/merged/{wildcards.sample}/{wildcards.lib}) > {log} 2>&1"
@@ -150,6 +162,9 @@ rule concat_assembled_with_first_pair_of_unassembled:
         "ss/merged/{sample}/{lib}.unassembled.forward.fastq"
     output: temp("ss/merged/{sample}/{lib}.combined.fasta")
     conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log: "log/concat_merged_with_first_unmerged_{sample}_{lib}.log"
     shell: "(time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1"
 
@@ -157,7 +172,9 @@ rule add_ss_libname_merged:
     input: "ss/merged/{sample}/{lib}.combined.fasta"
     output: temp("ss/merged/{sample}/{lib}.combined.renamed.fasta")
     conda:'envs/env_cl.yaml'
-    # log: "log/add_ss_libname_{sample}_{lib}.log"
+    resources:
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     shell:
         '''
         bioawk -c fastx -v libname={wildcards.lib} '{{print \">\"$name"_"libname; print $seq}}' <(cat {input}) > {output}
@@ -169,7 +186,9 @@ rule homopolymer_compress_merged_ss:
     params:
         script=get_script_path('python','homopolymer_compress_fasta.py')
     conda:'envs/env_pyenv.yaml'
-    # log: "log/compress_ss_{sample}_{lib}.log"
+    resources:
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     shell:
         '''
         python3 {params.script} \\
@@ -184,7 +203,7 @@ rule gfa_to_fasta:
     input: lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa']
     output: "fasta/{sample}/{sample}_unitigs-hpc.fasta"
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 6 * attempt,
+        mem_mb = lambda wildcards, attempt: 1024 * 2 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     log: "log/gfa_to_fasta_{sample}.log"
     benchmark: "benchmark/gfa_to_fasta_{sample}.benchmark"
@@ -230,10 +249,10 @@ rule bwa_align_unmerged_ss_to_unitigs:
         mate1=lambda wildcards: sample2unmergedss(wildcards, 1),
         mate2=lambda wildcards: sample2unmergedss(wildcards, 2)
     output: temp("temp_bwa_alignments/mem/{sample}/{lib}.bam")
-    threads: 8
     conda:'envs/env_cl.yaml'
+    threads: 6
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        mem_mb = lambda wildcards, attempt, threads: 1024 * 12 * attempt / threads if per_thread_memory else 1024 * 12 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     log:
         bwa="log/bwa_align_unmerged_ss_to_unitigs_bwa_{sample}_{lib}.log",
@@ -249,8 +268,8 @@ rule bwa_sort_unmerged_ss_alignments:
     output: temp("bwa_alignments/mem/{sample}/{lib}.bam")
     conda:'envs/env_cl.yaml'
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log: "log/bwa_sort_unmerged_{sample}_{lib}.log"
     benchmark: "benchmark/bwa_sort_unmerged_{sample}_{lib}.benchmark"
     shell:
@@ -263,8 +282,8 @@ rule unmerged_mark_duplicates:
     output: "bwa_alignments/mem/{sample}/{lib}.mdup.bam"
     conda:'envs/env_cl.yaml'
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log: "log/unmerged_mark_duplicates_{sample}_{lib}.log"
     benchmark: "benchmark/unmerged_mark_duplicates_{sample}_{lib}.benchmark"
     shell:
@@ -278,8 +297,8 @@ rule unmerged_bwa_index:
     output: "bwa_alignments/mem/{sample}/{lib}.mdup.bam.bai"
     conda:'envs/env_cl.yaml'
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 8 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log: "log/unmerged_bwa_index_{sample}_{lib}.log"
     benchmark: "benchmark/unmerged_bwa_index_{sample}_{lib}.benchmark"
     shell:
@@ -309,7 +328,7 @@ rule fastmap_ss_reads_to_unitigs:
     output: "bwa_alignments/fastmap/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
     conda: 'envs/env_cl.yaml'
     resources:
-        mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
+        mem_mb=lambda wildcards, attempt: 1024 * 6 * attempt,
         walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log: "log/map_SS_reads_to_unitigs_{sample}_{lib}.log"
     benchmark: "benchmark/map_SS_reads_to_unitigs_{sample}_{lib}.benchmark"
@@ -337,7 +356,7 @@ rule remove_acrocentric_tangle:
         script = get_script_path('R','explode_largest_component.R')
     conda: 'envs/env_Renv.yaml'
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 4 * attempt,
+        mem_mb = lambda wildcards, attempt: 1024 * 2 * attempt,
         walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     log: "log/remove_acrocentric_tangle_{sample}.log"
     benchmark: "benchmark/remove_acrocentric_tangle_{sample}.benchmark"
@@ -357,7 +376,6 @@ rule remove_acrocentric_tangle:
 
 
 def sample2mem(wildcards, ext='bam'):
-
     out = expand("bwa_alignments/mem/{{sample}}/{lib}.mdup."+ext,
         lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs'])
     return out
@@ -382,10 +400,10 @@ rule count_sseq_alignments:
         script = get_script_path('R', 'count_alignments.snakemake.R')
     singularity: singularity_r_env
     conda: conda_r_env
-    resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 32 * attempt,
-        walltime = lambda wildcards, attempt: f'{2 + attempt*attempt:02}:59:00'
     threads: 1
+    resources:
+        mem_mb = lambda wildcards, attempt, threads: 1024 * 32 * attempt / threads if per_thread_memory else 1024 * 32 * attempt,
+        walltime = lambda wildcards, attempt: f'{2 + attempt*attempt:02}:59:00'
     log: "log/count_sseq_alignments_{sample}.log"
     benchmark: "benchmark/count_sseq_alignments_{sample}.benchmark"
     shell:
@@ -414,10 +432,10 @@ rule count_haplotype_markers:
         script = get_script_path('R','clustering_orient_strandstate.snakemake.R')
     singularity: singularity_r_env
     conda: conda_r_env
-    resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
-        walltime = lambda wildcards, attempt: f'{2 + attempt*attempt:02}:59:00'
     threads: 1
+    resources:
+        mem_mb = lambda wildcards, attempt, threads: 1024 * 12 * attempt / threads if per_thread_memory else 1024 * 12 * attempt,
+        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
     log: "log/count_haplotype_markers_{sample}.log"
     benchmark: "benchmark/count_haplotype_markers_{sample}.benchmark"
     shell:
@@ -443,7 +461,7 @@ rule fudge_haplotype_markers:
     singularity: singularity_r_env
     conda: conda_r_env
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
+        mem_mb = lambda wildcards, attempt: 1024 * 2 * attempt,
         walltime = lambda wildcards, attempt: f'{2 + attempt*attempt:02}:59:00'
     log: "log/fudge_haplotype_markers_{sample}.log"
     benchmark: "benchmark/fudge_haplotype_markers_{sample}.benchmark"
@@ -480,7 +498,7 @@ rule add_coverage_to_gfa:
         temp('{sample}_gfa_with_coverage.gfa')
     conda: 'envs/env_verkko.yaml'
     resources:
-        mem_mb=lambda wildcards, attempt: 1024 * 8 * attempt,
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
         walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log: "log/add_coverage_to_gfa_{sample}.log"
     benchmark: "benchmark/add_coverage_to_gfa_{sample}.benchmark"
@@ -529,7 +547,7 @@ rule run_rukki:
         final_annotation='rukki/{sample}/{sample}_out_final_ann.csv'
     conda: 'envs/env_verkko.yaml'
     resources:
-        mem_mb=lambda wildcards, attempt: 1024 * 12 * attempt,
+        mem_mb=lambda wildcards, attempt: 1024 * 6 * attempt,
         walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     params:
         shcc =lambda wildcards: rukki_paramaterizer(wildcards, 'solid-homozygous-cov-coeff'),
@@ -623,6 +641,10 @@ rule split_assembly_for_yak:
         hap1=temp('fasta/{sample}/{sample}_unitigs_hap1.fasta'),
         hap2=temp('fasta/{sample}/{sample}_unitigs_hap2.fasta')
     conda: 'envs/env_yak.yaml'
+    resources:
+        mem_mb=lambda wildcards, attempt: 1024 * 1 * attempt,
+        walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
+    benchmark: "benchmark/split_assembly_for_yak_{sample}.benchmark"
     shell:
         '''
         seqtk subseq {input.fasta} {input.hap1_nodes} > {output.hap1}
@@ -654,7 +676,7 @@ rule yak_count_split_fasta:
     threads: 24
     conda:'envs/env_yak.yaml'
     resources:
-        mem_mb = lambda wildcards,attempt: 1024 * 64 * attempt,
+        mem_mb = lambda wildcards, attempt, threads: 1024 * 48 * attempt / threads if per_thread_memory else 1024 * 48 * attempt,
         walltime=lambda wildcards, attempt: f'{attempt * attempt:02}:59:00'
     log:
         hap1="log/yak_count_fasta_hap1_{sample}.log",
@@ -682,8 +704,9 @@ rule locate_sseq_breakpoints:
     params:
         script = get_script_path('R','locate_sseq_breakpoints.snakemake.R')
     conda: 'envs/env_Renv.yaml'
+    threads: 1
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 24 * attempt,
+        mem_mb = lambda wildcards, attempt, threads: 1024 * 24 * attempt / threads if per_thread_memory else 1024 * 24 * attempt,
         walltime = lambda wildcards, attempt: f'{2 + attempt*attempt:02}:59:00'
     log: "log/locate_sseq_breakpoints_{sample}.log"
     benchmark: "benchmark/locate_sseq_breakpoints_{sample}.benchmark"
