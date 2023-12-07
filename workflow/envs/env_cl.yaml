@@ -9,4 +9,3 @@ dependencies:
   - hifiasm=0.15.4
   - minimap2=2.24
   - sambamba=0.8.2
-  - mashmap=2.0
