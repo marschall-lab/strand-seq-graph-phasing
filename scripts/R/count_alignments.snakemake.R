@@ -1,3 +1,23 @@
+
+# Helpers -----------------------------------------------------------------
+aggregate_by_unitig <- function(x) {
+  x <-
+    x %>% 
+    group_by(unitig) %>%
+    summarise(c = sum(strand == '+'), w = sum(strand == '-'), .groups="drop")
+  
+  return(x)
+}
+
+add_missing_unitigs <- function(x) {
+  x <-
+    x %>%
+    right_join(unitig_lengths_df, by = 'unitig') %>% 
+    mutate(c = coalesce(c, 0), w = coalesce(w, 0)) 
+  
+  return(x)
+}
+
 # Command Line ------------------------------------------------------------
 
 
@@ -14,10 +34,9 @@ expected_args <-
     '--mem-alignment-bams',
     '--fastmap-alignments',
 
+    '--aggregate-alignments',
     '--output-mem',
     '--output-fastmap',
-    '--output-mem-raw',
-    '--output-fastmap-raw',
 
     '--threads'
   )
@@ -75,11 +94,13 @@ fastmap_alignment_files <- get_values("--fastmap-alignments", singular=FALSE)
 n_threads <- as.numeric(get_values('--threads'))
 stopifnot(n_threads >= 1)
 
+aggregate_alignments <- as.logical(get_values('--aggregate-alignments'))
+
 ## Output
 output_mem <- get_values('--output-mem')
 output_fastmap <- get_values('--output-fastmap')
-output_mem_raw <- get_values('--output-mem-raw')
-output_fastmap_raw <- get_values('--output-fastmap-raw')
+
+
 
 # Load Headers ------------------------------------------------------------
 
@@ -100,6 +121,7 @@ if(n_threads > 1) {
 }
 
 ### Count mem Alignments ------------------------------------------------------
+# fastmap_alignment_files <- list.files('bwa_alignments/mem/HG00733/', full.names = TRUE, pattern='bam$')[1:10]
 lib_names <- map_chr(mem_alignment_files, function(x) gsub('.mdup.bam$', '', basename(x)))
 
 counts_df <- import_mapper(mem_alignment_files, function(bam){
@@ -144,12 +166,26 @@ counts_df <- import_mapper(mem_alignment_files, function(bam){
       filter(!is_duplicated_qname)
   }
   
+  aln <-
+    aln %>% 
+    select(-qname)
+  
   # to simplify, only keep alignments where both mates land on the same rname
   aln <- 
     aln %>% 
     filter(rname == mrnm)
   
-
+  aln <-
+    aln %>%
+    dplyr::rename(unitig = rname)
+  
+  if(aggregate_alignments) {
+    aln <-
+      aln %>% 
+      aggregate_by_unitig() %>%
+      add_missing_unitigs() %>% 
+      mutate(n = c+w)  
+  }
   
   return(aln)
   
@@ -158,28 +194,12 @@ counts_df <- import_mapper(mem_alignment_files, function(bam){
 
 counts_df <-
   counts_df %>%
-  set_names(lib_names) %>% 
-  bind_rows(.id = 'lib') %>%
-  dplyr::rename(unitig = rname) 
-
-# Counting
-aggregated_counts_df <-
-  counts_df %>%
-  # filter(mapq > 0) %>% 
-  group_by(lib, unitig) %>%
-  summarise(c = sum(strand == '+'), w = sum(strand == '-'), .groups="drop")
-
-aggregated_counts_df <-
-  aggregated_counts_df %>%
-  right_join(unitig_lengths_df, by = 'unitig') %>% 
-  tidyr::complete(lib, tidyr::nesting(unitig, length), fill=list(c=0, w=0)) %>% 
-  mutate(n = c+w) %>% 
-  filter(!is.na(lib))
-
+  set_names(lib_names) %>%
+  bind_rows(.id = 'lib')  
 
 # raw_counts_df <- counts_df
 ### Count fastmap Alignments ------------------------------------------------
-# fastmap_alignment_files <- list('bwa_alignments/fastmap/HG00171/000000_maximal_unique_exact_match.tsv', 'bwa_alignments/fastmap/HG00171/000001_maximal_unique_exact_match.tsv')
+# fastmap_alignment_files <- list.files('bwa_alignments/fastmap/NA18989/', full.names = TRUE)[1:10]
 lib_names <-
   map_chr(fastmap_alignment_files, function(x)
     gsub('_maximal_unique_exact_match.tsv$', '', basename(x)))
@@ -188,30 +208,28 @@ lib_names <-
 # think it is connected to the source of the extra // that appear in the files
 exact_match_counts_df <- import_mapper(fastmap_alignment_files, function(x) {
   cat(paste('counting bwa-fastmap alignments in', basename(x), '\n'))
-  out <- extract_exact_matches(x)
+  aln <- extract_exact_matches(x)
   
-  return(out)
+  aln <-
+    aln %>% 
+    select(-qname)
+  
+  if(aggregate_alignments) {
+    aln <-
+      aln %>% 
+      aggregate_by_unitig() %>% 
+      add_missing_unitigs() %>% 
+      mutate(n = c+w)  
+    
+  }
+  
+  return(aln)
 })
 
 exact_match_counts_df <-
   exact_match_counts_df %>%
   set_names(lib_names) %>% 
   bind_rows(.id = 'lib') 
-
-aggregated_exact_match_counts_df <-
-  exact_match_counts_df %>%
-  group_by(lib, unitig) %>%
-  summarise(c = sum(strand == '+'), w = sum(strand == '-'), .groups="drop") 
-
-aggregated_exact_match_counts_df <-
-  aggregated_exact_match_counts_df %>%
-  right_join(unitig_lengths_df, by = 'unitig') %>% 
-  tidyr::complete(lib, tidyr::nesting(unitig, length), fill=list(c=0, w=0)) %>% 
-  mutate(n = c+w) %>% 
-  filter(!is.na(lib))
-
-
-# raw_aggregated_exact_match_counts_df <- aggregated_exact_match_counts_df
 
 if(n_threads > 1) {
   # close workers
@@ -221,7 +239,5 @@ if(n_threads > 1) {
 
 # Export ------------------------------------------------------------------
 
-readr::write_csv(aggregated_counts_df, output_mem)
-readr::write_csv(aggregated_exact_match_counts_df, output_fastmap)
-readr::write_csv(counts_df, output_mem_raw)
-readr::write_csv(exact_match_counts_df, output_fastmap_raw)
+readr::write_csv(counts_df, output_mem)
+readr::write_csv(exact_match_counts_df, output_fastmap)

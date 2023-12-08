@@ -14,7 +14,10 @@ deploy_offline = config["deploy_offline"]
 
 scripts_dir = config["scripts_dir"]
 
+## Additional rules
+
 reference = config.get('reference', None)
+calc_breakpoints = config.get('calc_breakpoints', False)
 
 ## Resources
 
@@ -61,19 +64,47 @@ def calc_walltime(m=1, b=None):
 
 calc_mem = make_mem_calculator(scale=1024, per_thread_memory=per_thread_memory)
 
-###################################
-############ Rules ################
-###################################
 
-wildcard_constraints:
-    sample='[^/_]+'
+# Sample to Input #
 
-include: 'rules/sample_table.smk'
-include: 'rules/collect_output.smk'
+def sample2ss(wildcards):
+    out = MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_pairs'][wildcards.lib][wildcards.pair]
+    return out
 
-if reference:
-    include: 'rules/evaluate.smk'
+def sample2unmergedss(wildcards, file):
+    fpath = 'ss/unmerged/{sample}/{lib}_'
 
+    if file==1:
+        fpath += 'file1'
+    else:
+        fpath += 'file2'
+
+    if MAP_SAMPLE_TO_INPUT[wildcards.sample]['hpc']:
+        fpath += '.homopolymer-compressed.fasta'
+    else:
+        fpath += '.renamed.fasta'
+
+    return fpath
+
+def sample2mergedss(wildcards):
+    fpath = 'ss/merged/{sample}/{lib}.combined'
+
+    if MAP_SAMPLE_TO_INPUT[wildcards.sample]['hpc']:
+        fpath += '.homopolymer-compressed.fasta'
+    else:
+        fpath += '.renamed.fasta'
+
+    return fpath
+
+def sample2mem(wildcards, ext='bam'):
+    out = expand("bwa_alignments/mem/{{sample}}/{lib}.mdup."+ext,
+        lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs'])
+    return out
+
+def sample2fastmap(wildcards):
+    out = expand("bwa_alignments/fastmap/{{sample}}/{lib}_maximal_unique_exact_match.tsv",
+        lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs'])
+    return out
 
 #####################################
 ############ Offline/Online #########
@@ -88,17 +119,33 @@ else:
     conda_r_env = "envs/env_Renv2.yaml"
     singularity_r_env = None
 
+###################################
+############ Rules ################
+###################################
+
+wildcard_constraints:
+    sample='[^/_]+',
+    lib='[0-9]+'
+
+include: 'rules/sample_table.smk'
+include: 'rules/collect_output.smk'
+
+if reference:
+    include: 'rules/evaluate.smk'
+    ALL_OUTPUT.append(expand("reference_alignments/{ref_name}/{sample}_{ref_name}_ref-aln.paf",sample=SAMPLES, ref_name=ref_name))
+
+if calc_breakpoints:
+    include: 'rules/strandseq_breakpoints.smk'
+    ALL_OUTPUT.append(expand("breakpoints/{sample}_breakpoint_windows.csv", sample=SAMPLES))
+
+
+
 ###############################
 ############ All ##############
 ###############################
 
-if reference:
-    ALL_OUTPUT.append(expand("reference_alignments/{ref_name}/{sample}_{ref_name}_ref-aln.paf", sample=SAMPLES, ref_name=ref_name))
-
 rule all:
-    input:
-        sample_sheet=ALL_OUTPUT,
-        breakpoints=expand("breakpoints/{sample}_breakpoint_windows.csv", sample=SAMPLES)
+    input: ALL_OUTPUT
 
 ################################################
 ############ Unmerged SS Processing ############
@@ -107,9 +154,7 @@ rule all:
 # Unmerged reads are aligned in bwa mem paired end mode, and alignments are
 # used for the initial clustering step which assigns
 # unitig chromosome and orientation, and calls library strand state
-def sample2ss(wildcards):
-    out = MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_pairs'][wildcards.lib][wildcards.pair]
-    return out
+
 
 rule unzip_ss:
     input: sample2ss
@@ -254,21 +299,8 @@ rule bwa_index_unitigs:
 #####################################################################
 ############ bwa mem Unmerged SS Reads to Assembly Unitigs ##########
 #####################################################################
-SSreads="ss/merged/{sample}/{lib}.combined.homopolymer-compressed.fasta",
-def sample2unmergedss(wildcards, file):
-    fpath = 'ss/unmerged/{sample}/{lib}_'
 
-    if file==1:
-        fpath += 'file1'
-    else:
-        fpath += 'file2'
 
-    if MAP_SAMPLE_TO_INPUT[wildcards.sample]['hpc']:
-        fpath += '.homopolymer-compressed.fasta'
-    else:
-        fpath += '.renamed.fasta'
-
-    return fpath
 
 rule bwa_align_unmerged_ss_to_unitigs:
     input:
@@ -338,16 +370,6 @@ rule unmerged_bwa_index:
 ############ fastmap merged Strand-seq reads ################
 #############################################################
 
-def sample2mergedss(wildcards):
-    fpath = 'ss/merged/{sample}/{lib}.combined'
-
-    if MAP_SAMPLE_TO_INPUT[wildcards.sample]['hpc']:
-        fpath += '.homopolymer-compressed.fasta'
-    else:
-        fpath += '.renamed.fasta'
-
-    return fpath
-
 rule fastmap_ss_reads_to_unitigs:
     input:
         unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
@@ -403,17 +425,6 @@ rule remove_acrocentric_tangle:
 #######################################
 
 
-def sample2mem(wildcards, ext='bam'):
-    out = expand("bwa_alignments/mem/{{sample}}/{lib}.mdup."+ext,
-        lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs'])
-    return out
-
-def sample2fastmap(wildcards):
-    out = expand("bwa_alignments/fastmap/{{sample}}/{lib}_maximal_unique_exact_match.tsv",
-        lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs'])
-    return out
-
-
 rule count_sseq_alignments:
     input:
         bam=lambda wildcards: sample2mem(wildcards, 'bam'),
@@ -422,8 +433,6 @@ rule count_sseq_alignments:
     output:
         mem = "sseq_alignment_counts/{sample}_sseq_mem_counts.csv",
         fastmap = "sseq_alignment_counts/{sample}_sseq_fastmap_counts.csv",
-        mem_raw= "sseq_alignment_counts/{sample}_sseq_mem_raw.csv",
-        fastmap_raw = "sseq_alignment_counts/{sample}_sseq_fastmap_raw.csv"
     params:
         script = get_script_path('R', 'count_alignments.snakemake.R')
     singularity: singularity_r_env
@@ -440,10 +449,9 @@ rule count_sseq_alignments:
         --mem-alignment-bams {input.bam} \\
         --fastmap-alignments {input.fastmap} \\
         --threads {threads} \\
+        --aggregate-alignments TRUE \\
         --output-mem {output.mem} \\
-        --output-fastmap {output.fastmap} \\
-        --output-mem-raw {output.mem_raw} \\
-        --output-fastmap-raw {output.fastmap_raw}) > {log} 2>&1
+        --output-fastmap {output.fastmap}) > {log} 2>&1
         '''
 
 rule count_haplotype_markers:
@@ -723,35 +731,4 @@ rule yak_count_split_fasta:
         '''
         yak count -b37 -t{threads} -o {output.hap1} {input.hap1} > {log.hap1} 2>&1
         yak count -b37 -t{threads} -o {output.hap2} {input.hap2} > {log.hap2} 2>&1
-        '''
-
-
-
-#######################################
-############ Breakpointing ############
-#######################################
-
-rule locate_sseq_breakpoints:
-    input:
-        lib_weights = "library_weights/{sample}_library_weights.csv",
-        mem_alignments="sseq_alignment_counts/{sample}_sseq_mem_raw.csv",
-        hap_counts='haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.csv'
-    output:
-       "breakpoints/{sample}_breakpoint_windows.csv"
-    params:
-        script = get_script_path('R','locate_sseq_breakpoints.snakemake.R')
-    conda: 'envs/env_Renv.yaml'
-    threads: 1
-    resources:
-        mem_mb=calc_mem(24),
-        walltime=calc_walltime(1, 2)
-    log: "log/locate_sseq_breakpoints_{sample}.log"
-    benchmark: "benchmark/locate_sseq_breakpoints_{sample}.benchmark"
-    shell:
-        '''
-        (Rscript --vanilla {params.script} \\
-        --lib-weights {input.lib_weights} \\
-        --haplotype-marker-counts {input.hap_counts} \\
-        --sseq-alignments {input.mem_alignments} \\
-        --output {output}) > {log} 2>&1
         '''

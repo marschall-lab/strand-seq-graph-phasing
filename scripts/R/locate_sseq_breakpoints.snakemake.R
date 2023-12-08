@@ -179,7 +179,6 @@ raw_counts_df <-
   
 
 raw_counts_df %<>%
-  select(-qname) %>% 
   dplyr::rename(tstart = pos) %>% 
   mutate(tstart = as.double(tstart))  
 
