@@ -35,16 +35,12 @@ def get_script_path(*args):
     return out.as_posix()
 
 def make_mem_calculator(scale=1024, per_thread_memory=False):
-    def calc_mem_mb(m=None, b=None, default=False):
-        if m is None:
-            m = 1
-            default = True
+    def calc_mem_mb(m=1, b=None):
         if b is None:
             b = m
-        def _calc_mem_mb(wildcards, input, threads, attempt):
-            mem_mb = ((m-1) * attempt + b) * scale
-            if default:
-                mem_mb = max(input.size_mb * 2 * attempt, mem_mb)
+        def _calc_mem_mb(wildcards, threads, attempt):
+            x = attempt-1
+            mem_mb = (m * x + b) * scale
             if per_thread_memory:
                 mem_mb /= threads
             return mem_mb
@@ -55,9 +51,10 @@ def make_mem_calculator(scale=1024, per_thread_memory=False):
 
 def calc_walltime(m=1, b=None):
     if b is None:
-        b=m
+        b = m
     def _calc_walltime(wildcards, attempt):
-        walltime = f'{((m-1) * attempt * attempt + b):02}:59:00'
+        x = attempt - 1
+        walltime = f'{(m * x * x + b):02}:59:00'
         return walltime
 
     return _calc_walltime
