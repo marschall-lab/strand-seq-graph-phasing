@@ -626,7 +626,7 @@ rule run_rukki:
         params="$params --try-fill-bubbles"
 
         # Bubbles including a longer alternative sequence will not be filled [default: 50000]
-        params="$params --fillable-bubble-len 50000"
+        params="$params --fillable-bubble-len 500000"
 
         # Bubbles with bigger difference between alternatives' lengths will not be filled [default: 200]
         params="$params --fillable-bubble-diff 1000"
