@@ -1,21 +1,18 @@
 
 # Functions ---------------------------------------------------------------
 
-
-leading_sum <- function(x, lag_size = 50) {
-  zoo::rollapplyr(x, width = lag_size, FUN = sum, align='left', fill=NA)
-}
-
-lagging_sum <- function(x, lag_size = 50) {
-  zoo::rollapplyr(x, width = lag_size, FUN = sum, align='right', fill=NA)
-}
-
-pooled_binomial_statistic_wc <- function(wc_signal, half_window_width=100) {
-  # For WC signals specifically
-  lead_sum = leading_sum(wc_signal * (wc_signal > 0),half_window_width)
-  lag_sum = lagging_sum(wc_signal * (wc_signal > 0),half_window_width)
-  lead_n  = leading_sum(abs(wc_signal), half_window_width)
-  lag_n  = lagging_sum(abs(wc_signal), half_window_width)
+pooled_binomial_statistic_wc <- function(wc_signal, half_window_width=100, breakshift= c('leading', 'lagging')) {
+  
+  breakshift <- match.arg(breakshift)
+  # For WC signals specifically. There are "fractional" attempts and successes
+  successes <- wc_signal * (wc_signal > 0)
+  ns <- abs(wc_signal)
+  
+  # The current value is included in the leading sum, but not the lagging sum
+  lead_sum = slider::slide_dbl(successes, sum, .after = half_window_width - 1) 
+  lead_n  = slider::slide_dbl(ns, sum, .after = half_window_width -1)
+  lag_sum = slider::slide_dbl(successes, sum, .before = half_window_width, .after = -1)
+  lag_n  = slider::slide_dbl(ns, sum, .before = half_window_width, .after = -1)
   
   lead_p = lead_sum/lead_n
   lag_p = lag_sum/lag_n
@@ -37,8 +34,9 @@ bin_loglik_wc <-
   }
 
 neighborhood_binomial_likelihood_wc <- function(wc_signal, p, half_window_width=100) {
-  zoo::rollapplyr(wc_signal, width = 2*half_window_width + 1, FUN = bin_loglik_wc, p=p, align='center', fill=NA)
+  slider::slide_dbl(wc_signal, bin_loglik_wc,  p=p, .before = half_window_width, .after = half_window_width )
 }
+
 
 # Command Line ------------------------------------------------------------
 
@@ -114,7 +112,7 @@ library(ggplot2)
 lib_weights <- get_values('--lib-weights')
 
 # raw_counts_df <-  "sseq_alignment_counts/NA21487_sseq_mem_raw.csv" 
-# raw_counts_df <-  "sseq_alignment_counts/NA19434_sseq_mem_raw.csv" 
+# raw_counts_df <-  "sseq_alignment_counts/NA19434_sseq_mem_raw.csv"
 raw_counts_df <- get_values('--sseq-alignments')
 
 # haplotype_marker_counts <- "haplotype_marker_counts/NA21487_fudged_haplotype_marker_counts.csv"
@@ -123,9 +121,9 @@ haplotype_marker_counts <- get_values('--haplotype-marker-counts')
 
 # Params
 # ratio_threshold <- as.numeric(get_values('--marker-ratio-threshold'))
-ratio_threshold <- 6
+ratio_threshold <- 8
 # pvalue_threshold <- as.numeric(get_values('--peak-pvalue-threshold'))
-pvalue_threshold <- 1e-10
+pvalue_threshold <- 1e-8
 # half_window_width <- as.integer(get_values('--half-window-width'))
 half_window_width <- 150
 
@@ -178,7 +176,8 @@ raw_counts_df <-
   semi_join(to_look_at, by=c('unitig'))
   
 
-raw_counts_df %<>%
+raw_counts_df <-
+  raw_counts_df %>%
   dplyr::rename(tstart = pos) %>% 
   mutate(tstart = as.double(tstart))  
 
@@ -218,7 +217,8 @@ raw_counts_df <-
 #   mutate(x = rank(tstart, ties.method = 'first')) %>% 
 #   ungroup()
 
-raw_counts_df %<>% 
+raw_counts_df <-
+  raw_counts_df %>% 
   mutate(
     wc_signal = y * sign(wc_weight_fastmap) * wc_weight_fastmap^2 * unitig_orientation,
     # ww_signal = y * sign(ww_weight_fastmap) * ww_weight_fastmap^2 * unitig_orientation
@@ -232,11 +232,12 @@ raw_counts_df %<>%
   #        -cluster)
 
 # scale to original counts
-raw_counts_df %<>% 
+raw_counts_df <-
+  raw_counts_df %>% 
   group_by(unitig) %>% 
   mutate(
-    wc_signal = wc_signal * sum(abs(y))/ sum(abs(wc_signal)),
-    ww_signal = ww_signal * sum(abs(y))/sum(abs(ww_signal))
+    wc_signal = wc_signal * sum(abs(y)) / sum(abs(wc_signal)),
+    ww_signal = ww_signal * sum(abs(y)) / sum(abs(ww_signal))
   ) %>% 
   ungroup()
 
@@ -245,10 +246,10 @@ raw_counts_df %<>%
 
 # TODO parallelize  
 # Test statistic for binomial difference of proportions
+
 bp_df <-
   raw_counts_df %>% 
   group_by(unitig) %>% 
-  filter(n() > 5 * half_window_width) %>% 
   arrange(unitig, tstart) %>% # TODO if multiple reads start at the same place, how to handle?
   mutate(
     Z = pooled_binomial_statistic_wc(wc_signal, half_window_width),
@@ -265,16 +266,19 @@ bp_df <-
 # Adjust Pvalues ----------------------------------------------------------
 
 # Adjust across whole sample at once.
-bp_df %<>%
+bp_df <-
+  bp_df %>%
   mutate(p_adj = p.adjust(pv, method = 'bonferroni'))
-# Carry over NAs ----------------------------------------------------------
 
+# Handle Edge NAs ---------------------------------------------------------
 
-bp_df %<>%
-  group_by(unitig) %>%
-  mutate(p_adj = zoo::na.locf(p_adj, na.rm = FALSE)) %>%
-  mutate(p_adj = zoo::na.locf(p_adj, fromLast = TRUE)) %>%
-  ungroup()
+shift_values_dbl <- function(x, n=0) {
+  slider::slide_dbl(x, ~.x, .before=-n, .after=n, .complete = TRUE)
+}
+bp_df <-
+  bp_df %>%
+  mutate(pv = coalesce(pv, shift_values_dbl(pv, 1)), 
+         p_adj = coalesce(p_adj, shift_values_dbl(p_adj, 1)))
 
 
 # breakseekR --------------------------------------------------------------
@@ -305,13 +309,14 @@ peaks_df <-
   ungroup()
 
 
-peak_width_threshold <- half_window_width/4
+big_peak_width_threshold <- half_window_width/4
 
 peaks_df <-
   peaks_df %>% 
   group_by(unitig, break_window) %>% 
   mutate(peak_size = n()) %>%
-  mutate(is_peak = is_peak_suspicious & (peak_size >= peak_width_threshold)) %>% 
+  mutate(is_big_peak = is_peak_suspicious & (peak_size >= big_peak_width_threshold)) %>% 
+  mutate(is_big_peak = ifelse(is_big_peak, 'big_peak', 'not_big_peak')) %>% 
   ungroup()
 
 
@@ -323,9 +328,9 @@ peaks_df <-
 # variable, which can happen when there are no peaks
 peak_windows <-
   peaks_df %>% 
-  group_by(unitig, break_window, is_peak) %>% 
-  summarise(window_min = min(tstart), window_max = max(tstart), .groups='drop') %>% 
-  filter(is_peak) 
+  group_by(unitig, break_window, is_peak_suspicious, is_big_peak) %>% 
+  summarise(window_min = min(tstart), window_max = max(tstart), .groups='drop')  %>% 
+  filter(is_peak_suspicious)
 
 
 ## Peak Points -------------------------------------------------------------
@@ -361,19 +366,23 @@ unitigs_with_big_state_switches <-
   mutate(state = pmap_chr( list(p0.05, p0.50, p0.95), function(x,y,z) c('WW', 'WC', 'CC')[which.max(c(x,y,z))])) %>% 
   count(unitig, state)  
 
-unitigs_with_big_state_switches %<>% 
+unitigs_with_big_state_switches <-
+  unitigs_with_big_state_switches %>% 
   group_by(unitig) %>% 
   mutate(frac = n/sum(n)) %>% 
   filter(frac >= 0.1) %>% 
   filter(all(c('CC', 'WW') %in% state)) %>% 
-  distinct(unitig)
+  distinct(unitig) %>% 
+  pull()
 
-peak_windows %<>%
-  semi_join(unitigs_with_big_state_switches, by='unitig')
+peak_windows <-
+  peak_windows %>%
+  mutate(big_state_switch = ifelse(unitig %in% unitigs_with_big_state_switches, 'hom_state_switch', 'no_hom_state_switch')) %>% 
+  select(unitig, break_window, window_min, window_max, everything())
 # Output Table ------------------------------------------------------------
 
 peak_windows %>% 
-  select(unitig, window_min, window_max) %>% 
+  # select(unitig, window_min, window_max) %>% 
   readr::write_csv(output_table)
 
 
@@ -391,34 +400,56 @@ if(nrow(peak_windows) > 0) {
   
   plot_data <-
     peaks_df %>%
-    semi_join(peak_windows, by = c('unitig')) 
+    semi_join(peak_windows, by = join_by(unitig)) %>% 
+    left_join(distinct(peak_windows, unitig, big_state_switch))
   
-  plot_data %<>%
+  plot_data <-
+    plot_data %>%
     group_by(unitig) %>%
     mutate(tstart = ifelse(unitig_orientation == 1, tstart, length -tstart)) %>%
     ungroup()
   
   stopifnot(all(plot_data$tstart >= 0))
   ## Plot --------------------------------------------------------------------
+  p <-
+    ggplot()
+
+  
   bw <- 50e3
+  
+  hist_data <-
+    plot_data %>%
+    filter(wc_signal != 0)
+  
+  
+  # Stupid fucking conda doesn't have ggokabeito availible on the cluster.
+  okabeito_palette <-
+    c("#E69F00",
+      "#56B4E9",
+      "#009E73",
+      "#F0E442",
+      "#0072B2",
+      "#D55E00",
+      "#CC79A7",
+      "#999999",
+      "#000000")
   
   # WC Signal
   p <- 
-    plot_data %>%
-    filter(wc_signal != 0) %>% 
-    semi_join(unitigs_with_big_state_switches) %>%
-    ggplot()  +
+    p +
     geom_histogram(aes(
       tstart,
       weight = wc_signal,
       group = sign(wc_signal),
       fill = as.factor(sign(wc_signal))
     ),
-    binwidth = bw) +
-    facet_wrap(~ unitig, scale = 'free') +
-    theme_classic(base_size = 16)# +
-    # scale_fill_discrete(guide='none')
+    binwidth = bw,
+    data=hist_data) +
+    facet_wrap(~ big_state_switch + unitig, scale = 'free') +
+    theme_classic(base_size = 16) +
+    scale_fill_manual(values=okabeito_palette[c(1,2,3,7)])
   
+
   # Have to recalculate to account for inverted Tstarts
   plot_peak_windows <-
     peak_windows %>% 
@@ -429,13 +460,21 @@ if(nrow(peak_windows) > 0) {
     )
   
   # Peak Windows
-  p <- p +
+  p <-
+    p +
+    geom_vline(aes(xintercept = window_min),
+               alpha = .25,
+               data = plot_peak_windows) +
+    geom_vline(aes(xintercept = window_max),
+               alpha = .25,
+               data = plot_peak_windows) +
     geom_rect(
       aes(
         xmin = window_min,
         xmax = window_max,
         ymin = -Inf,
-        ymax = Inf
+        ymax = Inf,
+        fill = is_big_peak
       ),
       alpha = 0.5,
       data = plot_peak_windows
