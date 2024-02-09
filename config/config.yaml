@@ -1,14 +1,16 @@
-samples: /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing/config/samples-hgsvc-verkko14.tsv
-# modify this to be some sort of num alignments?
+samples: /absolute/path/to/strand-seq-graph-phasing/config/samples.tsv
+scripts_dir: /absolute/path/to/strand-seq-graph-phasing/scripts/
+reference: /absolute/path/to/references/T2Tv11_hg002Yv2_chm13.fasta
 segmentLengthThreshold: 250000
+per_thread_memory: False
 
-# currently only applies to the R environment rules
+# currently only applies to the R Bioconductor environment rules
 deploy_offline: True
-singularity_Renv: /gpfs/project/projects/medbioinf/projects/mihen108/env_Renv2.sif
+singularity_Renv: /absolute/path/to/singularity_environment/env_Renv2.sif
 
-# scripts
-scripts_dir: /gpfs/project/projects/medbioinf/projects/mihen108/strand-seq-graph-phasing/scripts/
+# experimental features
+calc_breakpoints: True
 
-# evaluation
-## reference fasta
-reference: /gpfs/project/projects/medbioinf/projects/mihen108/input/references/T2Tv11_hg002Yv2_chm13.fasta
+plot_evaluation: True
+plot_width: 20
+plot_height: 15
