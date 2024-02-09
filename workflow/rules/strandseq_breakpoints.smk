@@ -11,7 +11,7 @@ rule count_raw_sseq_alignments:
     params:
         script = get_script_path('R', 'count_alignments.snakemake.R')
     singularity: singularity_r_env
-    conda: '../' + conda_r_env
+    conda: '../' + conda_r_env if conda_r_env else conda_r_env # lol what I can't believe this works
     threads: 1
     resources:
         mem_mb=calc_mem(32),
