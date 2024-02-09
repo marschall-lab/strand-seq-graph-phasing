@@ -222,7 +222,7 @@ new_samples <-
 reference_alignments %>%
   semi_join(haplotype_marker_counts, by='sample') %>%
   ungroup() %>%
-  # filter(!grepl('^NA24385_', sample)) %>%
+  filter(!grepl('^NA24385-', sample)) %>%
   # filter(grepl(pilot_regex, sample, perl = TRUE)) %>%
   ggplot() +
   geom_vline(xintercept = log10(250000), linetype='dashed', alpha=0.5) +
@@ -703,8 +703,8 @@ plot_data <-
 plot_data <-
   plot_data %>%
   # filter(color != 'threshold') %>%
-  # filter(!grepl('^NA24385_', sample))%>%
-  filter(!grepl('hifiasm', sample))%>%
+  filter(!grepl('^NA24385-', sample))%>%
+  # filter(!grepl('hifiasm', sample))%>%
   # filter(grepl(pilot_regex, sample, perl=TRUE)) %>%
   filter(!is.na(tname)) %>%
   filter(tname != 'chrM')
@@ -820,7 +820,7 @@ plot_data <-
   left_join(haplotype_marker_counts, reference_alignments, by = c('sample', 'unitig')) %>%
   left_join(rukki_paths, by=c('sample', 'unitig')) %>%
   filter(qlen >= 250000) %>%
-  filter(!grepl('hifiasm', sample))
+  filter(!grepl('NA24385-', sample))
 
 plot_data <-
   plot_data %>%
@@ -1109,8 +1109,9 @@ stopifnot(nrow(semi_join(hom_nodes, issue_nodes)) == 0)
 
 plot_data <-
   rukki_paths %>%
+  filter(grepl('red', sample)) %>% 
   # filter(sample %in% new_samples) %>%
-  mutate(assignment = ifelse(is.na(assignment), 'NA', assignment)) %>%
+  # mutate(assignment = ifelse(is.na(assignment), 'NA', assignment)) %>%
   left_join(marker_calls, by = c('sample', 'unitig')) %>%
   left_join(reference_alignments, by = c('sample', 'unitig')) %>%
   filter(is_not_gap) %>%
@@ -1140,6 +1141,7 @@ plot_data <-
 
 
 plot_data %>%
+  filter(!grepl('^NA24385-', sample)) %>%
   group_by(sample, tname, color) %>%
   summarise(length = sum(length, na.rm = TRUE), .groups = 'drop') %>%
   ggplot() +

@@ -19,6 +19,9 @@ scripts_dir = config["scripts_dir"]
 reference = config.get('reference', None)
 calc_breakpoints = config.get('calc_breakpoints', False)
 
+plot_evaluation = config.get('plot_evaluation', True)
+plot_width = config.get('plot_width', 20),
+plot_height = config.get('plot_width', 15)
 ## Resources
 
 per_thread_memory = config.get("per_thread_memory", False)
@@ -131,8 +134,15 @@ include: 'rules/sample_table.smk'
 include: 'rules/collect_output.smk'
 
 if reference:
+    include: 'rules/align_to_reference.smk'
+    ALL_OUTPUT.append(expand("rmc/{sample}_{ref_name}_reference_marker_counts.csv",sample=SAMPLES,ref_name=ref_name))
+
+if plot_evaluation:
     include: 'rules/evaluate.smk'
-    ALL_OUTPUT.append(expand("reference_alignments/{ref_name}/{sample}_{ref_name}_ref-aln.paf",sample=SAMPLES, ref_name=ref_name))
+    if reference:
+        ALL_OUTPUT.append(expand("plots/evaluation_plots_{ref_name}.pdf", ref_name=ref_name))
+    else:
+        ALL_OUTPUT.append("plots/evaluation_plots_noref.pdf")
 
 if calc_breakpoints:
     include: 'rules/strandseq_breakpoints.smk'

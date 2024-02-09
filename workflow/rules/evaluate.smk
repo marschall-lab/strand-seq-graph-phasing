@@ -1,46 +1,40 @@
-################################
-############ Config ############
-################################
 
-ref_name = pathlib.Path(reference).stem
+if reference:
+    ref_alns = expand("reference_alignments/{ref_name}/{sample}_{ref_name}_ref-aln.paf", sample=SAMPLES, ref_name=ref_name)
+    out = 'plots/evaluation_plots_{ref_name}.pdf'
+    log = 'log/evaluation_plots_{ref_name}.log'
+else:
+    ref_alns = [] # '.none.'
+    out = 'plots/evaluation_plots_noref.pdf'
+    log = 'log/evaluation_plots_noref.log'
 
-# ##########################################################################################################################
-# #########     Using reference genome only for evaluation- mapping/haplotagging overlap graph unitigs ##############
-# ##########################################################################################################################
-
-ref_out = 'reference/'+ref_name+'.homopolymer-compressed.fasta'
-# print(ref_out)
-
-rule homopolymer_compress_ref:
-    input: reference
-    output: ref_out
-    params:
-        script=get_script_path('python','homopolymer_compress_fasta.py')
-    conda:'../envs/env_pyenv.yaml'
+# TODO reduce duplication
+rule evaluation_plots:
+    input:
+        hmc = expand("haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.csv", sample=SAMPLES),
+        paths   = expand("rukki/{sample}/{sample}_rukki_paths.tsv", sample=SAMPLES),
+        ref_alns = ref_alns
+    output: out
+    conda: '../envs/env_Renv.yaml'
     resources:
-        mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
-        walltime = lambda wildcards, attempt: f'{attempt*attempt:02}:59:00'
-    log: "log/homopolymer_compress_ref.log"
-    benchmark: "benchmark/homopolymer_compress_ref.benchmark"
+        mem_mb=calc_mem(16),
+        walltime=calc_walltime(1, 0)
+    params:
+        script = get_script_path('R', 'evaluation_plots.snakemake.R'),
+        plot_width = plot_width,
+        plot_height = plot_height,
+        slt = segment_length_threshold,
+        samples = SAMPLES,
+    log: log
     shell:
         '''
-        (python3 {params.script} \\
-        --input {input} \\
+        (Rscript --vanilla {params.script} \\
+        --plot-width {params.plot_width} \\
+        --plot-height {params.plot_height} \\
+        --segment-length-threshold {params.slt} \\
+        --samples {params.samples} \\
+        --haplotype-marker-counts {input.hmc} \\
+        --rukki-paths {input.paths} \\
+        --ref-alignments {input.ref_alns} \\
         --output {output}) > {log} 2>&1
         '''
-
-# TODO explore -H homopolymer compression option. Do both reads and ref need to be non-compressed? Does it not matter?
-rule map_unitigs_to_ref:
-    input:
-        ref=lambda wildcards: ref_out if MAP_SAMPLE_TO_INPUT[wildcards.sample]['hpc'] else reference,
-        unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta"
-    output: "reference_alignments/{ref_name}/{sample}_{ref_name}_ref-aln.paf"
-    conda: '../envs/env_cl.yaml'
-    resources:
-        mem_mb=lambda wildcards, attempt: 1024 * 96 * attempt,
-        walltime=lambda wildcards, attempt: f'{8 + attempt * attempt:02}:59:00'
-    log: "log/map_unitigs_to_ref_{sample}_{ref_name}.log"
-    threads: 12
-    shell:
-        "(time minimap2 -t {threads} --secondary=no --eqx -x asm20 {input.ref} {input.unitigs} > {output}) > {log} 2>&1"
-
