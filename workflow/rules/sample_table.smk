@@ -52,7 +52,7 @@ def process_sample_sheet():
         sample_input[row.sample]['assembler'] = row.assembler
 
         # assembler
-        sample_input[row.sample]['expect_XY_separate'] = row.expect_XY_separate
+        sample_input[row.sample]['cluster_PAR_with_haploid'] = row.cluster_PAR_with_haploid
 
 
         # Coverage ~ Optional

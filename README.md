@@ -50,7 +50,7 @@ The sample sheet is a .tsv file with the following columns:
 
 `assembler: [verkko, hifiasm]` Which genome assembly program was used to create the input assembly graph. 
 
-`expect_XY_separate: [TRUE, FALSE]` Is the assembly graph such that it can be expected that the only diploid component connected to the X and Y chromosomes will be the PAR? If TRUE, Graphasing will attempt to merge the PAR with any detected haploid chromosomes on the same connected component.
+`cluster_PAR_with_haploid: [TRUE, FALSE]` If TRUE, Graphasing will attempt to merge the PAR with any detected haploid chromosomes on the same connected component. Is safest if it can be expected that the only diploid component connected to the X and Y chromosomes will be the PAR. 
 
 #### Config settings
 

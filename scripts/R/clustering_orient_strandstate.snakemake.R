@@ -100,7 +100,7 @@ expected_args <-
 
     ## Params
     '--segment-length-threshold',
-    '--expect-XY-separate',
+    '--cluster-PAR-with-haploid',
     '--threads'
   )
 
@@ -157,7 +157,7 @@ connected_components <- get_values('--connected-components', singular=TRUE)
 
 ## Parameters
 segment_length_threshold <- as.numeric(get_values('--segment-length-threshold'))
-expect_XY_separate <- as.logical(get_values('--expect-XY-separate', singular=TRUE))
+cluster_PAR_with_haploid <- as.logical(get_values('--cluster-PAR-with-haploid', singular=TRUE))
 n_threads <- as.numeric(get_values('--threads'))
 stopifnot(n_threads >= 1)
 
@@ -642,7 +642,7 @@ haploid_component_unititgs <-
   semi_join(long_unitigs_df, by='unitig') %>%
   pull(unitig)
 
-# expect_XY_separate ~ only perform PAR detection for assemblies where the XY
+# cluster_PAR_with_haploid ~ only perform PAR detection for assemblies where the XY
 # component is likely only conntected to the PAR. Hifiasm graphs are more
 # tangled than that right now and therefore PAR detection for hifiasm likely
 # shoould not be attempted. The condition that the haploid cluster be the
@@ -655,7 +655,7 @@ par_clusters <-
   filter(unitig %in% haploid_component_unititgs) %>%
   filter(!grepl('^sex', cluster)) %>%
   filter(!is.na(cluster)) %>%
-  filter(expect_XY_separate) %>%
+  filter(cluster_PAR_with_haploid) %>%
   pull_distinct(cluster)
 
 

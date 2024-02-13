@@ -1,3 +1,3 @@
-sample	strandseq_dir	gfa	coverage	hpc	assembler	expect_XY_separate
+sample	strandseq_dir	gfa	coverage	hpc	assembler	cluster_PAR_with_haploid
 NA24385verkko	/absolute/path/to/sample_strandseq/NA24385	/absolute/path/to/assembly_folder/verkko/assembly.homopolymer-compressed.gfa	/absolute/path/to/assembly_folder/verkko/assembly.hifi-coverage.csv	TRUE	verkko	TRUE
 NA24385hifiasm	/absolute/path/to/sample_strandseq/NA24385	/absolute/path/to/assembly_folder/hifiasm/NA24385.bp.p_utg.gfa	NA	FALSE	hifiasm	FALSE

@@ -474,7 +474,7 @@ rule count_haplotype_markers:
         lib="library_weights/{sample}_library_weights.csv"
     params:
         segment_length_threshold=segment_length_threshold,
-        expect_XY_separate = lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['expect_XY_separate'],
+        cluster_PAR_with_haploid = lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['cluster_PAR_with_haploid'],
         script = get_script_path('R','clustering_orient_strandstate.snakemake.R')
     singularity: singularity_r_env
     conda: conda_r_env
@@ -491,7 +491,7 @@ rule count_haplotype_markers:
         --fastmap-counts {input.fastmap} \\
         --connected-components {input.connected_components} \\
         --segment-length-threshold {params.segment_length_threshold} \\
-        --expect-XY-separate {params.expect_XY_separate} \\
+        --cluster-PAR-with-haploid {params.cluster_PAR_with_haploid} \\
         --threads {threads} \\
         --output-marker-counts {output.mc} \\
         --output-lib {output.lib}) > {log} 2>&1
