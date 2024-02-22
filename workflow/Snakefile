@@ -154,7 +154,8 @@ if calc_breakpoints:
     include: 'rules/strandseq_breakpoints.smk'
     ALL_OUTPUT.append(expand("breakpoints/{sample}_breakpoint_windows.csv", sample=SAMPLES))
 
-
+# Inferred File Pairs
+ALL_OUTPUT.append(expand('library_ids/{sample}_library_ids.csv', sample=SAMPLES))
 
 ###############################
 ############ All ##############
@@ -162,6 +163,22 @@ if calc_breakpoints:
 
 rule all:
     input: ALL_OUTPUT
+
+################################################
+################# Library IDs ##################
+################################################
+
+# Export Library code-> file CSV
+rule export_library_ids:
+    output: 'library_ids/{sample}_library_ids.csv'
+    resources:
+        mem_mb=calc_mem(),
+        walltime=calc_walltime()
+    run:
+        print(f'Exporting library ids for {wildcards.sample}')
+        sseq_pairs = MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_pairs']
+        df = pandas.DataFrame.from_dict(sseq_pairs, orient='index')
+        df.to_csv(output[0], index=True, index_label='library')
 
 ################################################
 ############ Unmerged SS Processing ############
