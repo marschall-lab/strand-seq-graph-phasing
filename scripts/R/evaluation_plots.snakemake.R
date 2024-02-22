@@ -364,7 +364,7 @@ p <-
   facet_wrap(~sample, scale='free_y', drop=FALSE) +
   scale_y_continuous(expand = expansion(mult=c(0,0.1))) +
   scale_x_log10() +
-  xlab('Unitig Length') +
+  xlab('Log10 Unitig Length') +
   ylab('Count') +
   theme_bw() +
   theme(axis.title.y = element_blank()) +
@@ -1220,9 +1220,7 @@ p <-
   scale_fill_manual(values=okabeito_palette[c(3,1,2,4,5,6,7,8)], name=NULL) +
   scale_y_continuous(expand = expansion(mult=c(0,0.1))) +
   theme_bw() +
-  theme(axis.title.x = element_blank(),
-        axis.title.y = element_blank(),
-        axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 plots[['rukki_marker_agreement']] <- p
 
@@ -1251,9 +1249,7 @@ p <-
   scale_fill_manual(values=okabeito_palette[c(3,1,2,4,5,6,7,8)], name=NULL) +
   scale_y_continuous(expand = expansion(mult=c(0,0.1))) +
   theme_bw() +
-  theme(axis.title.x = element_blank(),
-        axis.title.y = element_blank(),
-        axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
 plots[['rukki_marker_agreement_by_chrom']] <- p
@@ -1286,15 +1282,13 @@ p <-
   ggplot(plot_data) +
   geom_col(aes(x=sample, y=n, fill=all_hard_to_assemble)) +
   # scale_fill_okabe_ito(name='Aligns Only to Hard-to-Assemble Chromosomes') +
-  scale_fill_manual(values=okabeito_palette, name='Aligns Only to Hard-to-Assemble Chromosomes') +
+  scale_fill_manual(values=okabeito_palette, name='Aligns Only to\nHard-to-Assemble Chromosomes') +
   scale_y_continuous(expand = expansion(mult=c(0,0.1))) +
   xlab('Sample') +
   ylab('N') +
   ggtitle('Paths Aligning to Multiple Chromosomes') +
   theme_bw() +
-  theme(axis.title.x = element_blank(),
-        axis.title.y = element_blank(),
-        axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 plots[['rukki_path_multichrom_alignments']] <- p
 # Gaps --------------------------------------------------------------------
