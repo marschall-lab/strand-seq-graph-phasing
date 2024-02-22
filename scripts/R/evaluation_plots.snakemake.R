@@ -750,7 +750,7 @@ plot_data <-
   plot_data %>%
   mutate(hap_1_counts = hap_1_counts + 1,
          hap_2_counts = hap_2_counts + 1) %>%
-  mutate(rat = (hap_1_counts - hap_2_counts)/(hap_1_counts+hap_2_counts))
+  mutate(ssf = (hap_1_counts - hap_2_counts)/(hap_1_counts+hap_2_counts))
 
 plot_data <-
   plot_data %>% 
@@ -760,7 +760,7 @@ p <-
   plot_data %>%
   ggplot() +
   geom_point(aes(
-    x = rat,
+    x = ssf,
     y = tname,
     size = `Length (Mbp)`,
     fill = tname,
@@ -774,8 +774,8 @@ p <-
   scale_fill_manual(values=okabeito_palette, name=NULL) +
   theme_bw() +
   ylab('Chromosome') +
-  xlab('Wfrac') +
-  ggtitle('Haploid Chromosome Wfracs') +
+  xlab('Strand State Frequency') +
+  ggtitle('Haploid Chromosome SSFs') +
   # theme_bw() +
   theme(
     panel.grid.major.x = element_blank(),
@@ -1022,7 +1022,7 @@ plots[['all_auns']] <- p
 
 
 
-# Wfrac -------------------------------------------------------------------
+# SSFs -------------------------------------------------------------------
 
 plot_data <-
   haplotype_marker_df %>% 
@@ -1031,9 +1031,9 @@ plot_data <-
 plot_data <-
   plot_data %>%
   mutate(hap_1_counts = hap_1_counts + 1,hap_2_counts = hap_2_counts + 1) %>% 
-  mutate(wfrac = (hap_1_counts - hap_2_counts)/(hap_1_counts+hap_2_counts))
+  mutate(ssf = (hap_1_counts - hap_2_counts)/(hap_1_counts+hap_2_counts))
 
-## Wfrac Histograms --------------------------------------------------------
+## SSF Histograms --------------------------------------------------------
 
 
 
@@ -1041,56 +1041,56 @@ p <-
   plot_data %>% 
   ggplot() +
   geom_vline(xintercept = 0, linetype = 'dotted') +
-  geom_histogram(aes(wfrac, weight=length, fill=assignment)) +
+  geom_histogram(aes(ssf, weight=length, fill=assignment)) +
   facet_wrap(~sample, drop=FALSE) +
   # scale_fill_okabe_ito(name='Rukki Assignment', na.value='grey50') +
   scale_fill_manual(values=okabeito_palette, name='Rukki Assignment', na.value='grey50') +
   scale_y_continuous(expand = expansion(mult=c(0,0.1))) +
-  xlab('Wfrac') +
+  xlab('Strand State Frequency') +
   ylab(NULL) +
-  ggtitle('Wfrac Histogram') +
+  ggtitle('Strand State Frequency Histogram') +
   theme_bw()
 
-plots[['wfrac_histogram']] <- p
+plots[['ssf_histogram']] <- p
 
 
-## Wfrac Scatter -----------------------------------------------------------
+## SSF Scatter -----------------------------------------------------------
 
 p <-
   plot_data %>% 
   ggplot() +
   geom_vline(xintercept = 0, linetype = 'dotted') +
-  geom_point(aes(x=wfrac, y=assignment, fill=assignment, size=length/1e6), shape=21) +
+  geom_point(aes(x=ssf, y=assignment, fill=assignment, size=length/1e6), shape=21) +
   facet_wrap(~sample, drop=FALSE) +
   # scale_fill_okabe_ito(name='Rukki Assignment', na.value='grey50') +
   scale_fill_manual(values=okabeito_palette, name='Rukki Assignment', na.value='grey50') +
   scale_size_area(name='Mbp') +
-  xlab('Wfrac') +
+  xlab('Strand State Frequency') +
   ylab(NULL) +
-  ggtitle('Wfrac Scatter') +
+  ggtitle('Strand State Frequency Scatter') +
   theme_bw()
 
-plots[['wfrac_scatter']] <- p
+plots[['ssf_scatter']] <- p
 
-## Unexpected Wfrac Scatter ------------------------------------------------
+## Unexpected SSF Scatter ------------------------------------------------
 
 p <-
   plot_data %>% 
-  filter(!(assignment == 'HAPLOTYPE1' & wfrac > 0) | is.na(assignment)) %>% 
-  filter(!(assignment == 'HAPLOTYPE2' & wfrac < 0) | is.na(assignment)) %>% 
+  filter(!(assignment == 'HAPLOTYPE1' & ssf > 0) | is.na(assignment)) %>% 
+  filter(!(assignment == 'HAPLOTYPE2' & ssf < 0) | is.na(assignment)) %>% 
   ggplot() +
   geom_vline(xintercept = 0, linetype = 'dotted') +
-  geom_point(aes(x=wfrac, y=assignment, fill=assignment, size=length/1e6), shape=21) +
+  geom_point(aes(x=ssf, y=assignment, fill=assignment, size=length/1e6), shape=21) +
   facet_wrap(~sample, drop=FALSE) +
   # scale_fill_okabe_ito(name='Rukki Assignment', na.value='grey50') +
   scale_fill_manual(values=okabeito_palette, name='Rukki Assignment', na.value='grey50') +
   scale_size_area(name='Mbp') +
-  xlab('Wfrac') +
+  xlab('Strand State Frequency') +
   ylab(NULL) +
-  ggtitle('Unexpected Wfrac Scatter') +
+  ggtitle('Unexpected Strand State Frequency Scatter') +
   theme_bw()
 
-plots[['wfrac_scatter_unexpected']] <- p
+plots[['ssf_scatter_unexpected']] <- p
 
 
 # Marker Blob Plot --------------------------------------------------------
