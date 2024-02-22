@@ -14,3 +14,10 @@ calc_breakpoints: True
 plot_evaluation: True
 plot_width: 20
 plot_height: 15
+plot_output_suffix: '_identifying-suffix'
+
+# Additional controls, if reference is provided:
+dip_chroms_regex: '(chr|CHR)[0-9]+'
+hap_chroms_regex: '(chr|CHR)[yY]'
+hem_chroms_regex: '(chr|CHR)[xX]'
+hta_chroms_regex: '(chr|CHR)(13|14|15|21|22)'

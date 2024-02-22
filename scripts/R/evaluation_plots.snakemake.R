@@ -18,7 +18,12 @@ args <- commandArgs(trailingOnly = FALSE)
 ## Expected Args
 expected_args <-
   c(
-    # Options
+    # Plot Options
+    '--included-diploid-chroms-regex',
+    '--included-haploid-chroms-regex',
+    '--included-hemiploid-chroms-regex',
+    '--hta-chroms-regex',
+    # Output Options
     '--plot-width',
     '--plot-height',
     # Parameters
@@ -101,9 +106,13 @@ if(length(ref_alns) == 0) {
 # output <- 'test_output_plots.pdf'
 output <- get_values('--output', singular=TRUE)
 
-# TODO make these passable parameters.
 out_width <- as.numeric(get_values('--plot-width', singular=TRUE))
 out_height <- as.numeric(get_values('--plot-height', singular=TRUE))
+
+included_dip_regex <- get_values('--included-diploid-chroms-regex', singular=TRUE)
+included_hap_regex <- get_values('--included-haploid-chroms-regex', singular = TRUE)
+included_hem_regex  <- get_values('--included-hemiploid-chroms-regex', singular = TRUE)
+hta_regex <- get_values('--hta-chroms-regex', singular = TRUE)
 
 # TODO condition handling on empty reference alignments
 arg_lengths <-
@@ -269,23 +278,23 @@ tnames <-
 
 # TODO make these arguments passable from the command line?
 included_diploid_chrs <-
-  stringr::str_subset(tnames, '(chr|CHR)[0-9]+') %>% 
+  stringr::str_subset(tnames, included_dip_regex) %>% 
   stringr::str_sort(numeric = TRUE)
 
 # sex chrs ususlly haploid
 included_haploid_chrs <-
-  stringr::str_subset(tnames, '(chr|CHR)[yY]') %>% 
+  stringr::str_subset(tnames, included_hap_regex) %>% 
   stringr::str_sort(numeric = TRUE)
 
-included_12ploid_chrs <-
-  stringr::str_subset(tnames, '(chr|CHR)[xX]') %>% 
+included_hemiploid_chrs <-
+  stringr::str_subset(tnames, included_hem_regex) %>% 
   stringr::str_sort(numeric = TRUE)
 
 included_chrs <-
-  c(included_diploid_chrs, included_haploid_chrs, included_12ploid_chrs)
+  c(included_diploid_chrs, included_haploid_chrs, included_hemiploid_chrs)
 
-included_hard_to_assemble_chrs <-
-  stringr::str_subset(tnames, '(chr|CHR)(13|14|15|21|22)') %>% 
+hard_to_assemble_chrs <-
+  stringr::str_subset(tnames, hta_regex) %>% 
   stringr::str_sort(numeric = TRUE)
 
 included_chrs_df <-
@@ -293,9 +302,9 @@ included_chrs_df <-
   mutate(ploidy = case_when(
     tname %in% included_diploid_chrs ~ 'Diploid',
     tname %in% included_haploid_chrs ~ 'Haploid',
-    TRUE  ~ '12ploid')) %>% 
+    TRUE  ~ 'Hemiploid')) %>% 
   # mutate(is_diploid = ploidy == 'diploid') %>% 
-  mutate(is_hard_to_assemble = tname %in% included_hard_to_assemble_chrs)
+  mutate(is_hard_to_assemble = tname %in% hard_to_assemble_chrs)
 
 # Derived DFs -------------------------------------------------------------
 
@@ -532,7 +541,7 @@ merge_hap_tnames <- function(x, hap_chrs) {
   return(x)
 }
 
-to_merge <- c(included_haploid_chrs, included_12ploid_chrs)
+to_merge <- c(included_haploid_chrs, included_hemiploid_chrs)
 
 modified_inlcuded_chrs <-
   included_chrs_df %>% 
@@ -597,7 +606,7 @@ label_data <-
 p <-
   ggplot(mapping = aes(x = tname, y = perc)) +
   geom_vline(
-    xintercept = included_hard_to_assemble_chrs,
+    xintercept = hard_to_assemble_chrs,
     alpha = 0.33,
     linetype = 'dashed'
   ) +
@@ -735,7 +744,7 @@ plots[['rukki_assignment_sizes_by_ref_chrom_frac']] <- p
 plot_data <-
   haplotype_marker_df %>% 
   left_join(unitig_to_tname_df, by = c('sample', 'unitig')) %>%
-  filter(tname %in%  c(included_haploid_chrs, included_12ploid_chrs))
+  filter(tname %in%  c(included_haploid_chrs, included_hemiploid_chrs))
 
 plot_data <-
   plot_data %>%

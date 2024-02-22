@@ -71,11 +71,30 @@ These two parameters only apply to the rules which use R Bioconductor packages:
 `singularity_Renv:` Path to the R Singularty environment. Only needed if `deploy_offline: True`
 
 ##### Experimental Features
+
+##### Breakpoints
 `calc_breakpoints bool (optional, default:False)` If `True`, Graphasing will attempt to locate haplotype switches in the input assembly. Detected peaks, as well as plots, can be found in `breakpoints/`
 
-`plot_evaluation bool (optional, default:True)` If `True`, evaluation plots will be made for all input samples. If a reference is provided, evaluation plots will include reference-derived evaluations. Without a reference, some plots will be left blank. Evaluation plots can be found in `plots/`
+##### Evaluation Plots
+`plot_evaluation bool (optional, default:True)` If `True`, evaluation plots will be made for all input samples. If a reference is provided, evaluation plots will include reference-derived evaluations. Without a reference, some plots will be left blank. Evaluation plots can be found in `plots/`. 
 
-`plot_width, plot_height int (optional, default:20,15)` Width and height of evaluation plots .pdf
+`plot_width, plot_height int (optional, default:20,15)` 
+Width and height of evaluation plots .pdf output file.
+
+`plot_output_suffix str (optional, default:'')`
+Suffix to output file name. May be useful if using multiple configs within the same working directory
+
+The following options are only needed if a reference is provided for the evaluation plots:
+
+`dip_chroms_regex: str (optional, default: '(chr|CHR)[0-9]+')` 
+\
+`hap_chroms_regex: str (optional, default: '(chr|CHR)[yY]'` 
+\
+`hem_chroms_regex: str (optional, default: '(chr|CHR)[xX]'` 
+\
+`hta_chroms_regex: str (optional, default: '(chr|CHR)(13|14|15|21|22)'`
+
+These regexs control what is plotted, as well as additional plot annotations. Annotations are made for chromosomes that are diploid, haploid, hemiploid (sometimes diploid or haploid eg, chr X in humans), and hard-to-assemble. Only chromosomes matching the diploid, haploid, and hemiploid regexs are plotted. Defaults are set for human genomes.
 
 ## Example command
 
