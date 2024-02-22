@@ -22,6 +22,12 @@ calc_breakpoints = config.get('calc_breakpoints', False)
 plot_evaluation = config.get('plot_evaluation', True)
 plot_width = config.get('plot_width', 20),
 plot_height = config.get('plot_width', 15)
+plot_output_suffix = config.get('plot_output_suffix', '')
+
+dip_chroms_regex = config.get('dip_chroms_regex', '(chr|CHR)[0-9]+')
+hap_chroms_regex = config.get('hap_chroms_regex', '(chr|CHR)[yY]')
+hem_chroms_regex = config.get('hem_chroms_regex', '(chr|CHR)[xX]')
+hta_chroms_regex = config.get('hta_chroms_regex', '(chr|CHR)(13|14|15|21|22)')
 ## Resources
 
 per_thread_memory = config.get("per_thread_memory", False)
