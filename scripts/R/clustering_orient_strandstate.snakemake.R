@@ -1164,11 +1164,14 @@ marker_counts <-
   mutate(unitig_dir = ifelse(grepl('inverted$', unitig_dir), -1, 1)) %>%
   dplyr::rename(unitig_orientation = unitig_dir)
 
+marker_counts <-
+  marker_counts %>%
+  mutate(ssf = round((w-c)/(w+c), 3))
 # first three columns: name, counts_1, counts_2 for rukki
 marker_counts <-
   marker_counts %>%
   dplyr::rename(hap_1_counts = c, hap_2_counts = w) %>%
-  select(unitig, hap_1_counts, hap_2_counts, everything(), exclusion) %>%
+  select(unitig, hap_1_counts, hap_2_counts, n, ssf, everything(), exclusion) %>%
   arrange(cluster)
 
 ### Bandage Cluster Colors -----------------------------------------------------
@@ -1289,7 +1292,7 @@ stopifnot(all(as.integer(marker_counts$hap_2_counts) == marker_counts$hap_2_coun
 
 marker_counts <-
   marker_counts %>%
-  select(unitig, hap_1_counts, hap_2_counts, everything())
+  select(unitig, hap_1_counts, hap_2_counts, n, everything())
   
 readr::write_csv(marker_counts, output_counts)
 
