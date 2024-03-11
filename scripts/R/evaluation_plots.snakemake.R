@@ -125,7 +125,7 @@ stopifnot(all(arg_lengths >= 1), n_distinct(arg_lengths) == 1)
 haplotype_marker_df <- 
   haplotype_marker_counts %>% 
   set_names(samples) %>% 
-  map(readr::read_csv, col_types = 'cnnnnnccnnlnclnn', .progress = TRUE) %>% 
+  map(readr::read_csv, col_types = 'cnnnnndccnnlnclnn', .progress = TRUE) %>% 
   list_rbind(names_to = 'sample') %>% 
   mutate(sample = set_sample_factor(sample))
 
