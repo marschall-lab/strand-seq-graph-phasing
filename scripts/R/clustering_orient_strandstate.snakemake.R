@@ -1026,35 +1026,25 @@ hmc <-
   imap(em_counts, function(counts, nm){
     # browser()
 
+    # Project weights onto the cube, to use indicator variable interpretation?
     weights <-
-      unprojected_wc_vectors[[nm]] 
+      unprojected_wc_vectors[[nm]] %>% 
+      mutate(wc_ssf = wc_ssf/max(abs(wc_ssf), na.rm=TRUE))
 
     out <-
       counts %>%
       right_join(weights, by='lib')
 
-    # TODO this weights thing isn't quite right.
     out <-
       out %>%
-      mutate( # pseudo_counts
-        p_c = ifelse(sign(wc_ssf) == 1, wc_ssf^2 * c, wc_ssf^2 * w),
-        p_w = ifelse(sign(wc_ssf) == 1, wc_ssf^2 * w, wc_ssf^2 * c)
+      mutate( # projected_counts
+        p_c = ifelse(sign(wc_ssf) == 1, wc_ssf * c, abs(wc_ssf) * w),
+        p_w = ifelse(sign(wc_ssf) == 1, wc_ssf * w, abs(wc_ssf) * c)
       ) %>%
       group_by(unitig) %>%
-      summarise(p_c = sum(p_c), p_w = sum(p_w), n=sum(n)) %>%
-      ungroup()
-
-    # scale marker ratio to original N
-    out <-
-      out %>%
-      mutate(
-        c = ifelse(p_c + p_w == 0, 0, p_c/(p_c + p_w) * n),
-        w = ifelse(p_c + p_w == 0, 0, p_w/(p_c + p_w) * n)
-      )%>%
-      select(-p_c, -p_w)
-    # Previously, this was select(-p_c, -p_w, n), which appeared to act exactly
-    # the same as select(-p_c, -p_w), despite the apparent bug of the n at
-    # the end of the select!
+      summarise(c = sum(p_c), w = sum(p_w)) %>% 
+      ungroup() %>% 
+      mutate(n=ceiling(c + w))
 
     return(out)
   })
