@@ -197,7 +197,7 @@ raw_counts_df <-
 raw_counts_df <-
   raw_counts_df %>% 
   left_join(lib_weights, by=c('lib', 'cluster')) %>% 
-  filter(!is.na(ww_weight_mem))
+  filter(!is.na(ww_ssf))
 
 
 # Strand-state specific signal --------------------------------------------
@@ -220,16 +220,9 @@ raw_counts_df <-
 raw_counts_df <-
   raw_counts_df %>% 
   mutate(
-    wc_signal = y * sign(wc_weight_fastmap) * wc_weight_fastmap^2 * unitig_orientation,
-    # ww_signal = y * sign(ww_weight_fastmap) * ww_weight_fastmap^2 * unitig_orientation
-    ww_signal = y * sign(ww_weight_mem) * ww_weight_mem^2 * unitig_orientation
-  )    # %>% 
-  # select(-wc_weight_fastmap,
-  #        -ww_weight_fastmap,
-  #        -ww_weight_mem, 
-  #        -unitig_orientation,
-  #        -strand,
-  #        -cluster)
+    wc_signal = y * sign(wc_ssf) * wc_ssf^2 * unitig_orientation,
+    ww_signal = y * sign(ww_ssf) * ww_ssf^2 * unitig_orientation
+  )    
 
 # scale to original counts
 raw_counts_df <-

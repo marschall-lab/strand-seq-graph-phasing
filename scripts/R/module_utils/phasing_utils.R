@@ -420,117 +420,6 @@ merge_similar_clusters <- function(counts_df, cluster_df, similarity_threshold =
   return(cluster_df)
 }
 
-
-merge_similar_clusters2_ <- function(counts_df, cluster_df, similarity_threshold =0.50, min_n=10, min_overlaps=5 ) {
-  
-  if(nrow(cluster_df) == 1) {
-    out <-
-      cluster_df %>% 
-      mutate(num_loops=1) 
-    
-    return(out)
-  }
-  wfrac_matrix <- with(counts_df, make_wc_matrix(w, c, lib, unitig, min_n=min_n))
-  any_merged <- TRUE
-  num_loops <- 0
-  while(any_merged) {
-    any_merged <- FALSE
-    
-    clusters <-
-      cluster_df %>% 
-      filter(!is.na(cluster)) %>% 
-      pull_distinct(cluster) %>% 
-      set_names()
-    
-    cluster_unitigs <-
-      clusters %>%
-      map(function(x) {
-        cluster_df %>%
-          filter(cluster == x) %>%
-          pull(unitig)
-      })
-    
-    # TODO Should this abs be removed? Why does it work even when abs is there?
-    # That is very confusing. I think it works because dissimilar clusters ended
-    # up orthogonal no one another, where the "error" (I think it is an error)
-    # of applying abs() would have little effect.
-    similarities <-
-      wfrac_matrix[flatten_chr(cluster_unitigs), ,drop=FALSE] %>%
-      cosine_similarity(min_overlaps=min_overlaps) # %>% 
-      # abs()
-    
-    # Average within and between clusters
-    n_clusters <- length(clusters)
-    
-    clust_sim <- matrix(nrow=n_clusters, ncol=n_clusters)
-    dimnames(clust_sim) <- list(clusters, clusters)
-    
-    for(i in clusters) {
-      for(j in clusters) {
-        i_unitigs <- cluster_unitigs[[i]]
-        j_unitigs <- cluster_unitigs[[j]]
-        #TODO NA handling of values? What if all NA?
-        val <- mean(similarities[i_unitigs, j_unitigs], na.rm = TRUE)
-        clust_sim[i,j] <- clust_sim[j,i] <- val
-      }
-    }
-    
-    if(all(is.na(clust_sim[upper.tri(clust_sim)]))) {
-      cat('No valid similarity scores\n')
-      break
-    }
-    #TODO NA handling of values? What if all NA
-    max_sim <- max(clust_sim[upper.tri(clust_sim)], na.rm=TRUE)
-    
-    # TODO something to handle comparison of floats here, getting some 1.000 !=
-    # 1 results
-    max_ix <-
-      which(clust_sim == max_sim, arr.ind = TRUE)
-    
-    # If similarity is 1, values on the diagonal can be selected. Remove diagonals
-    max_ix <- max_ix[max_ix[, 'row'] != max_ix[, 'col'] ,]
-    
-    clust_1 <- clusters[max_ix[1,1]]
-    clust_2 <- clusters[max_ix[1,2]]
-    
-    num_loops <- num_loops + 1
-    if(max_sim > similarity_threshold) {
-      
-      any_merged <- TRUE
-      
-      cat('Merging ',
-          clust_1,
-          ', ',
-          clust_2,
-          ', cosine similarity: ',
-          max_sim,
-          '\n')
-      
-      cluster_df <-
-        cluster_df %>% 
-        mutate(cluster = ifelse(cluster == clust_1, clust_2, cluster))
-      
-    } else {
-      cat(
-        'Not merging',
-        paste(clusters, collapse=','),
-        ' greatest similarity between',
-        clust_1,
-        ', ',
-        clust_2,
-        ', cosine similarity: ',
-        max_sim,
-        '\n'
-      )
-    }
-  }
-  
-  cluster_df %>% 
-    mutate(num_loops = num_loops) %>% 
-    return()
-}
-
-
 propagate_one_cluster_components <- function(cluster_df, components_df) {
   
   # TODO add a check on the proportion of a component that is clustered? EG. A
@@ -773,109 +662,27 @@ strandphaser_sort_array <- function(phaser_array) {
 }
 
 
-get_chrom_cluster_data_planes <- function(counts_df, cluster_df, unitig_lengths_df, supervision = c('PC1' , 'inverse'), min_n=5) {
-  
-  supervision <- match.arg(supervision)
-  
-  cluster_counts <-
-    counts_df %>% 
-    bind_with_inverted_unitigs() %>% # self-supervision
-    left_join(cluster_df, by='unitig') %>% 
-    split(.$cluster)
-  
-  wfracs <-
-    cluster_counts %>% 
-    map(function(x) with(x, make_wc_matrix(w,c,lib,unitig_dir,min_n=min_n)))  %>% 
-    # filling with 0s doesn't seem to affect first PC too much, compared to
-    # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
-    map(function(x) {
-      x[is.na(x)] <- 0 
-      return(x)
-    }) 
-  
-  prcomps <-
-    wfracs %>% 
-    map(prcomp)
-
-  model_input <-
-    map(prcomps, function(x) {
-      x <-
-        x %>%
-        get_prcomp_plotdata(., 'unitig_dir') %>%
-        mutate(unitig = gsub('_inverted', '', unitig_dir)) %>%
-        left_join(unitig_lengths_df, by='unitig')
-      
-      if(supervision == 'PC1') {
-        x <-
-          x %>%
-          mutate(y = sign(PC1)==1) 
-      } else if(supervision == 'inverse') {
-        x <-
-          x %>%
-          mutate(y = grepl('inverted', unitig_dir)) 
-      } else {
-        stop('nothing yet')
-      }
-      
-      return(x)
-
-    })
-  
-  # TODO weighted PCA instead of weighted GLM after PCA?
-  glms <-
-    map(model_input, function(x){
-      w <- x$length
-      
-      x <-
-        x %>%
-        select(-length,-unitig_dir, -unitig)
-      
-      glm(y ~ -1 + ., family=binomial(), weights = w, data=x)
-    })
-  
-  plane_vectors <-
-    map(glms, function(x) {
-      list(
-        decision_boundary = -coef(x)[1] / coef(x)[2],
-        decision_boundary_perpendicular = coef(x)[2] / coef(x)[1]
-      ) %>% map(function(slp) {
-        vec <- c(1, slp)
-        unit_vector <- vec / sqrt(sum(vec * vec))
-        return(unit_vector)
-      })
-    })
-
-  
-  lib_weights <-
-    map2(prcomps, plane_vectors, function(x, vecs) {
-      projections <-
-        map(vecs, function(vec) {
-          x$rotation[, 1:2] %*% vec
-        })
-      
-      # What is this check for/ how does it work?
-      stopifnot(all(rownames(projections[[1]]) == rownames(projections[[2]])))
-      
-      out <-
-        tibble(
-          lib = rownames(projections[[1]]),
-          b_weight = projections$decision_boundary[, 1],
-          p_weight = projections$decision_boundary_perpendicular[, 1]
-        )
-      
-      return(out)
-    })
-  
-  lib_weights_df <-
-    bind_rows(lib_weights, .id='cluster')
-  
-  model_input <-
-    bind_rows(model_input, .id='cluster') %>% 
-    select(cluster, unitig, unitig_dir, y, everything())
-  
-  return(list(weights = lib_weights_df, model_input = model_input, plane_vectors = plane_vectors))
-  
-}
 # Misc --------------------------------------------------------------------
 
+project_onto <- function(x, y) {
+  stopifnot(length(y) == length(x))
+  complete_ix <- !is.na(x) & !is.na(y)
+  x[!complete_ix] <- NA
+  y[!complete_ix] <- NA
+  y_norm <- y/sqrt(sum(y^2, na.rm=TRUE))
+  x_onto_y <-  sum(x * y_norm, na.rm=TRUE) * y_norm
+  
+  return(x_onto_y)
+}
+
+gram_schmidt_orthognalize <- function(x, y) {
+  stopifnot(length(y) == length(x))
+  x_onto_y <- project_onto(x, y)
+  x_ortho <- x - x_onto_y
+  return(x_ortho)
+}
+
+project_through <- function(x, y) {
+  return(x - 2 * gram_schmidt_orthognalize(x, y))
+}
 
