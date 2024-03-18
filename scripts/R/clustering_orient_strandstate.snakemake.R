@@ -741,9 +741,6 @@ cat('Detecting unitig orientation\n')
 # data. A cheap solution could be just to filter the data by mapq to "reveal"
 # the WC signal. However, I am curious to see if there is a way to derive the WC
 # library weights without that.
-mem_data_plane <-
-  get_chrom_cluster_data_planes(counts_df, cluster_df, unitig_lengths_df, supervision = 'PC1')
-
 
 # It appears that I need to do clustering only on the first PC, which
 # corresponds to orientation, as otherwise, other dimensions can influence the
@@ -873,301 +870,175 @@ if(nrow(bad) > 0) {
 
 # Phase Chromosomes -------------------------------------------------------
 
-## Orient Fastmap Counts --------------------------------------------------
+
+## Orient Counts -----------------------------------------------------------
+
 # exact_match_counts_df <- raw_exact_match_counts_df
 
 exact_match_counts_df <-
   orient_counts(exact_match_counts_df, strand_orientation_clusters_df)
 
-fastmap_data_plane <-
-  get_chrom_cluster_data_planes(exact_match_counts_df, cluster_df, unitig_lengths_df, supervision = 'inverse')
+oriented_counts_df <-
+  orient_counts(counts_df, strand_orientation_clusters_df)
 
-## Counts ------------------------------------------------------------------
+oriented_counts_df <-
+  oriented_counts_df %>%  
+  left_join(cluster_df) %>% 
+  arrange(cluster, unitig, lib) 
 
+oriented_counts_df <-
+  oriented_counts_df %>%
+  group_by(cluster, lib) %>%
+  summarise(across(c(c, w, n), sum), .groups = 'drop')
+
+## Calculate WC and WW Basis Vectors ----------------------------------------
+
+# does this work with, eg, a 1 unitig cluster? Or does the dimension projection
+# lost a lot of library information?
 em_counts <-
   exact_match_counts_df %>%
-  bind_with_inverted_unitigs() %>%
-  left_join(cluster_df, by='unitig') %>%
+  left_join(cluster_df, by='unitig') %>% 
+  arrange(cluster, unitig, lib) %>%
   split(.$cluster)
 
-## One Haplotype Clusters --------------------------------------------------
+ww_vectors <-
+  oriented_counts_df %>%
+  mutate(ww_ssf = ifelse(n < 1, NA, (w-c)/n))  %>% 
+  select(cluster, lib, ww_ssf) %>% 
+  split(.$cluster)
 
-### Detect one Haplotype Clusters --------------------------------------------------
+ww_vectors <- ww_vectors[names(em_counts)]
 
-# NOTE. This isn't detecting just clusters with one haplotype: It will also
-# detect two haplotype clusters where only one unitig is "good enough" to use
-# for sorting. However, sorting those one-good-unitig two-haplotype clusters
-# happens in the same way as sorting a one haplotype cluster.
-
-is_one_haplotype_cluster <-
-  imap(em_counts, function(x, nm) {
-    # TODO collect and justify parameters
-    cat('Detecting number of clusters in:', nm, '\n')
-
-    sort_counts <-
-      x %>%
-      filter(!grepl('inverted', unitig_dir))
-
-    unitigs <-
-      sort_counts %>%
-      pull_distinct(unitig)
-
-    if(length(unitigs) == 1) {
-      cat('One unitig cluster:', nm, '\n')
-      return(unitigs)
-    }
-
-
-    sort_counts <-
-      sort_counts %>%
-      left_join(fastmap_data_plane$weights, by=c('cluster', 'lib')) %>%
-      mutate(p_weight = ifelse(is.na(p_weight), 0, p_weight))
-
-    # TODO this weight thing isn't quite right.
-    sort_counts <-
-      sort_counts %>%
-      mutate( # pseudo_counts
-        p_c = ifelse(sign(p_weight) == 1, c/p_weight, w/abs(p_weight)),
-        p_w = ifelse(sign(p_weight) == 1, w/p_weight, c/abs(p_weight))
-      )
-
-    # scale marker ratio to original N
-    sort_counts <-
-      sort_counts %>%
-      mutate(
-        c = ifelse(p_c + p_w == 0, 0, p_c/(p_c + p_w) * n),
-        w = ifelse(p_c + p_w == 0, 0, p_w/(p_c + p_w) * n)
-      )%>%
-      select(-p_c, -p_w) %>%
-      mutate(c = as.integer(ceiling(c)), w=as.integer(ceiling(w)))
-
-
-
-    # Trying to sort on good, big unitigs that are often present in verkko graphs.
-    unitigs <-
-      sort_counts %>%
-      left_join(unitig_lengths_df, by='unitig') %>%
-      filter(length >= 1e6) %>%
-      pull_distinct(unitig)
-
-    if(length(unitigs) < 1) {
-      cat('No adequately long unitigs for number of clusters detection:', nm, '\n')
-      return(NA)
-    }
-
-    wc <-
-      sort_counts %>%
-      with(make_wc_matrix(w,c,lib,unitig, min_n=1))
-
-    unitig_vector_lengths <-
-      wc %>%
-      apply(1, function(x) (sqrt(sum(x^2, na.rm=T))))
-
-    print(unitig_vector_lengths)
-
-    threshold <-
-      max(unitig_vector_lengths) - 0.2 *  max(unitig_vector_lengths)
-
-    #FIXME A genuine one-haplotype cluster may be flagged by this incorrectly.
-    #If something fails this check, it needs to be looked at in unweighted
-    #data space as well. Similarly, a one haplotype cluster may look very WC
-    #after down-weighting WW libraries. OR maybe not I have run tests with
-    #manually created one-haplotype clusters and it seems fine...
-
-    # TODO Minimum vector length needs to be scaled by
-    #num libraries
-    min_vector_length <- 4
-    unitigs <-
-      names(unitig_vector_lengths)[unitig_vector_lengths > min_vector_length & unitig_vector_lengths > threshold]
-
-    if(length(unitigs) < 1) {
-      cat('Too few adequately low-noise unitigs for number of clusters detection:', nm, '\n')
-      return(NA)
-    }
-
-    fake_cluster_df <-
-      tibble(unitig = unitigs) %>%
-      mutate(cluster = unitig)
-
-    # TODO justify these parameter values
-    out <-
-      merge_similar_clusters2_(sort_counts, fake_cluster_df, similarity_threshold = 0.5, min_n=1, min_overlaps =2) %>%
-      mutate(sort = cluster) %>%
-      mutate(sort = as.integer(as.factor(sort)))
-
-    num_loops <-
-      out %>%
-      pull_distinct(num_loops)
-
-    if(num_loops == 0) {
-      cat('No valid similarity scores for cluster:', nm, '\n')
-      return(NA)
-    }
-
-    num_clusters <-
-      out %>%
-      pull_distinct(sort) %>%
-      length()
-
-    if(num_clusters > 1) {
-      return(character())
-    } else if(num_clusters == 1){
-      return(out %>% pull_distinct(unitig))
-    } else {
-      stop("You shouldn't be here.")
-    }
-
+em_ssf_mats <- 
+  map(em_counts, function(x) {
+    with(x, make_wc_matrix(w, c, lib, unitig, min_n=1)) 
   })
 
-one_haplotype_cluster_unitigs <-
-  is_one_haplotype_cluster %>%
-  discard(function(x) length(x) == 0) %>%
-  discard(function(x) all(is.na(x)))
+em_ssf_mats_proj <-
+  map2(em_ssf_mats, ww_vectors, function(x, ww_df) {
+    ww_df <- 
+      ww_df %>% 
+      arrange(lib) 
+    
+    libs <- 
+      ww_df %>% 
+      pull(lib)
+    
+    stopifnot(all(colnames(x) == libs))
+    
+    ssfs <-
+      ww_df %>% 
+      pull(ww_ssf)
+    
+    # apply to each row, because of need for pairwise complete case management.
+    # Additionally transpose at end, because, even though the function is
+    # applied by row, it fills the results by column...
+    x_proj <-
+      apply(x, 1, project_through, y=ssfs) %>%
+      t()
+    
+    rownames(x_proj) <- paste0(rownames(x_proj), '_projected')
+    
+    return(x_proj)
+  })
 
-two_haplotype_clusters <-
-  cluster_df %>%
-  pull_distinct(cluster) %>%
-  setdiff(names(one_haplotype_cluster_unitigs))
+em_ssf_mats <-
+  map2(em_ssf_mats,em_ssf_mats_proj, rbind) 
 
-### Filter One-haplotype Clusters -------------------------------------------
-
-# Want to filter out one unitig cluster on a components with other clusters
-one_unitig_cluster_unitigs <-
-  cluster_df %>%
-  group_by(cluster) %>%
-  filter(n() == 1) %>%
-  ungroup() %>%
-  pull_distinct(unitig)
-
-# TODO maybe make this a percentage of component threshold, like a one unitig cluster makes
-# up > 90% of a component.
-one_cluster_components <-
-  components_df %>%
-  left_join(cluster_df, by='unitig') %>%
-  filter(!is.na(cluster)) %>%
-  distinct(component, cluster) %>%
-  count(component) %>%
-  filter(n == 1) %>%
-  pull(component)
-
-one_cluster_component_unitigs <-
-  cluster_df %>%
-  left_join(components_df, by='unitig') %>%
-  filter(component %in% one_cluster_components) %>%
-  pull_distinct(unitig)
-
-# Often better to not attempt to assign solo unitigs, which are often
-# misclustered. Often, the proper phasing can be inferred from the unitigs
-# surrounding the misclustered unitig. However, sometimes half of a chromosome
-# is all by itself in a cluster, and we still want to include those.
-length_threshold <-10e6
-one_haplotype_cluster_unitigs <-
-  one_haplotype_cluster_unitigs %>%
-  imap(function(x, nm) {
-    unitig_length <-
-      unitig_lengths_df %>%
-      filter(unitig %in% x) %>%
-      pull(length)
-    if (length(x) == 1 && x %in% one_unitig_cluster_unitigs) {
-      if (!(x %in% one_cluster_component_unitigs) & !(nm == 'LGXY') & unitig_length <= length_threshold) {
-        return(NA)
-      }
-    }
-
+# Concatenante with inverted unitigs
+em_ssf_mats_inverted <-
+  map(em_ssf_mats, `*`, -1) %>% 
+  map(function(x) {
+    rownames(x) <- paste0(rownames(x), '_inverted')
     return(x)
-
   })
 
-one_haplotype_cluster_unitigs <-
-  one_haplotype_cluster_unitigs %>%
-  discard(function(x) all(is.na(x)))
-
-### Count one-haplotype clusters --------------------------------------------
+em_ssf_mats <- map2(em_ssf_mats, em_ssf_mats_inverted, rbind)
 
 
-# arrange by size
-one_haplotype_clusters <-
-  cluster_df %>%
-  filter(cluster %in% names(one_haplotype_cluster_unitigs)) %>%
-  left_join(unitig_lengths_df, by='unitig') %>%
-  group_by(cluster) %>%
-  summarise(length=sum(length), .groups='drop') %>%
-  arrange(length) %>%
-  pull(cluster)
+em_ssf_mats <-
+  em_ssf_mats %>% 
+  # filling with 0s doesn't seem to affect first PC too much, compared to
+  # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
+  map(function(x) {
+    x[is.na(x)] <- 0 
+    return(x)
+  }) 
 
-# Assign to haplotype alternating  by size.
-one_haplotype_cluster_counts <-
-  imap(one_haplotype_clusters, function(clust, n) {
+prcomps <-
+  em_ssf_mats %>% 
+  map(prcomp)
 
-    counts <-
-      em_counts[[clust]] %>%
-      filter(!grepl('inverted', unitig_dir))
-
-    swapping_unitigs <-
-      one_haplotype_cluster_unitigs[[clust]]
-
-    # stopifnot(length(swapping_unitig) == 1)
-
-    swaps <-
-      counts %>%
-      filter(unitig %in% swapping_unitigs) %>%
-      group_by(lib) %>%
-      summarise(c=sum(c), w=sum(w), .groups='drop') %>%
-      mutate(swap = c > w) %>%
-      distinct(lib, swap)
-
-    counts <-
-      counts %>%
-      left_join(swaps, by='lib') %>%
-      mutate(tmp_c = ifelse(swap, c, w),
-             tmp_w = ifelse(swap, w, c)
-      )
-    if ((n %% 2) == 1) {
-      counts <-
-        counts %>%
-        mutate(c = tmp_c, w = tmp_w)
-    } else {
-      counts <-
-        counts %>%
-        mutate(c = tmp_w, w = tmp_c)
-    }
-
-    counts %>%
-      group_by(unitig) %>%
-      summarise(n = sum(n), c=sum(c), w=sum(w)) %>%
-      select(unitig, n, c, w)
+# Project WW vectors into prcomp space, to make orthognalization, which is
+# equivalent to calculation of WC vector, easy.
+projected_ww_vectors <- 
+  map2(prcomps, ww_vectors, function(x, y){
+    ssf_mat <- matrix(y$ww_ssf, nrow=1)
+    colnames(ssf_mat) <- y$lib
+    ssf_mat[is.na(ssf_mat)] <- 0 
+    
+    predict(x, ssf_mat) 
   })
 
-# In case there are 0 uni clusters.
-one_haplotype_cluster_counts <-
-  one_haplotype_cluster_counts %>%
-  bind_rows(tibble(unitig = character(), n=integer(), c=double(), w=double()))
+# Rotate and Project back to libray space to get WC Vector, using only first twp
+# PCs. Should this also be done for the WW vector? as like a form of noise
+# correction? Seems unnessecary, for basically all "normal" cluster, the cosine similarity is > 99%
+# unprojected_ww_vectors <-
+#   map2(prcomps, projected_ww_vectors, function(x, y) {
+#     ww_vec <- y[, 1:2]
+#     ww_uv <- ww_vec/sum(ww_vec^2, na.rm=TRUE)
+#     unprojected_ww <- x$rotation[, 1:2] %*% ww_uv
+#     colnames(unprojected_ww) <- 'ww_ssf'
+#     out <- 
+#       as_tibble(unprojected_ww, rownames='lib') %>% 
+#       mutate(ww_ssf = ww_ssf/(sqrt(sum(ww_ssf^2))))
+#     return(out)
+#   })
 
 
-## Two Haplotype Clusters --------------------------------------------------
+# To go from PC space back to library space for the WC vector, project the first
+# two PCS onto the rotated WW vector.
+unprojected_wc_vectors <-
+  map2(prcomps, projected_ww_vectors, function(x, y) {
+    wc_vec <- c(y[, 2], -y[, 1])
+    wc_uv <- wc_vec / sum(wc_vec ^ 2, na.rm = TRUE)
+    unprojected_wc <- x$rotation[, 1:2] %*% wc_uv
+    colnames(unprojected_wc) <- 'wc_ssf'
+    out <-
+      as_tibble(unprojected_wc, rownames = 'lib') %>%
+      mutate(wc_ssf = wc_ssf / (sqrt(sum(wc_ssf ^ 2))))
+    return(out)
+  })
 
-### Count -----------------------------------------------------------------
+norm_ww_vectors <-
+  ww_vectors %>%
+  map(function(x) {
+    x %>%
+      group_by(cluster) %>%
+      mutate(ww_ssf = ww_ssf / sqrt(sum(ww_ssf ^ 2, na.rm = TRUE))) %>%
+      ungroup()
+  })
+
+## Count Haplotype Markers -------------------------------------------------
 
 # TODO this weight thing isn't quite right.
 hmc <-
-  imap(em_counts[two_haplotype_clusters], function(counts, nm){
+  imap(em_counts, function(counts, nm){
     # browser()
 
     weights <-
-      fastmap_data_plane$weights %>%
-      filter(cluster == nm)
+      unprojected_wc_vectors[[nm]] 
 
     out <-
       counts %>%
-      filter(!grepl('inverted', unitig_dir)) %>%
       right_join(weights, by='lib')
 
     # TODO this weights thing isn't quite right.
     out <-
       out %>%
       mutate( # pseudo_counts
-        p_c = ifelse(sign(b_weight) == 1, b_weight^2 * c, b_weight^2 * w),
-        p_w = ifelse(sign(b_weight) == 1, b_weight^2 * w, b_weight^2 * c)
+        p_c = ifelse(sign(wc_ssf) == 1, wc_ssf^2 * c, wc_ssf^2 * w),
+        p_w = ifelse(sign(wc_ssf) == 1, wc_ssf^2 * w, wc_ssf^2 * c)
       ) %>%
       group_by(unitig) %>%
       summarise(p_c = sum(p_c), p_w = sum(p_w), n=sum(n)) %>%
@@ -1190,8 +1061,50 @@ hmc <-
 
 marker_counts <-
   bind_rows(hmc) %>%
-  bind_rows(tibble(unitig = character(), n=integer(), c=double(), w=double())) %>%
-  bind_rows(one_haplotype_cluster_counts)
+  bind_rows(tibble(unitig = character(), n=integer(), c=double(), w=double())) 
+
+## NA-Out One Unitig Clusters -----------------------------------------------
+
+# Want to filter out one unitig clusters on a components with other clusters
+one_unitig_cluster_unitigs <-
+  cluster_df %>%
+  group_by(cluster) %>%
+  filter(n() == 1) %>%
+  ungroup() %>%
+  pull_distinct(unitig)
+
+# TODO maybe make this a percentage of component threshold, like a one unitig cluster makes
+# up > 90% of a component.
+multi_cluster_components <-
+  components_df %>%
+  left_join(cluster_df, by='unitig') %>%
+  filter(!is.na(cluster)) %>%
+  distinct(component, cluster) %>%
+  count(component) %>%
+  filter(n > 1) %>%
+  pull(component)
+
+# Often better to not attempt to assign solo unitigs, which are often
+# misclustered. Often, the proper phasing can be inferred from the unitigs
+# surrounding the misclustered unitig. However, sometimes half of a chromosome
+# is all by itself in a cluster, and we still want to include those.
+length_threshold <- 10e6
+
+unitigs_to_zero_out <-
+  cluster_df %>% 
+  left_join(unitig_lengths_df, by='unitig') %>% 
+  left_join(components_df, by='unitig') %>% 
+  filter(unitig %in% one_unitig_cluster_unitigs) %>% 
+  filter(component %in% multi_cluster_components) %>% 
+  filter(length < length_threshold) %>% 
+  pull_distinct(unitig)
+
+
+marker_counts <-
+  marker_counts %>%
+  mutate(across(c(c, w), function(x) {
+    ifelse(unitig %in% unitigs_to_zero_out, NA, x)
+  }))
 
 # Export ------------------------------------------------------------------
 
@@ -1392,21 +1305,13 @@ readr::write_csv(marker_counts, output_counts)
 
 
 ## Library Weights ---------------------------------------------------------
-
-mem_weights <-
-  mem_data_plane$weights %>%
-  select(-b_weight) %>%
-  dplyr::rename(ww_weight_mem = p_weight)
-
-fastmap_weights <-
-  fastmap_data_plane$weights %>%
-  dplyr::rename(
-    ww_weight_fastmap = p_weight,
-    wc_weight_fastmap = b_weight
-    )
-
+# TODO add missing libraries back in?
 library_weights <-
-  full_join(mem_weights, fastmap_weights,by=c('cluster', 'lib'))
+  full_join(
+    bind_rows(norm_ww_vectors),
+    bind_rows(unprojected_wc_vectors, .id='cluster'),
+    by=c('cluster', 'lib')
+  )
 
 # TODO schema checks
 
