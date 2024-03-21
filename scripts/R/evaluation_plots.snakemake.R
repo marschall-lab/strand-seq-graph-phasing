@@ -574,6 +574,7 @@ cluster_chrom_counts <-
 
 major_alignments <-
   cluster_chrom_counts %>% 
+  filter(!is.na(cluster)) %>% 
   group_by(sample, cluster) %>% 
   slice_max(n) %>% 
   ungroup() %>% 
