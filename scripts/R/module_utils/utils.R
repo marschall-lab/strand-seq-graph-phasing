@@ -106,7 +106,7 @@ invert_hex <- function(hex_code) {
 # Distances ---------------------------------------------------------------
 
 # TODO weighted cosine similarity?
-cosine_similarity_ <- function(x, y, min_overlaps=5, scale=TRUE) {
+pairwise_complete_dp_ <- function(x, y, min_overlaps=5, x_trans=identity, y_trans=identity) {
   stopifnot(all_have_same_length(x, y))
   
   overlapping_ix <- !is.na(x) & !is.na(y)
@@ -117,30 +117,46 @@ cosine_similarity_ <- function(x, y, min_overlaps=5, scale=TRUE) {
   
   x <- x[overlapping_ix]
   y <- y[overlapping_ix]
+
+  x <- x_trans(x)
+  y <- y_trans(y) 
   
-  if(scale) {
-    x <- x / sqrt(sum(x^2))
-    y <- y / sqrt(sum(y^2))
-  }
+  out <- as.vector(x %*% y)
   
-  
-  norm_x <- sqrt(sum(x^2))
-  norm_y <- sqrt(sum(y^2))
-  cosine_sim <- (x %*% y) / (norm_x * norm_y)
-  
-  return(cosine_sim)
+  return(out)
 }
 
-cosine_similarity <-function(mat, ...) {
+pairwise_complete_dp <- function(x, y, min_overlaps=5, x_trans=identity, y_trans=identity) {
+  stopifnot(ncol(x) == nrow(y))
+  
+  out <- matrix(nrow=nrow(x), ncol=ncol(y))
+  dimnames(out) <- list(rownames(x), colnames(y))
+  for(i in seq_len(nrow(x))) {
+    for(j in seq_len(ncol(y))) {
+      xx <- x[i, ]
+      yy <- y[, j]
+      out[i, j] <- pairwise_complete_dp_(xx, yy, min_overlaps, x_trans, y_trans)
+    }
+  }
+  
+  return(out)
+}
+
+pairwise_complete_cosine_similarity_ <- function(x, y, min_overlaps=5, ...) {
+  pairwise_complete_dp_(x, y, min_overlaps, x_trans = uv,y_trans = uv)
+}
+
+pairwise_complete_cosine_similarity <-function(mat,  min_overlaps=5, ...) {
+  # Samples in rows
   similarity_mat <- 
     matrix(nrow=nrow(mat), ncol=nrow(mat))
   
   dimnames(similarity_mat) <- list(rownames(mat), rownames(mat))
-  n <- length(rownames(mat))
+  n <- nrow(mat)
   
   for(i in 1:n) {
     for(j in i:n) {
-      sim <- cosine_similarity_(mat[i, ,drop=FALSE], mat[j, ,drop=FALSE])
+      sim <- pairwise_complete_cosine_similarity_(mat[i, ,drop=FALSE], mat[j, ,drop=FALSE], min_overlaps, ...)
       similarity_mat[i, j] <- sim
       similarity_mat[j, i] <- sim
     }
@@ -149,10 +165,11 @@ cosine_similarity <-function(mat, ...) {
   return(similarity_mat)
 }
 
-scale_vector <- function(x) {x / sqrt(sum(x^2))}
-
-
 # Misc --------------------------------------------------------------------
+
+uv <- function(x, ...) {
+  x / sqrt(sum(x^2, ...))
+}
 
 pull_distinct <- function(x, col) {
   x %>% 
@@ -172,3 +189,17 @@ cut_range_n <- function(x, n_bins, max_value=max(x)) {
   return(cuts)
   
 }
+
+twod_rotation_mat <- function(rad) {
+  matrix(c(cos(rad), sin(rad), -sin(rad), cos(rad)), ncol=2, byrow=FALSE)
+}
+
+shrink_to_unit_circle <-
+  function(x) {
+    x_mag <- sqrt(sum(x^2, na.rm=TRUE))
+    if(x_mag > 1) {
+      return(x/x_mag)
+    } else {
+      return(x)
+    }
+  }
