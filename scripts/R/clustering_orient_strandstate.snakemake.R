@@ -33,23 +33,19 @@ bind_with_inverted_unitigs <- function(counts_df) {
   return(counts_df)
 }
 
-whats_covered <- function(crick_coverage_ratio, coverage_ratio_threshold=0.75) {
-
-  if(is.na(crick_coverage_ratio)) {
-    return(NA)
-  }
-
-  if(crick_coverage_ratio >= coverage_ratio_threshold) {
-    return('crick')
-  }
-
-  if(crick_coverage_ratio <= 1-coverage_ratio_threshold) {
-    return('watson')
-  }
-
-  return(NA)
-
+unproject_prcomp <- function(x, prc, name = 'lib', value = 'wc_ssf', n_components=2) {
+  stopifnot(n_components <= length(x))
+  x <- x[seq_len(n_components)]
+  x <- uv(x)
+  unprojected_x <- prc$rotation[, seq_len(n_components), drop=FALSE] %*% x
+  
+  colnames(unprojected_x) <- value
+  out <-
+    as_tibble(unprojected_x, rownames = name)
+  
+  return(out)
 }
+
 make_bandage_colors <- function(color_hex, counts_1, counts_2) {
 
   stopifnot(length(color_hex) == 1)
@@ -176,6 +172,7 @@ components_df <-
 
 ## Alignment Counts  ---------------------------------------------------------
 
+# TODO, a separate file with unitig lengths
 counts_df <-
   readr::read_csv(mem_counts, col_types = 'cciiii')
 
@@ -204,13 +201,21 @@ exact_match_counts_df <-
   select(-length)
 
 
+# SSF Matrix --------------------------------------------------------------
+
+#TODO make this parameter more visible. Explain why only 10
+min_n <- 10
+
+ssf_mat <-
+  counts_df %>%
+  with(make_wc_matrix(w, c, lib, unitig, min_n=min_n))
+
 # contiBAIT ---------------------------------------------------------------
 
 ## ContiBAIT QC ------------------------------------------------------------
 
 strand.freq <-
-  with(counts_df, make_wc_matrix(w, c, lib, unitig)) %>%
-  spoof_rownames() %>%
+  spoof_rownames(ssf_mat) %>%
   StrandFreqMatrix()
 
 
@@ -236,7 +241,7 @@ strand.states <-
     strand.freq,
     # filterThreshold = 0.7,
     # lowQualThreshold = 0.8,
-    minLib = 20
+    minLib = 10
   )
 
 lib_names <-
@@ -256,6 +261,7 @@ exact_match_counts_df <-
   exact_match_counts_df %>%
   filter(lib %in% included_libraries)
 
+ssf_mat <- ssf_mat[, colnames(ssf_mat) %in% included_libraries, drop=FALSE]
 
 ## Contibait Chromosome Clustering -----------------------------------------
 
@@ -269,40 +275,13 @@ exact_match_counts_df <-
 mean_coverage <-
   counts_df %>%
   tidyr::complete(lib, unitig, fill=list(c=0, w=0)) %>%
-  group_by(unitig) %>%
-  summarise(coverage = mean(w+c), .groups="drop")
+  mutate(unitig_range = spoof_range(unitig)) %>% 
+  group_by(unitig_range) %>%
+  summarise(mean_coverage = mean(w+c), .groups="drop") 
 
-mean_coverage <-
+weights <-
   mean_coverage %>%
-  mutate(unitig_range = spoof_range(unitig))
-
-vector_lengths <-
-  strand.freq@.Data %>%
-  apply(1, function(x) sqrt(sum(x * x, na.rm=TRUE))) %>%
-  tibble::enframe(name = 'unitig_range', value = 'vec_length')
-
-weights <-
-  components_df %>%
-  left_join(unitig_lengths_df) %>%
-  group_by(component) %>%
-  mutate(component_size = sum(length)) %>%
-  ungroup()
-
-weights <-
-  weights %>%
-  mutate(unitig_range = spoof_range(unitig)) %>%
-  left_join(vector_lengths) %>%
-  left_join(mean_coverage) %>%
-  mutate(vec_length = round(vec_length))
-
-weights <-
-  weights %>%
-  arrange(component_size, vec_length, coverage, length) %>%
-  mutate(weight = 1:n())
-
-weights <-
-  weights %>%
-  with(set_names(weight, unitig_range))
+  with(set_names(log2(mean_coverage), unitig_range))
 
 # arrange weights by order in wfrac matrix
 weights <- weights[rownames(strand.states$strandMatrix)]
@@ -322,8 +301,6 @@ clust <-
 
 # debugonce(findSexGroups, signature = c('LinkageGroupList', 'StrandStateMatrix'))
 clust <- findSexGroups(clust, strand.states$strandMatrix, callThreshold = 0.333)
-
-
 
 if(length(grep('^sex', names(clust), value = TRUE)) > 1) {
   # TODO what if multiple groups of haploid detected chromosomes?
@@ -346,9 +323,7 @@ cluster_df <-
   cluster_df %>%
   right_join(long_unitigs_df, by='unitig')
 
-# Cluster Refinement ------------------------------------------------------
 
-cat('Refining Clusters\n')
 
 ## Remove Micro Clusters ---------------------------------------------------
 
@@ -373,8 +348,6 @@ component_fraction_threshold <- 0.15
 micro_component_cluster_df <-
   cluster_component_fractions %>%
   filter(!is.na(cluster)) %>%
-  # filter(!(cluster %in% par_clusters)) %>%
-  # filter(cluster %in% one_component_clusters) %>%
   filter(perc_length <= component_fraction_threshold)
 
 micro_component_clusters <-
@@ -394,13 +367,55 @@ cluster_df <-
 
 
 
+# Cosine Similarity -------------------------------------------------------
+
+
+# TODO The mean cosine similarities should be weighted by the number of
+# shared libraries.
+
+# Why 5? 
+min_overlaps <- 5
+cosine_similarity_mat <-
+  pairwise_complete_cosine_similarity(ssf_mat, min_overlaps = min_overlaps)
+
+abs_cosine_similarity_mat <-
+  pairwise_complete_cosine_similarity(abs(ssf_mat), min_overlaps = min_overlaps)
+
+# abs_dp <- 
+#   pairwise_complete_dp(abs(ssf_mat), t(abs(ssf_mat)), min_overlaps = min_overlaps)
+
+
+## Seed Haploid Chromosomes ------------------------------------------------
+
+# Because haploid chromosomes are not parallel with one another in mem counts,
+# there is a possibility,eg, that each could be assembled in one contig, not
+# assigned a cluster by contiBAIT, and then not clustered in the cluster_unitigs
+# step due to the fact that there isn't a guarenteed pair. Accordingly, seed the
+# unitigs as clusters with the highest mean absolute SSF
+
+haploid_seed_threshold <- 0.75
+# non_na_lib_theshold <- 10
+
+mean_haploid_scores <-
+  ssf_mat %>% 
+  apply(1, mean_abs, na.rm=TRUE) 
+
+non_na_lib_counts <-
+  ssf_mat %>% 
+  apply(1, function(x) sum(!is.na(x)))
+
+unitigs_to_seed <-
+  names(mean_haploid_scores)[(mean_haploid_scores >= haploid_seed_threshold)  & (non_na_lib_counts >= min_overlaps)]
+
+cluster_df <-
+  cluster_df %>% 
+  mutate(cluster = ifelse(is.na(cluster) & (unitig %in% unitigs_to_seed), paste0('LGhap_', unitig), cluster))
+
 ## Cosine Cluster Merging ----------------------------------------------------
 
 cat('Cosine cluster merging\n')
-cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.5)
-
-cluster_df <- merge_similar_clusters(counts_df, cluster_df, similarity_threshold = 0.66)
-
+cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5)
+cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66)
 
 ## High Sim Pairing --------------------------------------------------------
 #TODO some sort of single linage clustering? I have noticed that often, a noisy
@@ -411,144 +426,21 @@ cluster_df <- merge_similar_clusters(counts_df, cluster_df, similarity_threshold
 #all those neighbors are way more similar than every other unitig, and come from
 #the same cluster. Attempt to harness that somehow?
 
+
+
 ## Cosine Unassigned -----------------------------------------------------
 
+
 cat('Assigning "high-noise" unitigs using cosine similarity \n')
-#TODO make this parameter more visible. Explain why only 5
-min_n <- 5
-
-#TODO NA handling of values? What if all NA
-similarities <-
-  counts_df %>%
-  with(make_wc_matrix(w, c, lib, unitig, min_n=min_n)) %>%
-  cosine_similarity()
-
-# TODO
-new_cluster_ix <- 0
-any_assigned <- TRUE
-# Use coverage instead of length?
-length_quantile_threshold <- 1 # 0.1
-score_thresh <- 0.5
-
-# TODO fix this while condition so that a break is not needed
-while(any_assigned || (length_quantile_threshold <= 1 || score_thresh >= 0.5)) {
 
 
-  any_assigned <- FALSE
-
-  unclustered_unitigs <-
-    cluster_df %>%
-    filter(is.na(cluster)) %>%
-    pull(unitig)
-
-  if(length(unclustered_unitigs) == 0) {
-    break
-  }
-
-  candidate_cluster_unitigs <-
-    cluster_df %>%
-    left_join(components_df, by='unitig') %>%
-    with(split(unitig, cluster))
-
-  scores <-
-    map(candidate_cluster_unitigs, function(x) {
-      unclustered_unitigs <- unclustered_unitigs[!(unclustered_unitigs %in% x)]
-      sims <- abs(similarities[unclustered_unitigs, x, drop=FALSE])
-      apply(sims, 1, mean, na.rm=TRUE)
-    })
-
-  # convert to df
-  scores_df <-
-    scores %>%
-    map(tibble::enframe, name='unitig', value='score') %>%
-    map(~mutate(.x, unitig = as.character(unitig))) %>%
-    bind_rows(.id='cluster')
-
-
-  if(all(is.na(scores_df$score))) {
-    cat('No valid similarity scores\n')
-    break
-  }
-
-  # TODO what if all NA
-  max_score <-
-    scores_df %>%
-    filter(score == max(score, na.rm = TRUE)) %>%
-    slice_head(n=1) # break ties
-
-
-  if(max_score$score > score_thresh) {
-    any_assigned <- TRUE
-
-    cat(
-      'Assigning unitig:',
-      max_score$unitig,
-      'to cluster:',
-      max_score$cluster,
-      'similarity score:',
-      max_score$score,
-      '\n'
-    )
-
-    cluster_df <-
-      cluster_df %>%
-      mutate(cluster = ifelse(unitig == max_score$unitig, max_score$cluster, cluster))
-  } else {
-    cat(
-      'No unitig similarity greater than threshold:',
-      score_thresh,
-      '\n'
-    )
-
-    cat(
-      'Unitig length quantile threshold:',
-      length_quantile_threshold,
-      '\n'
-    )
-
-    unitigs_to_consider <-
-      unitig_lengths_df %>%
-      slice_max(order_by=length, prop=length_quantile_threshold) %>%
-      pull(unitig) %>%
-      intersect(unclustered_unitigs)
-
-    unclustered_sims <-
-      similarities[unitigs_to_consider, unitigs_to_consider, drop=FALSE] %>%
-      abs()
-
-    unclustered_sims <-
-      unclustered_sims * upper.tri(unclustered_sims)
-
-    max_pair <-
-      which(unclustered_sims == max(unclustered_sims, na.rm=TRUE), arr.ind = TRUE)
-
-    max_sim <-
-      unclustered_sims[max_pair[1], max_pair[2]]
-
-    if(!is.na(max_sim) && max_sim > score_thresh) {
-      any_assigned <- TRUE
-      new_cluster_ix <- new_cluster_ix + 1
-
-      new_cluster_unitigs <- c(rownames(unclustered_sims)[max_pair[1]], colnames(unclustered_sims)[max_pair[2]])
-      cat('creating new cluster with unitigs:', new_cluster_unitigs,
-          'with similarity:', max_sim,
-          '\n')
-
-      cluster_df <-
-        cluster_df %>%
-        mutate(cluster = ifelse(unitig %in% new_cluster_unitigs, paste0('LGcosLong', new_cluster_ix), cluster))
-    } else {
-      if(length_quantile_threshold == 1L) {
-        break
-      }
-      length_quantile_threshold <- length_quantile_threshold + 0.1
-      if(length_quantile_threshold > 1) length_quantile_threshold <- 1L
-    }
-  }
-
-
-}
-
+cluster_df <-
+  cluster_unitigs(
+    cosine_similarity_mat,
+    cluster_df,
+    new_cluster_id = 'LGcos',
+    # optimistic_unitigs = optimistic_unitigs
+  )
 
 ## Max-Based Assignment ----------------------------------------------------
 
@@ -561,20 +453,33 @@ cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
 
 ## Cosine Cluster Merging ----------------------------------------------------
 
+optimistic_unitigs <-
+  unitig_lengths_df %>% 
+  filter(length >= 10e6) %>% 
+  pull(unitig)
+
+cluster_df <-
+  cluster_df %>% 
+  mutate(cluster = ifelse(is.na(cluster) & (unitig %in% optimistic_unitigs), paste0('LGoptim_', unitig), cluster))
+
 cat('Cosine cluster merging\n')
 # Sometimes, some of the newly created clusters will should be merged
 # into other components on cluster (centromere troubles especially)
-cluster_df <- merge_similar_clusters_on_components(counts_df, cluster_df, components_df, similarity_threshold = 0.5)
-cluster_df <- merge_similar_clusters(counts_df, cluster_df, similarity_threshold = 0.66)
 
+cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5)
+cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66)
 
-## NA Cluster --------------------------------------------------------------
-# TODO why do these form?
+cluster_df <- merge_similar_clusters_on_components(abs_cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.9)
+cluster_df <- merge_similar_clusters(abs_cosine_similarity_mat, cluster_df, similarity_threshold = 0.9)
 
 cluster_df <-
-  cluster_df %>%
-  mutate(cluster = ifelse(is.na(cluster), paste0('LGNA_', unitig), cluster))
-
+  cluster_unitigs(
+    abs_cosine_similarity_mat,
+    cluster_df,
+    cluster_unitig_similarity_threshold = 0.9,
+    unitig_unitig_similarity_threshold = 0.9,
+    new_cluster_id = 'LGabscos'
+  )
 
 ## Unusual Unitigs ---------------------------------------------------------
 
@@ -680,11 +585,6 @@ cluster_df <-
   cluster_df %>%
   mutate(cluster = ifelse(cluster %in% par_clusters | grepl('^sex', cluster), 'LGXY', cluster))
 
-# cluster_df <-
-#   cluster_df %>%
-#   mutate(cluster = ifelse(grepl('^sex', cluster), 'LGXY', cluster))
-
-
 ## Small Cluster Removal --------------------------------------------
 
 threshold <- 1e7
@@ -702,14 +602,7 @@ small_clusters <-
 
 cluster_df <-
   cluster_df %>%
-  mutate(cluster = ifelse(cluster %in% small_clusters & grepl('LGcos', cluster), NA, cluster))
-
-# Assign NA cluster -------------------------------------------------------
-
-
-cluster_df <-
-  cluster_df %>%
-  mutate(cluster = ifelse(is.na(cluster), paste0('LGNA2_', unitig), cluster))
+  mutate(cluster = ifelse(cluster %in% small_clusters, NA, cluster))
 
 # Orientation Detection w/ Inverted Unitigs -------------------------------
 
@@ -717,98 +610,16 @@ cat('Detecting unitig orientation\n')
 # Add inverted version of every unitig to dataset. Guarantees that there will
 # unitigs in both orientations when clustering
 
-# TODO need to double check /rerun the strand orientation clustering. If The
-# haploid and PAR clusters are oriented separately ~ chance that they could
-# become unsynchronized. Is there a way to fix this? Do it at the haploid clustering step?
+cluster_cosine_similarities <-
+  with(cluster_df, split(unitig, cluster)) %>% 
+  map(function(x) cosine_similarity_mat[x, x, drop=FALSE])
 
-# Use WW and CC libraries only for this step? Or does it not really matter? I
-# guess the first principal component is picking out all the variation from the
-# WW/CC libraries, and filtering to only the WW/CC libraries will therefore only
-# have a minimal effect? Do it anyways, it is just a semi_join? This could be a
-# vital step for clustering the haploid segments? It appears that for the
-# haploid clusters it works well to improve the explained variance of the first
-# PC, and makes it comparable to a diploid cluster. However, it seems to still
-# work correctly in general regardless of library selection, and it simplifies
-# things to not have to filter to any libraries for this step. EG, what if a
-# cluster consists entirely of misbehaving unitigs that make library calling
-# difficult, and having to account for that special case.
-
-# Is working in a continuous space (eg, principal components of W-fraction)
-# instead of a discretized space (eg, k-modes clustering on strand states)
-# better for tasks when there are strong prior assumptions?
-
-# TODO (for fun) an algorithm to derive the proper WC library weights vector from mem
-# data. A cheap solution could be just to filter the data by mapq to "reveal"
-# the WC signal. However, I am curious to see if there is a way to derive the WC
-# library weights without that.
-
-# It appears that I need to do clustering only on the first PC, which
-# corresponds to orientation, as otherwise, other dimensions can influence the
-# results and lead to grouping of a unitig and its inversion together. *NOTE*
-# This isn't true for the case of the X and Y chromosomes. While the separation
-# between autosomal chromosomes is not visible in unfiltered mem data the X and
-# Y chromosomes separate (the same way that autosomal chromosomes do with
-# fastmap data.) This can lead to issues with just taking the sign of the first
-# PC, and has on one occasion (HGSVC 1.4.1 HG00512) lead to a misorientaiton of
-# a large unitig. To be more robust to this possibility, now we take the sign of
-# the projection onto the line perpendicular to the boundary plane. This works
-# becuase the boundary plane rotates with the data, and should be able to better
-# account for the increased spread with X and Y chromosomes. It's not foolproof
-# but it should be better, in part because it accounts for the length of each
-# unitig.
-
-# TODO the supervision with PC1 method is a little brittle for X and Y. Better
-# would be a way that works directly with repulsive pairs to clusters the two
-# orientations. Maybe something perpendicular to the mean vector between each
-# pair of inverses or something like that, though this would require some
-# thought with regards to the signs of the vectors.
-
-# FIXME The above has become a fixme, because there are now occasions where the
-# PAR is mis-clustered due to improper orientation. Mean Perependicular vector?
-# Thats also an imperfect solution ~ some sort of MEC style formulation?
-
-
-cluster_counts <-
-  counts_df %>%
-  bind_with_inverted_unitigs() %>% # self-supervision
-  left_join(cluster_df, by='unitig') %>%
-  split(.$cluster)
-
-# Handle one unitig clusters separately.This is a little bit of a hack to handle
-# some clusters that only have one unitigs and are particularly poorly behaved.
-# It probably is resulting from a lack of consistency across thresholds. EG, a
-# unitig that fails all thresholds at this step somehow passed a threshold
-# earlier.
-n_unitigs_per_cluster <- 
-  cluster_counts %>% 
-  map(function(x) n_distinct(x$unitig_dir))
-
-one_unitig_clusters <-
-  n_unitigs_per_cluster %>% 
-  keep(function(x) x==2) %>% 
-  names()
-  
-wfracs <-
-  cluster_counts[!names(cluster_counts) %in% one_unitig_clusters] %>%
-  map(function(x) with(x, make_wc_matrix(w,c,lib,unitig_dir,min_n=min_n)))  %>%
-  # filling with 0s doesn't seem to affect first PC too much, compared to
-  # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
-  map(function(x) {
-    # TODO fill 0 or not? If not fill 0, how to handle possible NA similarities?
-    # How to handle unitigs w/ a PC=0?
-    x[is.na(x)] <- 0
-    return(x)
-  })
-
-sims <-
-  map(wfracs, cosine_similarity)
-
-#if whole row is NA ~ then it had 0 for all wfracs.
-sims <-
-  map(sims, function(x) {
+# if whole row is NA ~ then it had 0 for all wfracs.
+cluster_cosine_similarities <-
+  map(cluster_cosine_similarities, function(x) {
     row_ix <-
       apply(x, 1, function(xx) all(is.na(xx)))
-
+    
     col_ix <-
       apply(x, 2, function(xx) all(is.na(xx)))
 
@@ -816,82 +627,68 @@ sims <-
     x[!row_ix, !col_ix, drop=FALSE]
   })
 
-dists <-
-  map(sims, function(x) as.dist(1-x))
-
-
-clusts <-
-  map(dists, function(x) {
-    hclust(x, method = 'complete') %>%
-      cutree(k=2)
+# concatenate w/inverse
+cluster_cosine_similarities <-
+  cluster_cosine_similarities %>% 
+  map(function(ul) {
+    
+    lr <- ul
+    rownames(lr) <- paste0(rownames(lr), '_inverted')
+    colnames(lr) <- paste0(colnames(lr), '_inverted')
+    
+    ll <- -1 * ul
+    rownames(ll) <- paste0(rownames(ll), '_inverted')
+    
+    ur <- t(ll)
+    
+    out <- 
+      rbind(
+        cbind(ul, ur),
+        cbind(ll, lr)
+      )
+    
+    return(out)
+    
   })
 
+strand_orientation_clusters_df<-
+  map(cluster_cosine_similarities, pairwise_complete_hclust_n, n=2, agg_f=mean, na.rm=TRUE) 
+
 strand_orientation_clusters_df <-
-  clusts %>%
-  map_dfr(tibble::enframe, 'unitig_dir', 'strand_cluster', .id='cluster') %>%
-  mutate(unitig = gsub('_inverted$', '', unitig_dir)) %>%
+  strand_orientation_clusters_df %>% 
+  map_dfr(tibble::enframe, 'unitig_dir', 'strand_cluster') %>% 
   mutate(strand_cluster = ifelse(strand_cluster==1, -1, 1))
-
-# add back in any unitigs removed at ealier step
-strand_orientation_clusters_df <-
-  strand_orientation_clusters_df %>%
-  right_join(
-    cluster_counts %>%
-      bind_rows() %>%
-      distinct(unitig, unitig_dir, cluster)
-  )
-
-strand_orientation_clusters_df <-
-  strand_orientation_clusters_df %>%
-  mutate(strand_cluster = ifelse(is.na(strand_cluster), 0, strand_cluster))
-
-# TODO, a comparison to PC1 clustering, with a possible message if they differ
-strand_orientation_clusters_df <-
-  strand_orientation_clusters_df %>%
-  select(cluster, unitig, unitig_dir, strand_cluster)
-
-# I have discovered that some points are located truly at the origin (for
-# all PCs), and therefore do not separate on the first PC. What lol.
-# TODO Figure out what leads to this. (HG03456)
-strand_orientation_clusters_df <-
-  strand_orientation_clusters_df %>%
-  mutate(strand_cluster = ifelse(strand_cluster != 0, strand_cluster, ifelse(grepl('_inverted', unitig_dir), -1, 1)))
 
 # Warning that checks that every unitig and its invert are in opposite clusters
 bad <-
   strand_orientation_clusters_df %>%
+  mutate(unitig = gsub('_inverted', '', unitig_dir)) %>% 
   group_by(unitig, strand_cluster) %>%
-  filter(n() != 1 | 0 %in% strand_cluster)
+  filter(n() != 1) %>% 
+  filter(!all(is.na(strand_cluster)))
 
 if(nrow(bad) > 0) {
   stop('Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
   # WARNINGS <- c(WARNINGS, 'Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
 }
 
+# Add back in excluded unitigs
+strand_orientation_clusters_df <-
+  left_join(long_unitigs_df, strand_orientation_clusters_df,
+             by = c('unitig' = 'unitig_dir')
+  )
+
+
+
 # Phase Chromosomes -------------------------------------------------------
 
 
 ## Orient Counts -----------------------------------------------------------
 
-# exact_match_counts_df <- raw_exact_match_counts_df
-
 exact_match_counts_df <-
   orient_counts(exact_match_counts_df, strand_orientation_clusters_df)
 
-oriented_counts_df <-
-  orient_counts(counts_df, strand_orientation_clusters_df)
-
-oriented_counts_df <-
-  oriented_counts_df %>%  
-  left_join(cluster_df) %>% 
-  arrange(cluster, unitig, lib) 
-
-oriented_counts_df <-
-  oriented_counts_df %>%
-  group_by(cluster, lib) %>%
-  summarise(across(c(c, w, n), sum), .groups = 'drop')
-
-## Calculate WC and WW Basis Vectors ----------------------------------------
+## Principal Components ----------------------------------------------------
 
 # does this work with, eg, a 1 unitig cluster? Or does the dimension projection
 # lost a lot of library information?
@@ -901,51 +698,12 @@ em_counts <-
   arrange(cluster, unitig, lib) %>%
   split(.$cluster)
 
-ww_vectors <-
-  oriented_counts_df %>%
-  mutate(ww_ssf = ifelse(n < 1, NA, (w-c)/n))  %>% 
-  select(cluster, lib, ww_ssf) %>% 
-  split(.$cluster)
-
-ww_vectors <- ww_vectors[names(em_counts)]
-
 em_ssf_mats <- 
   map(em_counts, function(x) {
-    with(x, make_wc_matrix(w, c, lib, unitig, min_n=1)) 
+    with(x, make_wc_matrix(w, c, lib, unitig, min_n=4)) 
   })
 
-em_ssf_mats_proj <-
-  map2(em_ssf_mats, ww_vectors, function(x, ww_df) {
-    ww_df <- 
-      ww_df %>% 
-      arrange(lib) 
-    
-    libs <- 
-      ww_df %>% 
-      pull(lib)
-    
-    stopifnot(all(colnames(x) == libs))
-    
-    ssfs <-
-      ww_df %>% 
-      pull(ww_ssf)
-    
-    # apply to each row, because of need for pairwise complete case management.
-    # Additionally transpose at end, because, even though the function is
-    # applied by row, it fills the results by column...
-    x_proj <-
-      apply(x, 1, project_through, y=ssfs) %>%
-      t()
-    
-    rownames(x_proj) <- paste0(rownames(x_proj), '_projected')
-    
-    return(x_proj)
-  })
-
-em_ssf_mats <-
-  map2(em_ssf_mats,em_ssf_mats_proj, rbind) 
-
-# Concatenante with inverted unitigs
+# Concatenate with inverted unitigs
 em_ssf_mats_inverted <-
   map(em_ssf_mats, `*`, -1) %>% 
   map(function(x) {
@@ -954,6 +712,37 @@ em_ssf_mats_inverted <-
   })
 
 em_ssf_mats <- map2(em_ssf_mats, em_ssf_mats_inverted, rbind)
+
+# 
+# # Projected
+# em_ssf_mats_proj <-
+#   map2(em_ssf_mats, ww_vectors, function(x, ww_df) {
+#     ww_df <-
+#       ww_df %>%
+#       arrange(lib)
+#     
+#     libs <-
+#       ww_df %>%
+#       pull(lib)
+#     
+#     stopifnot(all(colnames(x) == libs))
+#     
+#     ssfs <-
+#       ww_df %>%
+#       pull(ww_ssf)
+#     
+#     # apply to each row, because of need for pairwise complete case management.
+#     # Additionally transpose at end, because, even though the function is
+#     # applied by row, it fills the results by column...
+#     x_proj <-
+#       apply(x, 1, project_through, y=ssfs) %>%
+#       t()
+#     
+#     rownames(x_proj) <- paste0(rownames(x_proj), '_projected')
+#     
+#     return(x_proj)
+#   })
+
 
 
 em_ssf_mats <-
@@ -969,6 +758,31 @@ prcomps <-
   em_ssf_mats %>% 
   map(prcomp)
 
+## Calculate WC and WW Basis Vectors ----------------------------------------
+
+
+### Count and Rotate --------------------------------------------------------
+oriented_counts_df <-
+  orient_counts(counts_df, strand_orientation_clusters_df)
+
+oriented_counts_df <-
+  oriented_counts_df %>%  
+  left_join(cluster_df) %>% 
+  arrange(cluster, unitig, lib) 
+
+oriented_counts_df <-
+  oriented_counts_df %>%
+  group_by(cluster, lib) %>%
+  summarise(across(c(c, w, n), sum), .groups = 'drop')
+
+ww_vectors <-
+  oriented_counts_df %>%
+  mutate(ww_ssf = ifelse(n < 1, NA, (w-c)/n))  %>% 
+  select(cluster, lib, ww_ssf) %>% 
+  split(.$cluster)
+
+ww_vectors <- ww_vectors[names(em_counts)]
+
 # Project WW vectors into prcomp space, to make orthognalization, which is
 # equivalent to calculation of WC vector, easy.
 projected_ww_vectors <- 
@@ -980,45 +794,196 @@ projected_ww_vectors <-
     predict(x, ssf_mat) 
   })
 
-# Rotate and Project back to libray space to get WC Vector, using only first twp
-# PCs. Should this also be done for the WW vector? as like a form of noise
-# correction? Seems unnessecary, for basically all "normal" cluster, the cosine similarity is > 99%
-# unprojected_ww_vectors <-
-#   map2(prcomps, projected_ww_vectors, function(x, y) {
-#     ww_vec <- y[, 1:2]
-#     ww_uv <- ww_vec/sum(ww_vec^2, na.rm=TRUE)
-#     unprojected_ww <- x$rotation[, 1:2] %*% ww_uv
-#     colnames(unprojected_ww) <- 'ww_ssf'
-#     out <- 
-#       as_tibble(unprojected_ww, rownames='lib') %>% 
-#       mutate(ww_ssf = ww_ssf/(sqrt(sum(ww_ssf^2))))
-#     return(out)
-#   })
 
+projected_wc_vectors <- 
+  map(projected_ww_vectors, function(x){
+    wc_vec <- uv(c(x[, 2], -x[, 1]))
+    wc_vec <- set_names(wc_vec, c('PC1', 'PC2'))
+    return(wc_vec)
+  })
 
 # To go from PC space back to library space for the WC vector, project the first
 # two PCS onto the rotated WW vector.
 unprojected_wc_vectors <-
-  map2(prcomps, projected_ww_vectors, function(x, y) {
-    wc_vec <- c(y[, 2], -y[, 1])
-    wc_uv <- wc_vec / sum(wc_vec ^ 2, na.rm = TRUE)
-    unprojected_wc <- x$rotation[, 1:2] %*% wc_uv
-    colnames(unprojected_wc) <- 'wc_ssf'
-    out <-
-      as_tibble(unprojected_wc, rownames = 'lib') %>%
-      mutate(wc_ssf = wc_ssf / (sqrt(sum(wc_ssf ^ 2))))
+  map2(projected_wc_vectors, prcomps, unproject_prcomp, n_components=2, value = 'wc_ssf')
+
+# Should the WW vector be recalculated by unprojecting the estimate based on the
+# first two principal components? As a form of "noise correction?"
+unprojected_ww_vectors <-
+  map2(projected_ww_vectors, prcomps, unproject_prcomp, n_components=2, value='ww_ssf')
+
+#### Range Balanced Estimate -------------------------------------------------
+
+# Range-Balancing Correction for haplotype clusters of different size: With the
+# haploid chromosomes, the larger chromosome will over-attract the WW vector
+# towards it, leading to a biased estimate. Assume that the outermost unitigs in
+# each haplotype are the same distance from the origin. Use the initial guess to
+# partition unitigs into two groups, find the outermost in each group, and
+# rotate to balance those two points
+
+projected_wc_vectors_rbc <-
+  map2(prcomps, projected_wc_vectors, function(x,y) {
+    projections <- x$x[!grepl('inverted', rownames(x$x)), 1:2] %*% y 
+    
+    sgns <- sign(projections)
+    if(!(1 %in% sgns & -1 %in% sgns)) {
+      return(y)
+    }
+    
+    max_pos_unitig <- rownames(projections)[which.max(projections)]
+    max_neg_unitig <- rownames(projections)[which.min(projections)]
+    # break ties
+    
+    max_pos_angle <- uv(x$x[max_pos_unitig, 1:2]) %*% uv(y)
+    max_neg_angle <- uv(x$x[max_neg_unitig, 1:2]) %*% uv(y)
+    rotation_amount <-  as.vector(acos(max_pos_angle) - acos(abs(max_neg_angle)))/2
+    
+    out <- 
+      (twod_rotation_mat(rotation_amount) %*% y) %>% 
+      as.vector() %>% 
+      set_names(c('PC1', 'PC2'))
+    
+    return(uv(out))
+  })
+
+projected_ww_vectors_rbc <-
+  map(projected_wc_vectors_rbc, function(x) {
+    out <- c(x[2], -x[1]) %>% 
+      set_names(c('PC1', 'PC2'))
+    
     return(out)
+    
   })
 
-norm_ww_vectors <-
-  ww_vectors %>%
-  map(function(x) {
-    x %>%
-      group_by(cluster) %>%
-      mutate(ww_ssf = ww_ssf / sqrt(sum(ww_ssf ^ 2, na.rm = TRUE))) %>%
-      ungroup()
+unprojected_wc_vectors_rbc <-
+  map2(projected_wc_vectors_rbc, prcomps, unproject_prcomp, value = 'wc_ssf_rbc', n_components = 2)
+
+
+unprojected_ww_vectors_rbc <-
+  map2(projected_ww_vectors_rbc, prcomps, unproject_prcomp, value = 'ww_ssf_rbc', n_components = 2)
+
+
+### GLMs --------------------------------------------------------------------
+
+model_input <-
+  prcomps %>% 
+  map(get_prcomp_plotdata, 'unitig_dir')
+
+model_input <-
+  map(model_input, function(x) {
+    x <-
+      x %>%
+      # get_prcomp_plotdata(., 'unitig_dir') %>%
+      mutate(unitig = gsub('_inverted', '', unitig_dir)) %>%
+      left_join(unitig_lengths_df, by = 'unitig')
+    
+    x <-
+      x %>%
+      mutate(y = grepl('inverted', unitig_dir)) 
+    
+    return(x)
   })
 
+glms <-
+  map(model_input, function(d) {
+    w <- d$length
+    d <-
+      d %>% 
+      select(-unitig, -unitig_dir, -length)
+    
+    mod <-
+      glm(
+        y ~ -1 + .,
+        data = d,
+        # weights = w,
+        family = binomial(link = 'logit')
+      )
+    return(mod)
+  })
+
+coefs <-
+  map(glms, coef) 
+
+unprojected_ww_vectors_glm <-
+  map2(coefs, prcomps, unproject_prcomp, n_components=2, value="ww_ssf_glm")
+
+unprojected_wc_vectors_glm <-
+  coefs %>% 
+  map(function(x) c(x[2], -1*x[1])) %>% 
+  map2(prcomps, unproject_prcomp, n_components=2, value="wc_ssf_glm")
+
+
+## Bind --------------------------------------------------------------------
+
+library_weights <-
+  list(
+    unprojected_ww_vectors,
+    unprojected_wc_vectors,
+    unprojected_ww_vectors_rbc,
+    unprojected_wc_vectors_rbc,
+    unprojected_ww_vectors_glm,
+    unprojected_wc_vectors_glm
+  ) %>% 
+  map(bind_rows, .id='cluster') %>% 
+  purrr::reduce(full_join, by=c('cluster', 'lib'))
+
+### Plots -------------------------------------------------------------------
+
+# 
+# coefs <-
+#   coefs %>%
+#   map_dfr(function(x) as_tibble(as.list(x)), .id='cluster')
+# 
+# 
+# 
+# model_input <-
+#   bind_rows(model_input, .id = 'cluster') %>%
+#   select(cluster, unitig, unitig_dir, length, y, everything())
+# 
+# projected_wc_vectors_plot <-
+#   projected_wc_vectors_rbc %>%
+#   map(as.data.frame.list) %>%
+#   bind_rows(.id = 'cluster')
+# 
+# projected_ww_vectors_plot <-
+#   projected_ww_vectors %>%
+#   map(as_tibble) %>%
+#   bind_rows(.id = 'cluster')
+# 
+# # Test plots
+# label_data <-
+#   model_input %>%
+#   group_by(cluster) %>%
+#   filter(length == max(length)) %>%
+#   ungroup()
+# 
+# model_input %>%
+#   ggplot() +
+#   geom_point(aes(
+#     x = PC1,
+#     y = PC2,
+#     color = y,
+#     size = length
+#   )) +
+#   facet_wrap(~ cluster) +
+#   geom_text(aes(x = PC1, y = PC2, label=unitig_dir), size=2, color='black', data=filter(label_data, !grepl('projected', unitig_dir))) +
+#   # geom_abline(aes(slope=PC2/PC1, intercept=0), data=projected_ww_vectors) +
+#   geom_abline(aes(slope = PC2 / PC1, intercept = 0), data = projected_wc_vectors_plot) +
+#   # geom_abline(aes(slope = -PC1 / PC2, intercept = 0), data = projected_wc_vectors_plot) +
+#   geom_abline(aes(slope = -PC1 / PC2, intercept = 0), data = projected_ww_vectors_plot, linetype='dashed', color='green') +
+#   # geom_abline(aes(slope = PC2 / PC1, intercept = 0), data = projected_ww_vectors_plot, linetype='dashed', color='green') +
+#   geom_abline(aes(slope = -PC1 / PC2, intercept = 0), data = coefs, linetype = 'dotted', color='red') +
+#   # geom_abline(aes(slope = PC2 / PC1, intercept = 0), data = coefs, linetype = 'dotted', color='red') +
+# 
+#   # geom_point(aes(x = PC2, y = -PC1), data = projected_ww_vectors) +
+#   # facet_wrap( ~cluster + grepl('projected', unitig_dir)) +
+#   scale_size_area() +
+#   coord_equal()
+
+# 
+# map2(norm_ww_vectors, unprojected_ww_vectors, function(x, y) {
+#   cosine_similarity_(x$ww_ssf, y$ww_ssf)
+# })
 ## Count Haplotype Markers -------------------------------------------------
 
 # TODO this weight thing isn't quite right.
@@ -1028,9 +993,9 @@ hmc <-
 
     # Project weights onto the cube, to use indicator variable interpretation?
     weights <-
-      unprojected_wc_vectors[[nm]] %>% 
-      mutate(wc_ssf = wc_ssf/max(abs(wc_ssf), na.rm=TRUE))
-
+      unprojected_wc_vectors_glm[[nm]] %>% 
+      mutate(wc_ssf = wc_ssf_glm/max(abs(wc_ssf_glm), na.rm=TRUE))
+    
     out <-
       counts %>%
       right_join(weights, by='lib')
@@ -1053,7 +1018,11 @@ marker_counts <-
   bind_rows(hmc) %>%
   bind_rows(tibble(unitig = character(), n=integer(), c=double(), w=double())) 
 
-## NA-Out One Unitig Clusters -----------------------------------------------
+
+# One Unitig Clusters -----------------------------------------------------
+
+#FIXME Design decision: There are no one unitig clusters!
+## NA-Out One Small One-Unitig Clusters -----------------------------------
 
 # Want to filter out one unitig clusters on a components with other clusters
 one_unitig_cluster_unitigs <-
@@ -1159,10 +1128,8 @@ marker_counts <-
 
 marker_counts <-
   marker_counts %>%
-  left_join(filter(strand_orientation_clusters_df, strand_cluster==1), by=c('unitig', 'cluster')) %>%
-  select(-strand_cluster) %>%
-  mutate(unitig_dir = ifelse(grepl('inverted$', unitig_dir), -1, 1)) %>%
-  dplyr::rename(unitig_orientation = unitig_dir)
+  left_join(strand_orientation_clusters_df, by=c('unitig')) %>%
+  dplyr::rename(unitig_orientation = strand_cluster)
 
 marker_counts <-
   marker_counts %>%
@@ -1234,20 +1201,20 @@ for(unused in 1:n_iter) {
       tmp_hap_calls <-
         hap_calls %>%
         mutate(call = ifelse(cluster == x, abs(call-1), call))
-
+      
       out <-
         tmp_hap_calls %>%
         count(call, wt = length) %>%
         with(n[1]/n[2]) %>%
         log() %>%
         abs()
-
+      
       return(out)
     })
-
+  
   min_score <-
     swap_scores[which.min(swap_scores)]
-
+  
   if(min_score < hap_size_ratio_score) {
     cat('swapping cluster:', names(min_score), '\n')
     hap_size_ratio_score <- min_score
@@ -1255,7 +1222,7 @@ for(unused in 1:n_iter) {
       hap_calls %>%
       mutate(call = ifelse(cluster == names(min_score), abs(call-1), call))
   }
-
+  
 }
 
 hap_calls <-
@@ -1293,18 +1260,16 @@ stopifnot(all(as.integer(marker_counts$hap_2_counts) == marker_counts$hap_2_coun
 marker_counts <-
   marker_counts %>%
   select(unitig, hap_1_counts, hap_2_counts, n, everything())
-  
+
 readr::write_csv(marker_counts, output_counts)
 
-
 ## Library Weights ---------------------------------------------------------
-# TODO add missing libraries back in?
+# add missing libraries back in
 library_weights <-
-  full_join(
-    bind_rows(norm_ww_vectors),
-    bind_rows(unprojected_wc_vectors, .id='cluster'),
-    by=c('cluster', 'lib')
-  )
+  library_weights %>% 
+  mutate(lib = factor(lib, levels = lib_names)) %>% 
+  tidyr::complete(cluster, lib) #%>% 
+# mutate(across(contains('ssf'), function(x) ifelse(is.na(x), 0, x)))
 
 # TODO schema checks
 

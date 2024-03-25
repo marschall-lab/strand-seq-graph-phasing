@@ -109,14 +109,17 @@ library(ggplot2)
 # Input
 # lib_weights <- "library_weights/NA21487_library_weights.csv"
 # lib_weights <- "library_weights/NA19434_library_weights.csv"
+# lib_weights <- "library_weights/HG01114_library_weights.csv"
 lib_weights <- get_values('--lib-weights')
 
 # raw_counts_df <-  "sseq_alignment_counts/NA21487_sseq_mem_raw.csv" 
 # raw_counts_df <-  "sseq_alignment_counts/NA19434_sseq_mem_raw.csv"
+# raw_counts_df <-  "sseq_alignment_counts/HG01114_sseq_mem_raw.csv"
 raw_counts_df <- get_values('--sseq-alignments')
 
 # haplotype_marker_counts <- "haplotype_marker_counts/NA21487_fudged_haplotype_marker_counts.csv"
 # haplotype_marker_counts <- "haplotype_marker_counts/NA19434_fudged_haplotype_marker_counts.csv"
+# haplotype_marker_counts <- "haplotype_marker_counts/HG01114_fudged_haplotype_marker_counts.csv"
 haplotype_marker_counts <- get_values('--haplotype-marker-counts')
 
 # Params
@@ -197,7 +200,7 @@ raw_counts_df <-
 raw_counts_df <-
   raw_counts_df %>% 
   left_join(lib_weights, by=c('lib', 'cluster')) %>% 
-  filter(!is.na(ww_ssf))
+  filter(!is.na(ww_ssf_glm))
 
 
 # Strand-state specific signal --------------------------------------------
@@ -220,8 +223,8 @@ raw_counts_df <-
 raw_counts_df <-
   raw_counts_df %>% 
   mutate(
-    wc_signal = y * sign(wc_ssf) * wc_ssf^2 * unitig_orientation,
-    ww_signal = y * sign(ww_ssf) * ww_ssf^2 * unitig_orientation
+    wc_signal = y * sign(wc_ssf_glm) * wc_ssf_glm^2 * unitig_orientation,
+    ww_signal = y * sign(ww_ssf_glm) * ww_ssf_glm^2 * unitig_orientation
   )    
 
 # scale to original counts
