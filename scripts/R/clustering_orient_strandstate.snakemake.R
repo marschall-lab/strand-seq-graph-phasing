@@ -773,7 +773,7 @@ oriented_counts_df <-
 oriented_counts_df <-
   oriented_counts_df %>%
   group_by(cluster, lib) %>%
-  summarise(across(c(c, w, n), sum), .groups = 'drop')
+  summarise(across(c(c, w, n), function(x) sum(x, na.rm=TRUE)), .groups = 'drop')
 
 ww_vectors <-
   oriented_counts_df %>%
