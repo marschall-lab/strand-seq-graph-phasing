@@ -564,7 +564,7 @@ rule add_coverage_to_gfa:
         gfa=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa'],
         coverage=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['coverage']
     output:
-        temp('{sample}_gfa_with_coverage.gfa')
+        temp('temp/{sample}_gfa_with_coverage.gfa')
     conda: 'envs/env_verkko.yaml'
     resources:
         mem_mb=calc_mem(),
@@ -609,7 +609,7 @@ def rukki_paramaterizer(wildcards, parameter) :
 
 rule run_rukki:
     input:
-        graph='{sample}_gfa_with_coverage.gfa',
+        graph='temp/{sample}_gfa_with_coverage.gfa',
         markers="haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.tsv"
     output:
         tsv="rukki/{sample}/{sample}_rukki_paths.tsv",
