@@ -494,7 +494,8 @@ rule count_haplotype_markers:
         connected_components='gfa/ccs/{sample}_exploded_ccs.tsv'
     output:
         mc="haplotype_marker_counts/{sample}_haplotype_marker_counts.csv",
-        lib="library_weights/{sample}_library_weights.csv"
+        lib="library_weights/{sample}_library_weights.csv",
+        imo=directory("intermediate_output/{sample}/"),
     params:
         segment_length_threshold=segment_length_threshold,
         cluster_PAR_with_haploid = lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['cluster_PAR_with_haploid'],
@@ -509,6 +510,7 @@ rule count_haplotype_markers:
     benchmark: "benchmark/count_haplotype_markers_{sample}.benchmark"
     shell:
         '''
+        mkdir -p {output.imo} &&
         (Rscript --vanilla {params.script} \\
         --mem-counts {input.mem} \\
         --fastmap-counts {input.fastmap} \\
@@ -516,6 +518,11 @@ rule count_haplotype_markers:
         --segment-length-threshold {params.segment_length_threshold} \\
         --cluster-PAR-with-haploid {params.cluster_PAR_with_haploid} \\
         --threads {threads} \\
+        --intermediate-output-dir {output.imo} \\
+        --included-libs \\
+        --initial-clusters \\
+        --final-clusters \\
+        --unitig-orientation \\
         --output-marker-counts {output.mc} \\
         --output-lib {output.lib}) > {log} 2>&1
         '''

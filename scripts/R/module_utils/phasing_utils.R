@@ -202,7 +202,7 @@ marginalize_wc_counts <-
 
 
 
-make_contrasts <- function(x, y=NULL, .sort=TRUE) {
+make_contrasts <- function(x, y=NULL) {
   if(is.null(y)) {
     out <- combn(x, 2, simplify = FALSE)
   } else {
@@ -211,10 +211,7 @@ make_contrasts <- function(x, y=NULL, .sort=TRUE) {
       pmap(c) %>% 
       map(unname)
   }
-  
-  if(.sort) {
-    out <- map(out, sort)
-  }
+
   
   return(out)
 }
@@ -433,41 +430,76 @@ cluster_unitigs <-
            new_cluster_id = 'LGcos',
            new_cluster_start_ix = 0) {
     
+    
+    unassigned_ids <-
+      cluster_df %>% 
+      filter(is.na(cluster)) %>% 
+      pull_distinct(unitig)
+    
+    if(length(unassigned_ids) == 0) {
+      return(cluster_df)
+    }
+    
+    sets <- split(unassigned_ids, unassigned_ids)
+    
+    contrasts <-
+      make_contrasts(unassigned_ids, unassigned_ids)
+    
+    contrasts <- unique(map(contrasts, sort))
+    
+    clustered_similarities_uu <-
+      aggregate_over_subsets(
+        cosine_similarity_mat,
+        sets,
+        contrasts,
+        col_names = c('unitig_1', 'unitig_2', 'sim'),
+        agg_f = mean_abs,
+        na.rm = TRUE
+      )
+    
+    clustered_similarities_uu <-
+      clustered_similarities_uu %>%  
+      filter(unitig_1 != unitig_2) %>% 
+      filter(!is.na(sim)) 
+    
+    sets <- list()
+    clustered_similarities_cu <- tibble(cluster=character(), unitig=character(), sim=double())
+    
+    cur_clusters <- 
+      cluster_df %>% 
+      filter(!is.na(cluster)) %>% 
+      pull_distinct(cluster)
+    
     new_cluster_ix <- new_cluster_start_ix
     any_assigned <- TRUE
-
-    # TODO fix this while condition so that a break is not needed
     while(any_assigned) {
       any_assigned <- FALSE
-      
-      unclustered_unitigs <-
-        cluster_df %>%
-        filter(is.na(cluster)) %>%
-        pull(unitig)
-      
-      if(length(unclustered_unitigs) == 0) {
-        break
-      }
-      
-      sets <-
-        cluster_df %>% 
-        mutate(cluster = coalesce(cluster, unitig)) %>% 
-        with(split(unitig, cluster))
-      
-      cluster_ids <-
-        cluster_df %>% 
-        filter(!is.na(cluster)) %>% 
-        pull_distinct(cluster)
-      
+
       unassigned_ids <-
         cluster_df %>% 
         filter(is.na(cluster)) %>% 
         pull_distinct(unitig)
       
-      contrasts <-
-        make_contrasts(cluster_ids, unassigned_ids)
+      if(length(unassigned_ids) == 0) {
+        break
+      }
       
-      clustered_similarities_cu <-
+      # clustered_similarities_uu <-
+      #   clustered_similarities_uu %>% 
+      #   filter(unitig_1 %in% unassigned_ids | unitig_2 %in% unassigned_ids)
+      
+      new_sets <-
+        cluster_df %>% 
+        filter(cluster %in% cur_clusters | unitig %in% unassigned_ids) %>% 
+        mutate(cluster = coalesce(cluster, unitig)) %>% 
+        with(split(unitig, cluster))
+      
+      sets <- c(new_sets, sets)
+      
+      contrasts <-
+        make_contrasts(cur_clusters, unassigned_ids)
+      
+      new_clustered_similarities_cu <-
         aggregate_over_subsets(
           cosine_similarity_mat,
           sets,
@@ -476,12 +508,10 @@ cluster_unitigs <-
           agg_f = mean_abs,
           na.rm = TRUE
         )
-      
-      # if(all(is.na(clustered_similarities_cu$sim))) {
-      #   cat('No valid similarity scores\n')
-      #   break
-      # }
-      
+      # browser()
+      clustered_similarities_cu <- 
+        bind_rows(new_clustered_similarities_cu, clustered_similarities_cu)
+
       max_contrast <-
         clustered_similarities_cu %>% 
         filter(!is.na(sim)) %>% 
@@ -491,85 +521,50 @@ cluster_unitigs <-
       if((length(max_sim) > 0) && (max_sim > cluster_unitig_similarity_threshold)) {
         any_assigned <- TRUE
         cluster_df <- increment_cluster_(cluster_df, max_contrast)
+        cur_clusters <- max_contrast$cluster
+        
+        clustered_similarities_cu <- 
+          clustered_similarities_cu %>% 
+          filter(cluster != cur_clusters)
+        
+        clustered_similarities_uu <- 
+          clustered_similarities_uu %>% 
+          filter(unitig_1 != max_contrast$unitig) %>% 
+          filter(unitig_2 != max_contrast$unitig) 
+        
         next
       } 
       
       cat(
         'No unitig-cluster similarity greater than threshold:', cluster_unitig_similarity_threshold, '\n'
       )
-      
-      # if(length(unassigned_ids) < 2) {
-      #   cat('Only one unassigned unitig')
-      #   browser()
-      # }
-      contrasts <-
-        make_contrasts(unassigned_ids, unassigned_ids)
-      
-      clustered_similarities_uu <-
-        aggregate_over_subsets(
-          cosine_similarity_mat,
-          sets,
-          contrasts,
-          col_names = c('unitig_1', 'unitig_2', 'sim'),
-          agg_f = mean_abs,
-          na.rm = TRUE
-        )
-      
-      # if(all(is.na(clustered_similarities_uu$sim))) {
-      #   cat('No valid similarity scores\n')
-      #   break
-      # }
-      # 
+
       max_contrast <-
         clustered_similarities_uu %>% 
-        filter(unitig_1 != unitig_2) %>% 
-        filter(!is.na(sim)) %>% 
+        filter(unitig_1 %in% unassigned_ids) %>% 
+        filter(unitig_2 %in% unassigned_ids) %>% 
         slice_max(sim, n = 1, with_ties = FALSE)
 
       max_sim <- max_contrast$sim
       if(length(max_sim > 0) && max_sim > unitig_unitig_similarity_threshold) {
         any_assigned <- TRUE
         new_cluster_ix <- new_cluster_ix + 1
-        cluster_df <- increment_cluster_(cluster_df, max_contrast, new_cluster_str = paste0(new_cluster_id, new_cluster_ix))
-        next
-      } 
-
-      unclustered_optimistic_unitigs <-
-        cluster_df %>%
-        filter(unitig %in% optimistic_unitigs) %>%
-        filter(is.na(cluster)) %>% 
-        pull(unitig)
-      
-      if(length(unclustered_optimistic_unitigs) > 0){
-        any_assigned <- TRUE
-        max_contrast_cu <- 
+        cur_clusters <- paste0(new_cluster_id, new_cluster_ix)
+        cluster_df <- increment_cluster_(cluster_df, max_contrast, new_cluster_str = cur_clusters)
+        
+        clustered_similarities_cu <- 
           clustered_similarities_cu %>% 
-          filter(!is.na(sim)) %>% 
-          filter(unitig %in% optimistic_unitigs) %>% 
-          slice_max(sim, n = 1, with_ties = FALSE)
+          filter(unitig != max_contrast$unitig_1) %>% 
+          filter(unitig != max_contrast$unitig_2) 
         
-        max_contrast_uu <- 
+        clustered_similarities_uu <- 
           clustered_similarities_uu %>% 
-          filter(!is.na(sim)) %>% 
-          filter(unitig_1 != unitig_2) %>% 
-          filter((unitig_1 %in% optimistic_unitigs) | (unitig_2 %in% optimistic_unitigs)) %>% 
-          slice_max(sim, n = 1, with_ties = FALSE)
-        
-        if(nrow(max_contrast_cu) == 0 & nrow(max_contrast_uu) == 0) {
-          break
-        }
-        if(max_contrast_cu$sim >= max_contrast_uu$sim) {
-          cluster_df <- increment_cluster_(cluster_df, max_contrast_cu)
-        } else {
-          new_cluster_ix <- new_cluster_ix + 1
-          cluster_df <- increment_cluster_(cluster_df, max_contrast_uu, new_cluster_str = paste0(new_cluster_id, new_cluster_ix))
-        } 
-        
-        next
-        
-      }
+          filter(unitig_1 != max_contrast$unitig_1) %>% 
+          filter(unitig_2 != max_contrast$unitig_1) %>% 
+          filter(unitig_1 != max_contrast$unitig_2) %>% 
+          filter(unitig_2 != max_contrast$unitig_2)
+      } 
       
-      break
     }
     return(cluster_df)
   }
@@ -580,20 +575,35 @@ pairwise_complete_hclust_n <- function(sim_mat, n = 2, agg_f=mean, ...) {
     tibble(unitig = rownames(sim_mat), cluster = rownames(sim_mat))
   
   n_clusters <- n_distinct(cluster_df$cluster)
+  
+  cur_clusters <-  
+    cluster_df %>% 
+    filter(!is.na(cluster)) %>% 
+    pull_distinct(cluster)
+  
+  sets <- list()
+  cluster_similarities <- tibble(clust_1=character(), clust_2=character(), sim=double())
   while(n_clusters > n) {
     
-    sets <-
+    new_sets <-
       cluster_df %>% 
       filter(!is.na(cluster)) %>% 
+      filter(cluster %in% cur_clusters) %>% 
       with(split(unitig, cluster))
     
-    contrasts <- 
-      cluster_df %>% 
-      filter(!is.na(cluster)) %>% 
-      pull_distinct(cluster) %>% 
-      make_contrasts()
+    sets <- c(new_sets, sets)
     
-    cluster_similarities <-
+    all_clusters <- 
+      cluster_df %>%
+      filter(!is.na(cluster)) %>%
+      pull_distinct(cluster)
+
+    contrasts <-
+      make_contrasts(cur_clusters, all_clusters) %>% 
+      map(sort) %>% 
+      unique()
+    
+    new_cluster_similarities <-
       aggregate_over_subsets(
         sim_mat,
         sets,
@@ -602,6 +612,13 @@ pairwise_complete_hclust_n <- function(sim_mat, n = 2, agg_f=mean, ...) {
         agg_f = agg_f,
         ...
       )
+    
+    new_cluster_similarities <- 
+      new_cluster_similarities %>% 
+      filter(clust_1 != clust_2) 
+    
+    cluster_similarities <-
+      bind_rows(cluster_similarities, new_cluster_similarities)
     
     
     if(all(is.na(cluster_similarities$sim))) {
@@ -614,12 +631,6 @@ pairwise_complete_hclust_n <- function(sim_mat, n = 2, agg_f=mean, ...) {
       slice_max(sim, n = 1, with_ties = FALSE)
     
     max_sim <- max_contrast$sim
-    # similarity_threshold chosen by reviewing ~ 30 HGSVC assemblies. A value of
-    # 0.4 appears to also work, as there seems to be a sharp gulf where unitigs
-    # from different clusters tend to have similarity no more than ~ 0.21,
-    # while those from the same have similarity >0.5 there was one case where an
-    # X and  chromosome had similarity ~ 0.447. However, will stay at 0.5 as
-    # buffer for precision?
     
     # sort to ensure that sex cluster (sex > LG) is not overwritten
     clusters_to_merge <- sort(c(max_contrast$clust_1, max_contrast$clust_2))
@@ -633,6 +644,15 @@ pairwise_complete_hclust_n <- function(sim_mat, n = 2, agg_f=mean, ...) {
       cluster_df %>% 
       mutate(cluster = ifelse(cluster == clust_1, clust_2, cluster))
     
+    sets[clust_1] <- NULL
+    sets[clust_2] <- NULL
+    
+    cluster_similarities <-
+      cluster_similarities %>% 
+      filter(clust_1 != max_contrast$clust_1) %>% 
+      filter(clust_2 != max_contrast$clust_2) 
+    
+    cur_clusters <- clust_2
     n_clusters <- n_distinct(cluster_df$cluster)
   }
   
