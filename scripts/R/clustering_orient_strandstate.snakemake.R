@@ -994,13 +994,14 @@ hmc <-
     out <-
       out %>%
       mutate( # projected_counts
-        p_c = ifelse(sign(wc_ssf) == 1, wc_ssf * c, abs(wc_ssf) * w),
-        p_w = ifelse(sign(wc_ssf) == 1, wc_ssf * w, abs(wc_ssf) * c)
+        tmp_c = ifelse(sign(wc_ssf) == 1, wc_ssf * c, abs(wc_ssf) * w),
+        tmp_w = ifelse(sign(wc_ssf) == 1, wc_ssf * w, abs(wc_ssf) * c)
       ) %>%
       group_by(unitig) %>%
-      summarise(c = sum(p_c), w = sum(p_w)) %>% 
+      summarise(c = sum(tmp_c, na.rm=TRUE), w = sum(tmp_w, na.rm=TRUE)) %>% 
       ungroup() %>% 
-      mutate(n=ceiling(c + w))
+      mutate(n = ceiling(c + w)) %>% 
+      mutate(c = round(c), w=round(w))
 
     return(out)
   })
