@@ -970,8 +970,65 @@ marker_counts <-
 marker_counts <-
   marker_counts %>% 
   tidyr::pivot_wider(names_from = counting_method, values_from = c(c, w, n, ssf, wfrac)) %>% 
-  relocate(unitig, contains('cr'), contains('rbc'), contains('glm')) %>% 
-  set_names(function(x) gsub('_cr$', '', x)) 
+  relocate(unitig, contains('cr'), contains('rbc'), contains('glm')) 
+
+## Pick Counting Method ----------------------------------------------------
+
+temp <- get_values('--counting-methods', null_ok=TRUE)
+if(length(temp) != 0) {
+  cat('Importing marker counting methods.\n')
+  counting_methods_df <-
+    readr::read_tsv(temp, col_names = c('cluster', 'method'), col_types = 'cc')
+} else {
+  
+  counting_methods_df <-
+    distinct(cluster_df, cluster) %>% 
+    mutate(method = ifelse(grepl('LGXY', cluster) | grepl('^sex_', cluster), 'rbc', 'cr'))
+  
+  readr::write_tsv(
+    counting_methods_df,
+    file.path(intermediate_output_dir, 'counting_methods.tsv'),
+    col_names = FALSE
+  )
+  
+}
+
+
+## Assign Haplotype Markers ------------------------------------------------
+
+# first three columns: name, counts_1, counts_2 for rukki
+marker_counts <-
+  marker_counts %>%
+  left_join(cluster_df, by='unitig') %>% 
+  left_join(counting_methods_df, by='cluster') %>% 
+  mutate(
+    hap_1_counts = case_when(
+      method == 'cr' ~  c_cr,
+      method == 'rbc' ~ c_rbc,
+      method == 'glm' ~ c_glm,
+      .default=NA_real_
+    ),
+    hap_2_counts = case_when(
+      method == 'cr' ~  w_cr,
+      method == 'rbc' ~ w_rbc,
+      method == 'glm' ~ w_glm,
+      .default=NA_real_
+    ),
+    ssf = case_when(
+      method == 'cr' ~  ssf_cr,
+      method == 'rbc' ~ ssf_rbc,
+      method == 'glm' ~ ssf_glm,
+      .default=NA_real_
+    ),
+    wfrac = case_when(
+      method == 'cr' ~  wfrac_cr,
+      method == 'rbc' ~ wfrac_rbc,
+      method == 'glm' ~ wfrac_glm,
+      .default=NA_real_
+    )
+  ) %>% 
+  mutate(n = hap_1_counts + hap_2_counts) %>% 
+  relocate(unitig, hap_1_counts, hap_2_counts, n, ssf, wfrac, cluster, method) 
 
 # Export ------------------------------------------------------------------
 
@@ -989,23 +1046,9 @@ marker_counts <-
 
 marker_counts <-
   marker_counts %>%
-  left_join(cluster_df, by='unitig') %>%
-  left_join(components_df, by='unitig')
-
-marker_counts <-
-  marker_counts %>%
+  left_join(components_df, by='unitig') %>%
   left_join(strand_orientation_clusters_df, by=c('unitig')) %>%
   dplyr::rename(unitig_orientation = strand_cluster)
-
-
-# first three columns: name, counts_1, counts_2 for rukki
-marker_counts <-
-  marker_counts %>%
-  dplyr::rename(hap_1_counts = c, hap_2_counts = w) %>%
-  # dplyr::rename(hap_1_counts = c_rbc, hap_2_counts = w_rbc) %>%
-  # dplyr::rename(hap_1_counts = c_glm, hap_2_counts = w_glm) %>%
-  select(unitig, hap_1_counts, hap_2_counts, n, ssf, wfrac, everything()) %>%
-  arrange(cluster)
 
 ### Bandage Cluster Colors -----------------------------------------------------
 
