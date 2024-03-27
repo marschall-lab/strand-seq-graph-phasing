@@ -523,6 +523,7 @@ rule count_haplotype_markers:
         --initial-clusters \\
         --final-clusters \\
         --unitig-orientation \\
+        --counting-methods \\
         --output-marker-counts {output.mc} \\
         --output-lib {output.lib}) > {log} 2>&1
         '''
