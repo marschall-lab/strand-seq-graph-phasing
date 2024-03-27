@@ -977,38 +977,57 @@ library_weights <-
 # })
 ## Count Haplotype Markers -------------------------------------------------
 
-# TODO this weight thing isn't quite right.
-hmc <-
-  imap(em_counts, function(counts, nm){
-    # browser()
+count_haplotype_markers <- function(counts, lib_weights) {
+  # browser()
 
-    # Project weights onto the cube, to use indicator variable interpretation?
-    weights <-
-      unprojected_wc_vectors[[nm]] %>% 
-      mutate(wc_ssf = wc_ssf/max(abs(wc_ssf), na.rm=TRUE))
-    
-    out <-
-      counts %>%
-      right_join(weights, by='lib')
+  lib_weights <-
+    lib_weights %>% 
+    set_names(function(x)  gsub('wc_ssf.*', 'wc_ssf', x)) %>% 
+    mutate(wc_ssf = wc_ssf/max(abs(wc_ssf), na.rm=TRUE))
+  
+  out <-
+    counts %>%
+    right_join(lib_weights, by='lib')
+  
+  # Project weights onto the cube, to use indicator variable interpretation?
+  out <-
+    out %>%
+    mutate(
+      tmp_c = ifelse(sign(wc_ssf) == 1, wc_ssf * c, abs(wc_ssf) * w),
+      tmp_w = ifelse(sign(wc_ssf) == 1, wc_ssf * w, abs(wc_ssf) * c)
+    ) %>%
+    group_by(unitig) %>%
+    summarise(c = sum(tmp_c, na.rm=TRUE), w = sum(tmp_w, na.rm=TRUE)) %>% 
+    ungroup() %>% 
+    mutate(n = ceiling(c + w)) %>% 
+    mutate(c = round(c), w=round(w))
+  
+  return(out)
+}
 
-    out <-
-      out %>%
-      mutate( # projected_counts
-        tmp_c = ifelse(sign(wc_ssf) == 1, wc_ssf * c, abs(wc_ssf) * w),
-        tmp_w = ifelse(sign(wc_ssf) == 1, wc_ssf * w, abs(wc_ssf) * c)
-      ) %>%
-      group_by(unitig) %>%
-      summarise(c = sum(tmp_c, na.rm=TRUE), w = sum(tmp_w, na.rm=TRUE)) %>% 
-      ungroup() %>% 
-      mutate(n = ceiling(c + w)) %>% 
-      mutate(c = round(c), w=round(w))
+marker_counts <- 
+  map2(em_counts, unprojected_wc_vectors, count_haplotype_markers)
+marker_counts_rbc <- 
+  map2(em_counts, unprojected_wc_vectors_rbc, count_haplotype_markers)
+marker_counts_glm <- 
+  map2(em_counts, unprojected_wc_vectors_glm, count_haplotype_markers)
 
-    return(out)
-  })
 
 marker_counts <-
-  bind_rows(hmc) %>%
-  bind_rows(tibble(unitig = character(), n=integer(), c=double(), w=double())) 
+  list(cr = marker_counts, rbc=marker_counts_rbc, glm=marker_counts_glm) %>% 
+  map(bind_rows) %>% 
+  bind_rows(.id='counting_method')
+
+marker_counts <-
+  marker_counts %>%
+  mutate(ssf = round((w-c)/(w+c), 3)) %>% 
+  mutate(wfrac = round(w/(w+c), 2))
+
+marker_counts <-
+  marker_counts %>% 
+  tidyr::pivot_wider(names_from = counting_method, values_from = c(c, w, n, ssf, wfrac)) %>% 
+  relocate(unitig, contains('cr'), contains('rbc'), contains('glm')) %>% 
+  set_names(function(x) gsub('_cr$', '', x)) 
 
 # Export ------------------------------------------------------------------
 
@@ -1034,14 +1053,14 @@ marker_counts <-
   left_join(strand_orientation_clusters_df, by=c('unitig')) %>%
   dplyr::rename(unitig_orientation = strand_cluster)
 
-marker_counts <-
-  marker_counts %>%
-  mutate(ssf = round((w-c)/(w+c), 3))
+
 # first three columns: name, counts_1, counts_2 for rukki
 marker_counts <-
   marker_counts %>%
   dplyr::rename(hap_1_counts = c, hap_2_counts = w) %>%
-  select(unitig, hap_1_counts, hap_2_counts, n, ssf, everything()) %>%
+  # dplyr::rename(hap_1_counts = c_rbc, hap_2_counts = w_rbc) %>%
+  # dplyr::rename(hap_1_counts = c_glm, hap_2_counts = w_glm) %>%
+  select(unitig, hap_1_counts, hap_2_counts, n, ssf, wfrac, everything()) %>%
   arrange(cluster)
 
 ### Bandage Cluster Colors -----------------------------------------------------
