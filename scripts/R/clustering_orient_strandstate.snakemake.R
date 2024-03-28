@@ -1006,25 +1006,25 @@ marker_counts <-
       method == 'cr' ~  c_cr,
       method == 'rbc' ~ c_rbc,
       method == 'glm' ~ c_glm,
-      .default=NA_real_
+      TRUE~NA_real_
     ),
     hap_2_counts = case_when(
       method == 'cr' ~  w_cr,
       method == 'rbc' ~ w_rbc,
       method == 'glm' ~ w_glm,
-      .default=NA_real_
+      TRUE~NA_real_
     ),
     ssf = case_when(
       method == 'cr' ~  ssf_cr,
       method == 'rbc' ~ ssf_rbc,
       method == 'glm' ~ ssf_glm,
-      .default=NA_real_
+      TRUE~NA_real_
     ),
     wfrac = case_when(
       method == 'cr' ~  wfrac_cr,
       method == 'rbc' ~ wfrac_rbc,
       method == 'glm' ~ wfrac_glm,
-      .default=NA_real_
+      TRUE~NA_real_
     )
   ) %>% 
   mutate(n = hap_1_counts + hap_2_counts) %>% 
@@ -1410,7 +1410,7 @@ p <-
   ggtitle('Fastmap Principal Components Plot') +
   # coord_equal() +
   theme_classic() +
-  theme(panel.border = element_rect(linewidth=1, fill=NA))
+  theme(panel.border = element_rect(size = 1, fill=NA))
 
 plots[['pcp']] <- p
 
