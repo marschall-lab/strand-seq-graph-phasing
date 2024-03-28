@@ -668,7 +668,10 @@ if(length(temp) != 0) {
   
   
   strand_orientation_clusters_df<-
-    map(cluster_cosine_similarities, pairwise_complete_hclust_n, n=2, agg_f=mean, na.rm=TRUE) 
+    imap(cluster_cosine_similarities, function(x, nm){
+      print(nm)
+      return(pairwise_complete_hclust_n(x, n=2, agg_f=mean, na.rm=TRUE))
+    }) 
   
   strand_orientation_clusters_df <-
     strand_orientation_clusters_df %>% 
