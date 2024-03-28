@@ -1134,6 +1134,9 @@ plot_data <-
   mutate(cluster = coalesce(cluster, unitig)) %>% 
   mutate(cluster = manf(cluster))
 
+plot_data <-
+  full_join(plot_data, long_unitigs_df)
+
 p <-
 ggplot(plot_data) +
   geom_raster(aes(x = lib, y = unitig, fill = ssf)) +
@@ -1170,122 +1173,172 @@ plots[['ssfb1']] <- p1
 plots[['ssfb2']] <- p2
 ## Cosine Similarity Heatmaps ----------------------------------------------
 
-plot_data <-
-  cosine_similarity_mat %>% 
-  as_tibble(rownames = 'unitig_1') %>%
-  tidyr::pivot_longer(-unitig_1, names_to = 'unitig_2', values_to = 'sim')
+make_cosine_sim_heatmap_plots <-
+  function(cosine_similarity_mat,
+           f_agg = mean_abs,
+           f_ind = abs,
+           title = '',
+           colorbar_title = '',
+           limits = c(NA, NA)) {
+    
+  out <- list()
+  plot_data <-
+    cosine_similarity_mat %>% 
+    as_tibble(rownames = 'unitig_1') %>%
+    tidyr::pivot_longer(-unitig_1, names_to = 'unitig_2', values_to = 'sim')
+  
+  plot_data <-
+    plot_data %>% 
+    full_join(long_unitigs_df, by=c('unitig_1' = 'unitig')) %>% 
+    full_join(long_unitigs_df, by=c('unitig_2' = 'unitig')) 
+  
+  plot_data <-
+    plot_data %>% 
+    left_join(cluster_df, by=c('unitig_1' = 'unitig')) %>% 
+    dplyr::rename(cluster_1 = cluster) %>% 
+    left_join(cluster_df, by=c('unitig_2' = 'unitig')) %>% 
+    dplyr::rename(cluster_2 = cluster)
+  
+  plot_data <-
+    plot_data %>% 
+    mutate(cluster_1 = coalesce(cluster_1, unitig_1)) %>% 
+    mutate(cluster_2 = coalesce(cluster_2, unitig_2)) 
+  
+  # Floating point nonsense
+  plot_data <-
+    plot_data %>%
+    mutate(sim = ifelse(sim > 1, 1, sim)) %>% 
+    mutate(sim = ifelse(sim < -1, -1, sim))
+  
+  ### Aggregated Plots --------------------------------------------------------
+  
+  plot_data_tmp <-
+    plot_data %>%
+    group_by(cluster_1, cluster_2) %>%
+    summarise(sim = f_agg(sim, na.rm = TRUE)) %>%
+    ungroup() %>%
+    arrange(desc(cluster_1), desc(cluster_2)) %>%
+    mutate(
+      cluster_1 = manf(cluster_1),
+      cluster_2 = manf(cluster_2)
+    ) %>%
+    mutate(cluster_2 = factor(cluster_2, levels = rev(levels(cluster_2))))
+  
+  p <-
+    plot_data_tmp %>%
+    ggplot() +
+    geom_raster(aes(x = cluster_1, y = cluster_2, fill = sim)) +
+    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E') +
+    ggtitle(paste('Aggregated', title)) +
+    xlab('Cluster/Unitig') +
+    ylab('Cluster/Unitig') +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 360 - 45, hjust = 0)) 
+  
+  out[['acs']] <- p
+  
+  ### Unitig Plots ------------------------------------------------------------
+  
+  plot_data_tmp <-
+    plot_data %>%   
+    arrange(cluster_1, cluster_2) %>%
+    mutate(
+      cluster_1 = manf(cluster_1),
+      cluster_2 = manf(cluster_2)
+    )
+  
+  plot_data_tmp <-
+    plot_data_tmp %>% 
+    group_by(cluster_1, cluster_2) %>%
+    arrange(desc(unitig_1), unitig_2) %>%
+    mutate(coord_1 = as.numeric(factor(unitig_1, levels = unique(unitig_1))),
+           coord_2 = as.numeric(factor(unitig_2, levels = unique(unitig_2)))) %>%
+    ungroup() 
+  p <-
+    plot_data_tmp %>% 
+    # filter(grepl('LG[12] ', cluster_1)) %>%
+    # filter(grepl('LG[12] ', cluster_2)) %>%
+    ggplot() +
+    geom_raster(aes(x = coord_1, y = coord_2, fill = f_ind(sim))) +
+    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E') +
+    scale_x_continuous(expand = expansion()) +
+    scale_y_continuous(expand = expansion()) +
+    theme(axis.text.x = element_text(angle = 360 - 45, hjust = 0)) +
+    ggtitle(title) +
+    xlab('Unitig within Cluster') +
+    ylab('Unitig within Cluster') +
+    theme_classic() +
+    theme(
+      axis.text.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.ticks.y = element_blank(),
+      panel.spacing = unit(2, 'points'),
+      strip.text.y.left = element_text(angle = 0),
+      strip.text.x = element_text(angle = 90),
+      strip.text = element_text(size = 7)
+    )
+  
+  p1 <-
+    p +
+    facet_grid(
+      cols = vars(cluster_1),
+      rows = vars(cluster_2),
+      scales = 'free',
+      space = 'free',
+      switch = 'y'
+    )
+  
+  p2 <-
+    p +
+    facet_grid(
+      cols = vars(cluster_1),
+      rows = vars(cluster_2),
+      scales = 'free',
+      # space = 'free',
+      switch = 'y'
+    ) 
+  
+  out[['cs1']] <- p1
+  out[['cs2']] <- p2
+  
+  return(out)
+  }
 
-plot_data <-
-  plot_data %>% 
-  left_join(cluster_df, by=c('unitig_1' = 'unitig')) %>% 
-  dplyr::rename(cluster_1 = cluster) %>% 
-  left_join(cluster_df, by=c('unitig_2' = 'unitig')) %>% 
-  dplyr::rename(cluster_2 = cluster)
+# plots_sim <-
+#   make_cosine_sim_heatmap_plots(
+#     cosine_similarity_mat,
+#     f_agg = mean,
+#     f_ind = identity,
+#     title = 'Cosine Similarities',
+#     colorbar_title = 'sim',
+#     limits = c(-1, 1)
+#   )
 
-plot_data <-
-  plot_data %>% 
-  mutate(cluster_1 = coalesce(cluster_1, unitig_1)) %>% 
-  mutate(cluster_2 = coalesce(cluster_2, unitig_2)) 
-
-# Floating point nonsense
-plot_data <-
-  plot_data %>%
-  mutate(sim = ifelse(sim > 1, 1, sim)) %>% 
-  mutate(sim = ifelse(sim < -1, -1, sim))
-
-### Aggregated Plots --------------------------------------------------------
-
-plot_data_tmp <-
-  plot_data %>%
-  group_by(cluster_1, cluster_2) %>%
-  summarise(sim = mean_abs(sim, na.rm = TRUE)) %>%
-  ungroup() %>%
-  arrange(desc(cluster_1), desc(cluster_2)) %>%
-  mutate(
-    cluster_1 = manf(cluster_1),
-    cluster_2 = manf(cluster_2)
-  ) %>%
-  mutate(cluster_2 = factor(cluster_2, levels = rev(levels(cluster_2))))
-
-p <-
-  plot_data_tmp %>%
-  ggplot() +
-  # geom_raster(aes(x = unitig_1, y = unitig_2, fill = abs(sim))) +
-  geom_raster(aes(x = cluster_1, y = cluster_2, fill = abs(sim))) +
-
-  scale_fill_viridis_c(limits = c(0, 1), option = 'E') +
-  ggtitle('Aggregated Cosine Similarities') +
-  xlab('Cluster/Unitig') +
-  ylab('Cluster/Unitig') +
-  theme_classic() +
-  theme(axis.text.x = element_text(angle = 360 - 45, hjust = 0)) 
-
-plots[['acs']] <- p
-
-### Unitig Plots ------------------------------------------------------------
-
-plot_data_tmp <-
-  plot_data %>%   
-  arrange(cluster_1, cluster_2) %>%
-  mutate(
-    cluster_1 = manf(cluster_1),
-    cluster_2 = manf(cluster_2)
+plots_abs_sim <-
+  make_cosine_sim_heatmap_plots(
+    cosine_similarity_mat,
+    f_agg = mean_abs,
+    f_ind = abs,
+    title = 'Absolute Cosine Similarities',
+    colorbar_title = 'abs(sim)',
+    limits = c(0, 1)
   )
 
-plot_data_tmp <-
-  plot_data_tmp %>% 
-  group_by(cluster_1, cluster_2) %>%
-  arrange(desc(unitig_1), unitig_2) %>%
-  mutate(coord_1 = as.numeric(factor(unitig_1, levels = unique(unitig_1))),
-         coord_2 = as.numeric(factor(unitig_2, levels = unique(unitig_2)))) %>%
-  ungroup() 
-p <-
-  plot_data_tmp %>% 
-  # filter(grepl('LG[12] ', cluster_1)) %>%
-  # filter(grepl('LG[12] ', cluster_2)) %>%
-  ggplot() +
-  geom_raster(aes(x = coord_1, y = coord_2, fill = abs(sim))) +
-  scale_fill_viridis_c(limits = c(0, 1), option = 'E') +
-  scale_x_continuous(expand = expansion()) +
-  scale_y_continuous(expand = expansion()) +
-  theme(axis.text.x = element_text(angle = 360 - 45, hjust = 0)) +
-  ggtitle('Cosine Similarities') +
-  xlab('Unitig within Cluster') +
-  ylab('Unitig within Cluster') +
-  theme_classic() +
-  theme(
-    axis.text.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.ticks.y = element_blank(),
-    panel.spacing = unit(2, 'points'),
-    strip.text.y.left = element_text(angle = 0),
-    strip.text.x = element_text(angle = 90),
-    strip.text = element_text(size = 7)
+plots_sim_abs_ssf <-
+  make_cosine_sim_heatmap_plots(
+    abs_cosine_similarity_mat,
+    f_agg = mean,
+    f_ind = identity,
+    title = 'Cosine Similarities on Absolute SSF',
+    colorbar_title = 'sim',
+    limits = c(NA, 1)
   )
 
-p1 <-
-  p +
-  facet_grid(
-    cols = vars(cluster_1),
-    rows = vars(cluster_2),
-    scales = 'free',
-    space = 'free',
-    switch = 'y'
-  )
-
-p2 <-
-  p +
-  facet_grid(
-    cols = vars(cluster_1),
-    rows = vars(cluster_2),
-    scales = 'free',
-    # space = 'free',
-    switch = 'y'
-  ) 
-
-plots[['cs1']] <- p1
-plots[['cs2']] <- p2
+plots <- c(plots, 
+           # plots_sim, 
+           plots_abs_sim, 
+           plots_sim_abs_ssf)
 ## Phasing Planes ----------------------------------------------------------
 
 pca_df <-
