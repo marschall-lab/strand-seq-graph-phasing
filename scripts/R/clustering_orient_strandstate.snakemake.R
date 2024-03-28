@@ -918,63 +918,7 @@ library_weights <-
   map(bind_rows, .id='cluster') %>% 
   purrr::reduce(full_join, by=c('cluster', 'lib'))
 
-### Plots -------------------------------------------------------------------
 
-# 
-# coefs <-
-#   coefs %>%
-#   map_dfr(function(x) as_tibble(as.list(x)), .id='cluster')
-# 
-# 
-# 
-# model_input <-
-#   bind_rows(model_input, .id = 'cluster') %>%
-#   select(cluster, unitig, unitig_dir, length, y, everything())
-# 
-# projected_wc_vectors_plot <-
-#   projected_wc_vectors_rbc %>%
-#   map(as.data.frame.list) %>%
-#   bind_rows(.id = 'cluster')
-# 
-# projected_ww_vectors_plot <-
-#   projected_ww_vectors %>%
-#   map(as_tibble) %>%
-#   bind_rows(.id = 'cluster')
-# 
-# # Test plots
-# label_data <-
-#   model_input %>%
-#   group_by(cluster) %>%
-#   filter(length == max(length)) %>%
-#   ungroup()
-# 
-# model_input %>%
-#   ggplot() +
-#   geom_point(aes(
-#     x = PC1,
-#     y = PC2,
-#     color = y,
-#     size = length
-#   )) +
-#   facet_wrap(~ cluster) +
-#   geom_text(aes(x = PC1, y = PC2, label=unitig_dir), size=2, color='black', data=filter(label_data, !grepl('projected', unitig_dir))) +
-#   # geom_abline(aes(slope=PC2/PC1, intercept=0), data=projected_ww_vectors) +
-#   geom_abline(aes(slope = PC2 / PC1, intercept = 0), data = projected_wc_vectors_plot) +
-#   # geom_abline(aes(slope = -PC1 / PC2, intercept = 0), data = projected_wc_vectors_plot) +
-#   geom_abline(aes(slope = -PC1 / PC2, intercept = 0), data = projected_ww_vectors_plot, linetype='dashed', color='green') +
-#   # geom_abline(aes(slope = PC2 / PC1, intercept = 0), data = projected_ww_vectors_plot, linetype='dashed', color='green') +
-#   geom_abline(aes(slope = -PC1 / PC2, intercept = 0), data = coefs, linetype = 'dotted', color='red') +
-#   # geom_abline(aes(slope = PC2 / PC1, intercept = 0), data = coefs, linetype = 'dotted', color='red') +
-# 
-#   # geom_point(aes(x = PC2, y = -PC1), data = projected_ww_vectors) +
-#   # facet_wrap( ~cluster + grepl('projected', unitig_dir)) +
-#   scale_size_area() +
-#   coord_equal()
-
-# 
-# map2(norm_ww_vectors, unprojected_ww_vectors, function(x, y) {
-#   cosine_similarity_(x$ww_ssf, y$ww_ssf)
-# })
 ## Count Haplotype Markers -------------------------------------------------
 
 count_haplotype_markers <- function(counts, lib_weights) {
@@ -1113,6 +1057,274 @@ library_weights <-
 
 readr::write_csv(library_weights, output_lib)
 
+
+
+
+# Plots -------------------------------------------------------------------
+# TODO: Alpha values according to n
+library(ggplot2)
+
+plots <- list()
+# make alpha-numeric factor
+manf <- function(x) {
+  factor(x, levels = stringr::str_sort(unique(x), numeric=TRUE))
+}
+## SSF Barcodes ------------------------------------------------------------
+
+
+
+ssf_counts_df <-
+  orient_counts(counts_df, strand_orientation_clusters_df) %>%
+  filter(!is.na(w) & !is.na(c))
+
+ssf_counts_df <-
+  ssf_counts_df %>%
+  bind_rows(anti_join(counts_df, ssf_counts_df, by = 'unitig'))
+
+ssf_counts_df <-
+  ssf_counts_df %>%
+  mutate(ssf = (w - c) / n)
+
+plot_data <-
+  ssf_counts_df %>%
+  left_join(cluster_df, by = 'unitig') %>%
+  mutate(cluster = coalesce(cluster, unitig)) %>% 
+  mutate(cluster = manf(cluster))
+
+p <-
+ggplot(plot_data) +
+  geom_raster(aes(x = lib, y = unitig, fill = ssf)) +
+  scale_fill_viridis_c(limits = c(-1, 1),  option = 'E') +
+  scale_x_discrete(expand = expansion()) +
+  scale_y_discrete(expand = expansion()) +
+  ggtitle('SSF Values') +
+  xlab('Library') +
+  ylab('Cluster/Unitig') +
+  theme_classic() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.spacing.y = unit(2, 'points'),
+    strip.text.y.left = element_text(angle = 0, size = 7)
+  )
+
+p1 <-
+  p + 
+  facet_grid(rows = vars(cluster),
+             switch = 'y',
+             scales = 'free_y',
+             space = 'free') 
+
+p2 <-
+  p + 
+  facet_grid(rows = vars(cluster),
+             switch = 'y',
+             scales = 'free_y') 
+
+plots[['ssfb1']] <- p1
+plots[['ssfb2']] <- p2
+## Cosine Similarity Heatmaps ----------------------------------------------
+
+plot_data <-
+  cosine_similarity_mat %>% 
+  as_tibble(rownames = 'unitig_1') %>%
+  tidyr::pivot_longer(-unitig_1, names_to = 'unitig_2', values_to = 'sim')
+
+plot_data <-
+  plot_data %>% 
+  left_join(cluster_df, by=c('unitig_1' = 'unitig')) %>% 
+  dplyr::rename(cluster_1 = cluster) %>% 
+  left_join(cluster_df, by=c('unitig_2' = 'unitig')) %>% 
+  dplyr::rename(cluster_2 = cluster)
+
+plot_data <-
+  plot_data %>% 
+  mutate(cluster_1 = coalesce(cluster_1, unitig_1)) %>% 
+  mutate(cluster_2 = coalesce(cluster_2, unitig_2)) 
+
+# Floating point nonsense
+plot_data <-
+  plot_data %>%
+  mutate(sim = ifelse(sim > 1, 1, sim)) %>% 
+  mutate(sim = ifelse(sim < -1, -1, sim))
+
+### Aggregated Plots --------------------------------------------------------
+
+plot_data_tmp <-
+  plot_data %>%
+  group_by(cluster_1, cluster_2) %>%
+  summarise(sim = mean_abs(sim, na.rm = TRUE)) %>%
+  ungroup() %>%
+  arrange(desc(cluster_1), desc(cluster_2)) %>%
+  mutate(
+    cluster_1 = manf(cluster_1),
+    cluster_2 = manf(cluster_2)
+  ) %>%
+  mutate(cluster_2 = factor(cluster_2, levels = rev(levels(cluster_2))))
+
+p <-
+  plot_data_tmp %>%
+  ggplot() +
+  # geom_raster(aes(x = unitig_1, y = unitig_2, fill = abs(sim))) +
+  geom_raster(aes(x = cluster_1, y = cluster_2, fill = abs(sim))) +
+
+  scale_fill_viridis_c(limits = c(0, 1), option = 'E') +
+  ggtitle('Aggregated Cosine Similarities') +
+  xlab('Cluster/Unitig') +
+  ylab('Cluster/Unitig') +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 360 - 45, hjust = 0)) 
+
+plots[['acs']] <- p
+
+### Unitig Plots ------------------------------------------------------------
+
+plot_data_tmp <-
+  plot_data %>%   
+  arrange(cluster_1, cluster_2) %>%
+  mutate(
+    cluster_1 = manf(cluster_1),
+    cluster_2 = manf(cluster_2)
+  )
+
+plot_data_tmp <-
+  plot_data_tmp %>% 
+  group_by(cluster_1, cluster_2) %>%
+  arrange(desc(unitig_1), unitig_2) %>%
+  mutate(coord_1 = as.numeric(factor(unitig_1, levels = unique(unitig_1))),
+         coord_2 = as.numeric(factor(unitig_2, levels = unique(unitig_2)))) %>%
+  ungroup() 
+p <-
+  plot_data_tmp %>% 
+  # filter(grepl('LG[12] ', cluster_1)) %>%
+  # filter(grepl('LG[12] ', cluster_2)) %>%
+  ggplot() +
+  geom_raster(aes(x = coord_1, y = coord_2, fill = abs(sim))) +
+  scale_fill_viridis_c(limits = c(0, 1), option = 'E') +
+  scale_x_continuous(expand = expansion()) +
+  scale_y_continuous(expand = expansion()) +
+  theme(axis.text.x = element_text(angle = 360 - 45, hjust = 0)) +
+  ggtitle('Cosine Similarities') +
+  xlab('Unitig within Cluster') +
+  ylab('Unitig within Cluster') +
+  theme_classic() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.spacing = unit(2, 'points'),
+    strip.text.y.left = element_text(angle = 0),
+    strip.text.x = element_text(angle = 90),
+    strip.text = element_text(size = 7)
+  )
+
+p1 <-
+  p +
+  facet_grid(
+    cols = vars(cluster_1),
+    rows = vars(cluster_2),
+    scales = 'free',
+    space = 'free',
+    switch = 'y'
+  )
+
+p2 <-
+  p +
+  facet_grid(
+    cols = vars(cluster_1),
+    rows = vars(cluster_2),
+    scales = 'free',
+    # space = 'free',
+    switch = 'y'
+  ) 
+
+plots[['cs1']] <- p1
+plots[['cs2']] <- p2
+## Phasing Planes ----------------------------------------------------------
+
+pca_df <-
+  bind_rows(model_input, .id = 'cluster') %>%
+  select(cluster, unitig, unitig_dir, length, y, everything())
+
+projected_ww_vectors_glm_plot <-
+  coefs %>%
+  map_dfr(function(x) as_tibble(as.list(x)), .id='cluster')
+
+projected_ww_vectors_rbc_plot <-
+  projected_ww_vectors_rbc %>%
+  map(as.data.frame.list) %>%
+  bind_rows(.id = 'cluster')
+
+projected_ww_vectors_plot <-
+  projected_ww_vectors %>%
+  map(as_tibble) %>%
+  bind_rows(.id = 'cluster')
+
+projected_ww_vectors_plot <-
+  list(`Count and Rotate` = projected_ww_vectors_plot,
+       `Range Balanced Correction` = projected_ww_vectors_rbc_plot,
+       `Logistic Regression` = projected_ww_vectors_glm_plot
+       ) %>% 
+  map(function(x) select(x, cluster, PC1, PC2)) %>% 
+  bind_rows(.id='method')
+
+
+p <-
+  pca_df %>%
+  filter(!y) %>%
+  dplyr::rename(inverted = y) %>%
+  ggplot() +
+  # Guidelines
+  geom_hline(yintercept=0, alpha = 0.2) +
+  geom_vline(xintercept=0, alpha = 0.2) +
+  # WW vectors
+  geom_abline(
+    aes(
+    slope = PC2 / PC1,
+    intercept = 0,
+    color = method,
+    linetype = method
+  ), 
+  data = projected_ww_vectors_plot) +
+# 
+#   geom_abline(
+#     aes(
+#       slope = -PC1 / PC2,
+#       intercept = 0,
+#       color = method,
+#       linetype = method
+#     ),
+#     data = projected_ww_vectors_plot) +
+  geom_point(aes(
+    x = PC1,
+    y = PC2,
+    size = length
+  ),
+  fill='darkgrey',
+  alpha = 0.5,
+  shape = 21) +
+  facet_wrap( ~ cluster) +
+  scale_size_area(name='Unitig Size') +
+  # scale_fill_viridis_d(option = 'E') +
+  scale_colour_brewer(name='WW Calculation Method', palette = 'Dark2') +
+  scale_linetype_discrete(name='WW Calculation Method') +
+  ggtitle('Fastmap Principal Components Plot') +
+  # coord_equal() +
+  theme_classic() +
+  theme(panel.border = element_rect(linewidth=1, fill=NA))
+
+plots[['pcp']] <- p
+
+## Export ------------------------------------------------------------------
+
+pdf(file.path(intermediate_output_dir, 'plots.pdf'), width = 15, height = 15)
+for(p in plots) {
+  print(p)
+}
+dev.off()
 
 # Warnings ----------------------------------------------------------------
 
