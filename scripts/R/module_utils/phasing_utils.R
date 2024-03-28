@@ -650,6 +650,8 @@ pairwise_complete_hclust_n <- function(sim_mat, n = 2, agg_f=mean, ...) {
     cluster_similarities <-
       cluster_similarities %>% 
       filter(clust_1 != max_contrast$clust_1) %>% 
+      filter(clust_1 != max_contrast$clust_2) %>%
+      filter(clust_2 != max_contrast$clust_1) %>%
       filter(clust_2 != max_contrast$clust_2) 
     
     cur_clusters <- clust_2
