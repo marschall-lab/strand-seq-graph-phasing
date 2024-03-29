@@ -403,11 +403,11 @@ min_overlaps <- 5
 cosine_similarity_mat <-
   pairwise_complete_cosine_similarity(ssf_mat, min_overlaps = min_overlaps)
 
-abs_cosine_similarity_mat <-
-  pairwise_complete_cosine_similarity(abs(ssf_mat), min_overlaps = min_overlaps)
+# abs_cosine_similarity_mat <-
+#   pairwise_complete_cosine_similarity(abs(ssf_mat), min_overlaps = min_overlaps)
 
-# abs_dp <- 
-#   pairwise_complete_dp(abs(ssf_mat), t(abs(ssf_mat)), min_overlaps = min_overlaps)
+norm_abs_dp <-
+  pairwise_complete_dp(abs(ssf_mat), t(abs(ssf_mat)), min_overlaps = min_overlaps)/length(included_libraries)
 
 temp <- get_values('--final-clusters', null_ok=TRUE)
 if(length(temp) != 0) {
@@ -474,18 +474,34 @@ if(length(temp) != 0) {
   cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5)
   cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66)
   
-  cluster_df <- merge_similar_clusters_on_components(abs_cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.9)
-  cluster_df <- merge_similar_clusters(abs_cosine_similarity_mat, cluster_df, similarity_threshold = 0.9)
+  # cluster_df <- merge_similar_clusters_on_components(abs_cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.9)
+  # cluster_df <- merge_similar_clusters(abs_cosine_similarity_mat, cluster_df, similarity_threshold = 0.9)
   
+  # TODO justify this threshold w/ expected noise + expected number of libraries w/ shared overlap.
+  cluster_df <- merge_similar_clusters_on_components(norm_abs_dp, cluster_df, components_df, similarity_threshold = 0.75)
+  cluster_df <- merge_similar_clusters(norm_abs_dp, cluster_df, similarity_threshold = 0.75)
+  # 
+  # debugonce(merge_similar_clusters)
+  # cluster_df <- merge_similar_clusters(abs_dp/length(included_libraries), cluster_df, similarity_threshold = 0.8)
+  #   
   cluster_df <-
     cluster_unitigs(
-      abs_cosine_similarity_mat,
+      norm_abs_dp,
       cluster_df,
-      cluster_unitig_similarity_threshold = 0.9,
-      unitig_unitig_similarity_threshold = 0.9,
+      cluster_unitig_similarity_threshold = 0.75,
+      unitig_unitig_similarity_threshold = 0.75,
       new_cluster_id = 'LGabscos'
     )
   
+  # cluster_df <-
+  #   cluster_unitigs(
+  #     abs_cosine_similarity_mat,
+  #     cluster_df,
+  #     cluster_unitig_similarity_threshold = 0.9,
+  #     unitig_unitig_similarity_threshold = 0.9,
+  #     new_cluster_id = 'LGabscos'
+  #   )
+  # 
   
   ## PAR Detection -----------------------------------------------------------
   cat('Detecting PAR\n')
@@ -1111,6 +1127,9 @@ readr::write_csv(library_weights, output_lib)
 library(ggplot2)
 
 plots <- list()
+cluster_plots_ssf <- list()
+cluster_plots_sim <- list()
+cluster_plots_ndp <- list()
 # make alpha-numeric factor
 manf <- function(x) {
   factor(x, levels = stringr::str_sort(unique(x), numeric=TRUE))
@@ -1138,7 +1157,8 @@ plot_data <-
   mutate(cluster = manf(cluster))
 
 plot_data <-
-  full_join(plot_data, long_unitigs_df)
+  full_join(plot_data, long_unitigs_df) %>% 
+  mutate(unitig = manf(unitig))
 
 p <-
 ggplot(plot_data) +
@@ -1174,17 +1194,60 @@ p2 <-
 
 plots[['ssfb1']] <- p1
 plots[['ssfb2']] <- p2
+
+
+## SSF Barcode by Cluster --------------------------------------------------
+# 
+# TODO height of each bar ~ size of unitig
+for(clust in stringr::str_sort(pull_distinct(plot_data, cluster), numeric = TRUE)) {
+  p <-
+    plot_data %>%
+    filter(cluster == clust) %>%
+    ggplot() +
+    geom_raster(aes(x = lib, y = unitig, fill = ssf)) +
+    scale_fill_viridis_c(limits = c(-1, 1),  option = 'E') +
+    facet_grid(cols = vars(cluster),
+               switch = 'y',
+               scales = 'free_y') +
+    scale_x_discrete(expand = expansion()) +
+    scale_y_discrete(expand = expansion()) +
+    ggtitle('SSF Values') +
+    xlab('Library') +
+    ylab('Unitig') +
+    theme_classic() +
+    theme(
+      panel.spacing.y = unit(2, 'points'),
+      strip.text.y.left = element_text(angle = 0, size = 7),
+      axis.text.x = element_text(angle = 360-90, hjust=0, vjust=0.5)
+    )
+
+  cluster_plots_ssf[[paste0('ssfb_', clust)]] <- p
+}
+
+
+## SSF Histograms ----------------------------------------------------------
+
+## Marker Count SSF Histogram ----------------------------------------------
+
+p <-
+  marker_counts %>% 
+  filter(!is.na(cluster)) %>% 
+  ggplot() +
+  geom_histogram(aes(ssf)) +
+  facet_wrap(~cluster, scales = 'free_y') +
+  scale_x_continuous(limits = c(-1, 1)) +
+  scale_y_continuous(expand = expansion(c(0, 0.1))) +
+  theme_linedraw() +
+  theme(
+    strip.background = element_rect(fill='white'),
+    strip.text = element_text(color='black')
+  )
+
+plots[['ssfh']] <- p
+
 ## Cosine Similarity Heatmaps ----------------------------------------------
 
-make_cosine_sim_heatmap_plots <-
-  function(cosine_similarity_mat,
-           f_agg = mean_abs,
-           f_ind = abs,
-           title = '',
-           colorbar_title = '',
-           limits = c(NA, NA)) {
-    
-  out <- list()
+make_cosine_sim_plot_data <- function(cosine_similarity_mat) {
   plot_data <-
     cosine_similarity_mat %>% 
     as_tibble(rownames = 'unitig_1') %>%
@@ -1212,7 +1275,19 @@ make_cosine_sim_heatmap_plots <-
     plot_data %>%
     mutate(sim = ifelse(sim > 1, 1, sim)) %>% 
     mutate(sim = ifelse(sim < -1, -1, sim))
-  
+}
+
+make_cosine_sim_heatmap_plots <-
+  function(cosine_similarity_mat,
+           f_agg = mean_abs,
+           f_ind = abs,
+           title = '',
+           colorbar_title = '',
+           limits = c(NA, NA)) {
+    
+  out <- list()
+ 
+  plot_data <- make_cosine_sim_plot_data(cosine_similarity_mat)
   ### Aggregated Plots --------------------------------------------------------
   
   plot_data_tmp <-
@@ -1248,24 +1323,20 @@ make_cosine_sim_heatmap_plots <-
     mutate(
       cluster_1 = manf(cluster_1),
       cluster_2 = manf(cluster_2)
-    )
-  
-  plot_data_tmp <-
-    plot_data_tmp %>% 
-    group_by(cluster_1, cluster_2) %>%
-    arrange(desc(unitig_1), unitig_2) %>%
-    mutate(coord_1 = as.numeric(factor(unitig_1, levels = unique(unitig_1))),
-           coord_2 = as.numeric(factor(unitig_2, levels = unique(unitig_2)))) %>%
-    ungroup() 
+    ) %>% 
+    mutate(
+      unitig_1 = manf(unitig_1),
+      unitig_2 = manf(unitig_2)
+    ) %>% 
+    mutate(unitig_2 = factor(unitig_2, levels = rev(levels(unitig_2))))
+
   p <-
     plot_data_tmp %>% 
-    # filter(grepl('LG[12] ', cluster_1)) %>%
-    # filter(grepl('LG[12] ', cluster_2)) %>%
     ggplot() +
-    geom_raster(aes(x = coord_1, y = coord_2, fill = f_ind(sim))) +
+    geom_raster(aes(x = unitig_1, y = unitig_2, fill = f_ind(sim))) +
     scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E') +
-    scale_x_continuous(expand = expansion()) +
-    scale_y_continuous(expand = expansion()) +
+    scale_x_discrete(expand = expansion()) +
+    scale_y_discrete(expand = expansion()) +
     theme(axis.text.x = element_text(angle = 360 - 45, hjust = 0)) +
     ggtitle(title) +
     xlab('Unitig within Cluster') +
@@ -1305,6 +1376,31 @@ make_cosine_sim_heatmap_plots <-
   out[['cs1']] <- p1
   out[['cs2']] <- p2
   
+
+  ## Within Cluster ----------------------------------------------------------
+  plot_data_tmp <-
+    plot_data_tmp %>% 
+    filter(cluster_1 == cluster_2) %>% 
+    group_by(cluster_1, cluster_2) %>% 
+    filter(n() > 1)
+  
+  p <-
+    plot_data_tmp %>% 
+    ggplot() +
+    geom_raster(aes(x = unitig_1, y=unitig_2, fill=f_ind(sim))) +
+    facet_wrap(~cluster_1, scales = 'free') +
+    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E') +
+    theme_classic() +
+    theme(
+      axis.text = element_text(size = 5),
+      axis.text.x = element_text(angle = 360 - 90, hjust = 0, vjust=0.5)
+      ) +
+    ggtitle(title) +
+    xlab('Unitig') +
+    ylab('Unitig') 
+  
+  out[['cswc']] <- p
+  
   return(out)
   }
 
@@ -1330,18 +1426,99 @@ plots_abs_sim <-
 
 plots_sim_abs_ssf <-
   make_cosine_sim_heatmap_plots(
-    abs_cosine_similarity_mat,
+    norm_abs_dp,
     f_agg = mean,
     f_ind = identity,
-    title = 'Cosine Similarities on Absolute SSF',
+    title = 'Num Library Normalized Dot Product on Absolute SSF',
     colorbar_title = 'sim',
-    limits = c(NA, 1)
+    limits = c(0, 1)
   )
 
 plots <- c(plots, 
            # plots_sim, 
            plots_abs_sim, 
            plots_sim_abs_ssf)
+
+
+
+# Close Up Cosine Similarity Plots ----------------------------------------
+
+make_cosine_sim_cluster_heatmap_plots <-
+  function(cosine_similarity_mat,
+           f_agg = mean_abs,
+           f_ind = abs,
+           title = '',
+           colorbar_title = '',
+           limits = c(NA, NA)) {
+    
+    out <- list()
+    
+    plot_data <- make_cosine_sim_plot_data(cosine_similarity_mat)
+
+    plot_data_tmp <-
+      plot_data %>%   
+      arrange(cluster_1, cluster_2) %>%
+      mutate(
+        cluster_1 = manf(cluster_1),
+        cluster_2 = manf(cluster_2)
+      ) %>% 
+      mutate(
+        unitig_1 = manf(unitig_1),
+        unitig_2 = manf(unitig_2)
+      ) %>% 
+      mutate(unitig_2 = factor(unitig_2, levels = rev(levels(unitig_2))))
+    
+    plot_data_tmp <-
+      plot_data_tmp %>% 
+      filter(cluster_1 == cluster_2) %>% 
+      group_by(cluster_1, cluster_2) %>% 
+      filter(n() > 1)
+    
+    for(cluster in stringr::str_sort(pull_distinct(plot_data_tmp, cluster_1), numeric=TRUE)) {
+      p <-
+        plot_data_tmp %>% 
+        filter(cluster_1 == cluster) %>% 
+        ggplot() +
+        geom_raster(aes(x = unitig_1, y=unitig_2, fill=f_ind(sim))) +
+        facet_wrap(~cluster_1, scales = 'free') +
+        scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E') +
+        theme_classic() +
+        theme(
+          axis.text = element_text(size = 5),
+          axis.text.x = element_text(angle = 360 - 90, hjust = 0, vjust=0.5)
+        ) +
+        ggtitle(title) +
+        xlab('Unitig') +
+        ylab('Unitig') 
+      
+      out[[paste0('cs_', cluster)]] <- p
+    }
+
+    
+    return(out)
+  }
+
+cluster_plots_sim <-
+  make_cosine_sim_cluster_heatmap_plots(
+    cosine_similarity_mat,
+    f_agg = mean_abs,
+    f_ind = abs,
+    title = 'Absolute Cosine Similarities',
+    colorbar_title = 'abs(sim)',
+    limits = c(0, 1)
+  )
+
+cluster_plots_ndp <-
+  make_cosine_sim_cluster_heatmap_plots(
+    norm_abs_dp,
+    f_agg = mean,
+    f_ind = identity,
+    title = 'Num Library Normalized Dot Product on Absolute SSF',
+    colorbar_title = 'sim',
+    limits = c(0, 1)
+  )
+
+
 ## Phasing Planes ----------------------------------------------------------
 
 pca_df <-
@@ -1424,6 +1601,26 @@ for(p in plots) {
   print(p)
 }
 dev.off()
+
+pdf(file.path(intermediate_output_dir, 'plots_cluster_ssf.pdf'), width = 15, height = 15)
+for(p in cluster_plots_ssf) {
+  print(p)
+}
+dev.off()
+
+pdf(file.path(intermediate_output_dir, 'plots_cluster_sim.pdf'), width = 15, height = 15)
+for(p in cluster_plots_sim) {
+  print(p)
+}
+dev.off()
+
+
+pdf(file.path(intermediate_output_dir, 'plots_cluster_ndp.pdf'), width = 15, height = 15)
+for(p in cluster_plots_ndp) {
+  print(p)
+}
+dev.off()
+
 
 # Warnings ----------------------------------------------------------------
 
