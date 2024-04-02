@@ -53,6 +53,31 @@ make_bandage_colors <- function(color_hex, counts_1, counts_2) {
   return(color)
 }
 
+# Coverage weighted mean absolute
+cwma_ <- function(unitig_coverage) {
+  unitig_coverage <- unitig_coverage
+  cwma <- function(mat, weight_f = sum, na.rm=FALSE) {
+    stopifnot(!is.null(rownames(mat)))
+    stopifnot(!is.null(colnames(mat)))
+    
+    weights <- matrix(nrow = nrow(mat), ncol = ncol(mat))
+    dimnames(weights) <- dimnames(mat)
+    for(unitig_1 in rownames(weights)) {
+      for(unitig_2 in colnames(weights)) {
+        weight_1 <- unitig_coverage[unitig_1]
+        weight_2 <- unitig_coverage[unitig_2]
+        weights[unitig_1, unitig_2] <- weight_f(weight_1, weight_2)
+      }
+    }
+    
+    out <- weighted.mean(abs(mat), weights, na.rm=na.rm)
+    return(out)
+  }
+  
+  return(cwma)
+}
+
+
 
 # Command Line ------------------------------------------------------------
 
@@ -200,6 +225,17 @@ exact_match_counts_df <-
   select(-length)
 
 
+# Special Coverage Weighted Mean ------------------------------------------
+
+unitig_coverage_df <-
+  counts_df %>% 
+  group_by(unitig) %>% 
+  summarise(coverage = mean(n, na.rm=TRUE))
+
+unitig_coverage <-
+  with(unitig_coverage_df, set_names(coverage, unitig))
+
+coverage_weighted_mean_abs <- cwma_(unitig_coverage)
 # SSF Matrix --------------------------------------------------------------
 
 #TODO make this parameter more visible. Explain why only 10
@@ -406,8 +442,12 @@ cosine_similarity_mat <-
 # abs_cosine_similarity_mat <-
 #   pairwise_complete_cosine_similarity(abs(ssf_mat), min_overlaps = min_overlaps)
 
-norm_abs_dp <-
-  pairwise_complete_dp(abs(ssf_mat), t(abs(ssf_mat)), min_overlaps = min_overlaps)/length(included_libraries)
+# norm_abs_dp <-
+#   pairwise_complete_dp(abs(ssf_mat), t(abs(ssf_mat)), min_overlaps = min_overlaps)/length(included_libraries)
+
+hadamard_mean_mat <-
+  pairwise_complete_hadamard_mean(abs(ssf_mat), min_overlaps = min_overlaps)
+
 
 temp <- get_values('--final-clusters', null_ok=TRUE)
 if(length(temp) != 0) {
@@ -420,8 +460,8 @@ if(length(temp) != 0) {
   ## Cosine Cluster Merging ----------------------------------------------------
   
   cat('Cosine cluster merging\n')
-  cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5)
-  cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66)
+  cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5, agg_f = mean_abs, na.rm=TRUE)
+  cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66, agg_f = mean_abs, na.rm=TRUE)
   
   ## High Sim Pairing --------------------------------------------------------
   #TODO some sort of single linage clustering? I have noticed that often, a noisy
@@ -444,7 +484,9 @@ if(length(temp) != 0) {
     cluster_unitigs(
       cosine_similarity_mat,
       cluster_df,
-      new_cluster_id = 'LGcos'
+      new_cluster_id = 'LGcos',
+      agg_f = mean_abs, 
+      na.rm=TRUE
     )
   
   ## Max-Based Assignment ----------------------------------------------------
@@ -471,27 +513,45 @@ if(length(temp) != 0) {
   # Sometimes, some of the newly created clusters will should be merged
   # into other components on cluster (centromere troubles especially)
   
-  cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5)
-  cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66)
+  cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5, agg_f = mean_abs, na.rm=TRUE)
+  cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66, agg_f = mean_abs, na.rm=TRUE)
+
+  ## Hemiploid/Sex Chrom Merging ---------------------------------------------
+
   
   # cluster_df <- merge_similar_clusters_on_components(abs_cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.9)
   # cluster_df <- merge_similar_clusters(abs_cosine_similarity_mat, cluster_df, similarity_threshold = 0.9)
   
   # TODO justify this threshold w/ expected noise + expected number of libraries w/ shared overlap.
-  cluster_df <- merge_similar_clusters_on_components(norm_abs_dp, cluster_df, components_df, similarity_threshold = 0.75)
-  cluster_df <- merge_similar_clusters(norm_abs_dp, cluster_df, similarity_threshold = 0.75)
+  # cluster_df <- merge_similar_clusters_on_components(norm_abs_dp, cluster_df, components_df, similarity_threshold = 0.75)
+  # cluster_df <- merge_similar_clusters(norm_abs_dp, cluster_df, similarity_threshold = 0.75)
+  cluster_df <- merge_similar_clusters_on_components(hadamard_mean_mat, cluster_df, components_df, similarity_threshold = 0.8, agg_f = coverage_weighted_mean_abs, na.rm=TRUE)
+  cluster_df <- merge_similar_clusters(hadamard_mean_mat, cluster_df, similarity_threshold = 0.8, agg_f = coverage_weighted_mean_abs, na.rm=TRUE)
+  
   # 
   # debugonce(merge_similar_clusters)
   # cluster_df <- merge_similar_clusters(abs_dp/length(included_libraries), cluster_df, similarity_threshold = 0.8)
   #   
+  # cluster_df <-
+  #   cluster_unitigs(
+  #     norm_abs_dp,
+  #     cluster_df,
+  #     cluster_unitig_similarity_threshold = 0.75,
+  #     unitig_unitig_similarity_threshold = 0.75,
+  #     new_cluster_id = 'LGabscos'
+  #   )
+  # 
   cluster_df <-
     cluster_unitigs(
-      norm_abs_dp,
+      hadamard_mean_mat,
       cluster_df,
-      cluster_unitig_similarity_threshold = 0.75,
-      unitig_unitig_similarity_threshold = 0.75,
-      new_cluster_id = 'LGabscos'
+      cluster_unitig_similarity_threshold = 0.8,
+      unitig_unitig_similarity_threshold = 0.8,
+      new_cluster_id = 'LGabscos',
+      agg_f = coverage_weighted_mean_abs, 
+      na.rm=TRUE
     )
+  
   
   # cluster_df <-
   #   cluster_unitigs(
@@ -1428,7 +1488,8 @@ plots_abs_sim <-
 
 plots_sim_abs_ssf <-
   make_cosine_sim_heatmap_plots(
-    norm_abs_dp,
+    # norm_abs_dp,
+    hadamard_mean_mat,
     f_agg = mean,
     f_ind = identity,
     title = 'Num Library Normalized Dot Product on Absolute SSF',
@@ -1512,7 +1573,8 @@ cluster_plots_sim <-
 
 cluster_plots_ndp <-
   make_cosine_sim_cluster_heatmap_plots(
-    norm_abs_dp,
+    # norm_abs_dp, 
+    hadamard_mean_mat,
     f_agg = mean,
     f_ind = identity,
     title = 'Num Library Normalized Dot Product on Absolute SSF',
