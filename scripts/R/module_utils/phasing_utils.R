@@ -241,7 +241,7 @@ aggregate_over_subsets <- function(mat, sets, contrasts, col_names=c('id_1', 'id
   
   return(out)
 }
-merge_similar_clusters_on_components <- function(cosine_similarity_mat, cluster_df, components_df, similarity_threshold =0.40 ) {
+merge_similar_clusters_on_components <- function(cosine_similarity_mat, cluster_df, components_df, similarity_threshold =0.40, agg_f=mean_abs, ...) {
   any_merged <- TRUE
   while(any_merged) {
     any_merged <- FALSE
@@ -282,7 +282,7 @@ merge_similar_clusters_on_components <- function(cosine_similarity_mat, cluster_
         contrasts,
         col_names = c('clust_1', 'clust_2', 'sim'),
         agg_f = mean_abs,
-        na.rm = TRUE
+        ...
       )
     
     
@@ -324,7 +324,7 @@ merge_similar_clusters_on_components <- function(cosine_similarity_mat, cluster_
 }
 
 
-merge_similar_clusters <- function(cosine_similarity_mat, cluster_df, similarity_threshold =0.50) {
+merge_similar_clusters <- function(cosine_similarity_mat, cluster_df, similarity_threshold =0.50, agg_f=mean_abs, ...) {
   any_merged <- TRUE
   while(any_merged) {
     any_merged <- FALSE
@@ -346,8 +346,8 @@ merge_similar_clusters <- function(cosine_similarity_mat, cluster_df, similarity
         sets,
         contrasts,
         col_names = c('clust_1', 'clust_2', 'sim'),
-        agg_f = mean_abs,
-        na.rm = TRUE
+        agg_f = agg_f,
+        ...
       )
     
     
@@ -428,7 +428,9 @@ cluster_unitigs <-
            unitig_unitig_similarity_threshold = 0.50,
            optimistic_unitigs = character(),
            new_cluster_id = 'LGcos',
-           new_cluster_start_ix = 0) {
+           new_cluster_start_ix = 0,
+           agg_f=mean_abs, 
+           ...) {
     
     
     unassigned_ids <-
@@ -453,8 +455,8 @@ cluster_unitigs <-
         sets,
         contrasts,
         col_names = c('unitig_1', 'unitig_2', 'sim'),
-        agg_f = mean_abs,
-        na.rm = TRUE
+        agg_f = agg_f,
+        ...
       )
     
     clustered_similarities_uu <-
