@@ -1379,11 +1379,12 @@ make_cosine_sim_heatmap_plots <-
   
 
   ## Within Cluster ----------------------------------------------------------
+
   plot_data_tmp <-
     plot_data_tmp %>% 
     filter(cluster_1 == cluster_2) %>% 
-    group_by(cluster_1, cluster_2) %>% 
-    filter(n() > 1)
+    filter(!(as.character(unitig_1) == as.character(cluster_1))) %>% 
+    filter(!(as.character(unitig_2) == as.character(cluster_2))) 
   
   p <-
     plot_data_tmp %>% 
