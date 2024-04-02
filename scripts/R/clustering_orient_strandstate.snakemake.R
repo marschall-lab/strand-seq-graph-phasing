@@ -1232,6 +1232,7 @@ for(clust in stringr::str_sort(pull_distinct(plot_data, cluster), numeric = TRUE
 p <-
   marker_counts %>% 
   filter(!is.na(cluster)) %>% 
+  mutate(cluster = manf(cluster)) %>% 
   ggplot() +
   geom_histogram(aes(ssf)) +
   facet_wrap(~cluster, scales = 'free_y') +
@@ -1524,6 +1525,10 @@ cluster_plots_ndp <-
 pca_df <-
   bind_rows(model_input, .id = 'cluster') %>%
   select(cluster, unitig, unitig_dir, length, y, everything())
+
+pca_df <-
+  pca_df %>% 
+  mutate(cluster = manf(cluster))
 
 projected_ww_vectors_glm_plot <-
   coefs %>%
