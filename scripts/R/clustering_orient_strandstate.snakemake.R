@@ -685,7 +685,7 @@ if(length(temp) != 0) {
   
   strand_orientation_clusters_df<-
     imap(cluster_cosine_similarities, function(x, nm){
-      print(nm)
+      cat('Detecting Orientations in Cluster: ', nm, '\n')
       return(pairwise_complete_hclust_n(x, n=2, agg_f=mean, na.rm=TRUE))
     }) 
   
