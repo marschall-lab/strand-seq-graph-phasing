@@ -281,7 +281,7 @@ merge_similar_clusters_on_components <- function(cosine_similarity_mat, cluster_
         sets,
         contrasts,
         col_names = c('clust_1', 'clust_2', 'sim'),
-        agg_f = mean_abs,
+        agg_f = agg_f,
         ...
       )
     
@@ -507,8 +507,8 @@ cluster_unitigs <-
           sets,
           contrasts,
           col_names = c('cluster', 'unitig', 'sim'),
-          agg_f = mean_abs,
-          na.rm = TRUE
+          agg_f = agg_f,
+          ...
         )
       # browser()
       clustered_similarities_cu <- 
