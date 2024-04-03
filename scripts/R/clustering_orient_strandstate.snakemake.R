@@ -233,6 +233,12 @@ unitig_coverage_df <-
   group_by(unitig) %>% 
   summarise(coverage = mean(n, na.rm=TRUE))
 
+unitig_coverage_df <-
+  bind_rows(
+    unitig_coverage_df,
+    mutate(unitig_coverage_df, unitig = paste0(unitig, '_inverted'))
+  )
+
 unitig_coverage <-
   with(unitig_coverage_df, set_names(coverage, unitig))
 
@@ -749,7 +755,7 @@ if(length(temp) != 0) {
   strand_orientation_clusters_df<-
     imap(cluster_cosine_similarities, function(x, nm){
       cat('Detecting Orientations in Cluster: ', nm, '\n')
-      return(pairwise_complete_hclust_n(x, n=2, agg_f=mean, na.rm=TRUE))
+      return(pairwise_complete_hclust_n(x, n=2, agg_f=coverage_weighted_mean, na.rm=TRUE))
     }) 
   
   strand_orientation_clusters_df <-
