@@ -53,10 +53,10 @@ make_bandage_colors <- function(color_hex, counts_1, counts_2) {
   return(color)
 }
 
-# Coverage weighted mean absolute
-cwma_ <- function(unitig_coverage) {
+# Coverage weighted mean
+cwm_ <- function(unitig_coverage) {
   unitig_coverage <- unitig_coverage
-  cwma <- function(mat, weight_f = sum, na.rm=FALSE) {
+  cwm<- function(mat, weight_f = sum, mat_f = identity, na.rm=FALSE) {
     stopifnot(!is.null(rownames(mat)))
     stopifnot(!is.null(colnames(mat)))
     
@@ -70,11 +70,12 @@ cwma_ <- function(unitig_coverage) {
       }
     }
     
-    out <- weighted.mean(abs(mat), weights, na.rm=na.rm)
+    mat <- mat_f(mat)
+    out <- weighted.mean(mat, weights, na.rm=na.rm)
     return(out)
   }
   
-  return(cwma)
+  return(cwm)
 }
 
 
@@ -235,7 +236,7 @@ unitig_coverage_df <-
 unitig_coverage <-
   with(unitig_coverage_df, set_names(coverage, unitig))
 
-coverage_weighted_mean_abs <- cwma_(unitig_coverage)
+coverage_weighted_mean <- cwm_(unitig_coverage)
 # SSF Matrix --------------------------------------------------------------
 
 #TODO make this parameter more visible. Explain why only 10
@@ -460,8 +461,8 @@ if(length(temp) != 0) {
   ## Cosine Cluster Merging ----------------------------------------------------
   
   cat('Cosine cluster merging\n')
-  cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5, agg_f = mean_abs, na.rm=TRUE)
-  cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66, agg_f = mean_abs, na.rm=TRUE)
+  cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
+  cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
   
   ## High Sim Pairing --------------------------------------------------------
   #TODO some sort of single linage clustering? I have noticed that often, a noisy
@@ -485,7 +486,8 @@ if(length(temp) != 0) {
       cosine_similarity_mat,
       cluster_df,
       new_cluster_id = 'LGcos',
-      agg_f = mean_abs, 
+      agg_f = coverage_weighted_mean, 
+      mat_f=abs,
       na.rm=TRUE
     )
   
@@ -513,8 +515,8 @@ if(length(temp) != 0) {
   # Sometimes, some of the newly created clusters will should be merged
   # into other components on cluster (centromere troubles especially)
   
-  cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5, agg_f = mean_abs, na.rm=TRUE)
-  cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66, agg_f = mean_abs, na.rm=TRUE)
+  cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
+  cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
 
   ## Hemiploid/Sex Chrom Merging ---------------------------------------------
 
@@ -525,9 +527,9 @@ if(length(temp) != 0) {
   # TODO justify this threshold w/ expected noise + expected number of libraries w/ shared overlap.
   # cluster_df <- merge_similar_clusters_on_components(norm_abs_dp, cluster_df, components_df, similarity_threshold = 0.75)
   # cluster_df <- merge_similar_clusters(norm_abs_dp, cluster_df, similarity_threshold = 0.75)
-  cluster_df <- merge_similar_clusters_on_components(hadamard_mean_mat, cluster_df, components_df, similarity_threshold = 0.8, agg_f = coverage_weighted_mean_abs, na.rm=TRUE)
-  cluster_df <- merge_similar_clusters(hadamard_mean_mat, cluster_df, similarity_threshold = 0.8, agg_f = coverage_weighted_mean_abs, na.rm=TRUE)
-  
+  # debugonce(merge_similar_clusters)
+  cluster_df <- merge_similar_clusters_on_components(hadamard_mean_mat, cluster_df, components_df, similarity_threshold = 0.6, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
+  cluster_df <- merge_similar_clusters(hadamard_mean_mat, cluster_df, similarity_threshold = 0.6, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
   # 
   # debugonce(merge_similar_clusters)
   # cluster_df <- merge_similar_clusters(abs_dp/length(included_libraries), cluster_df, similarity_threshold = 0.8)
@@ -545,10 +547,11 @@ if(length(temp) != 0) {
     cluster_unitigs(
       hadamard_mean_mat,
       cluster_df,
-      cluster_unitig_similarity_threshold = 0.8,
-      unitig_unitig_similarity_threshold = 0.8,
+      cluster_unitig_similarity_threshold = 0.6,
+      unitig_unitig_similarity_threshold = 0.6,
       new_cluster_id = 'LGabscos',
-      agg_f = coverage_weighted_mean_abs, 
+      agg_f = coverage_weighted_mean, 
+      mat_f = abs, 
       na.rm=TRUE
     )
   
