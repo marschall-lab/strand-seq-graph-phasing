@@ -332,6 +332,9 @@ unitig_to_tname_df <-
   ungroup() %>% 
   distinct(sample, unitig, tname)
 
+cluster_df <-
+  haplotype_marker_df %>% 
+  distinct(sample, unitig, cluster)
 # Palette -----------------------------------------------------------------
 
 # Stupid fucking conda doesn't have ggokabeito availible on the cluster.
@@ -565,6 +568,48 @@ p <-
   theme_linedraw()
 
 plots[['pca_variances_label']] <- p
+
+
+# 0 Marker Long Unitigs --------------------------------------------------------
+
+
+plot_data <-
+  haplotype_marker_df %>% 
+  filter(length >= segment_length_threshold) %>% 
+  filter(hap_1_counts == 0 & hap_2_counts == 0) %>% 
+  mutate(clustered = !is.na(cluster)) %>% 
+  arrange(desc(length)) %>% 
+  mutate(unitig = factor(unitig, levels = unique(unitig)))
+
+p <-
+  ggplot(plot_data) +
+  geom_histogram(aes(length, fill = clustered), color = 'black') +
+  scale_fill_manual(name = 'Has Cluster', values=okabeito_palette) +
+  facet_wrap( ~ sample, axes = 'all_x') +
+  scale_y_continuous(expand = expansion(c(0, 0.1))) +
+  scale_x_log10(limits = c(slt, NA)) +
+  xlab('Log10 Length') +
+  ylab('Count') +
+  ggtitle(paste0('0 Marker Unitigs >= ', slt/1e6, 'Mbp')) +
+  theme_classic() +
+  theme(panel.border = element_rect(fill = NA, color='black', linewidth = 1))
+
+plots[['0_marker_unitigs_hist']] <- p
+
+
+p <-
+  ggplot(plot_data) +
+  geom_point(aes(y = unitig, x = length, fill= clustered), shape=21) +
+  scale_fill_manual(name = 'Has Cluster', values=okabeito_palette) +
+  facet_wrap( ~ sample, scales = 'free_y', axes = 'all_x') +
+  scale_x_log10(limits = c(slt, NA)) +
+  xlab('Log10 Length') +
+  ylab('Unitig') +
+  ggtitle(paste0('0 Marker Unitigs >= ', slt/1e6, 'Mbp')) +
+  theme_linedraw() +
+  theme(panel.border = element_rect(fill = NA, color='black', linewidth = 1))
+
+plots[['0_marker_unitigs_point']] <- p
 
 
 # Cluster Error By Chromosome ---------------------------------------------
