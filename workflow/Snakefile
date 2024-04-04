@@ -375,7 +375,7 @@ rule unmerged_mark_duplicates:
     output: "bwa_alignments/mem/{sample}/{lib}.mdup.bam"
     conda:'envs/env_cl.yaml'
     resources:
-        mem_mb=calc_mem(),
+        mem_mb=calc_mem(2),
         walltime=calc_walltime()
     log: "log/unmerged_mark_duplicates_{sample}_{lib}.log"
     benchmark: "benchmark/unmerged_mark_duplicates_{sample}_{lib}.benchmark"
