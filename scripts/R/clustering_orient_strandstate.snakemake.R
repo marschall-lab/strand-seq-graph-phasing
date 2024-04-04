@@ -1697,6 +1697,48 @@ p <-
 
 plots[['pcp']] <- p
 
+
+## Uncounted Markers -------------------------------------------------------
+
+
+
+plot_data <-
+  marker_counts %>% 
+  filter(length >= segment_length_threshold) %>% 
+  filter(hap_1_counts == 0 & hap_2_counts == 0) %>% 
+  mutate(clustered = !is.na(cluster))%>%
+  arrange(desc(length)) %>% 
+  mutate(unitig = factor(unitig, levels = unique(unitig)))
+
+p <-
+  ggplot(plot_data) +
+  geom_histogram(aes(length, fill = clustered), color = 'black') +
+  scale_fill_discrete(name = 'Has Cluster') +
+  scale_y_continuous(expand = expansion(c(0, 0.1))) +
+  scale_x_log10(limits = c(segment_length_threshold, NA)) +
+  xlab('Log10 Length') +
+  ylab('Count') +
+  ggtitle(paste0('0 Marker Unitigs >= ', segment_length_threshold/1e6, 'Mbp')) +
+  theme_classic() +
+  theme(panel.border = element_rect(fill = NA, color='black', linewidth = 1))
+
+plots[['0_marker_unitigs_hist']] <- p
+
+
+p <-
+  ggplot(plot_data) +
+  geom_point(aes(y = unitig, x = length, fill= clustered), shape=21) +
+  scale_fill_discrete(name = 'Has Cluster') +
+  scale_x_log10(limits = c(segment_length_threshold, NA)) +
+  xlab('Log10 Length') +
+  ylab('Unitig') +
+  ggtitle(paste0('0 Marker Unitigs >= ', segment_length_threshold/1e6, 'Mbp')) +
+  theme_linedraw() +
+  theme(panel.border = element_rect(fill = NA, color='black', linewidth = 1))
+
+plots[['0_marker_unitigs_point']] <- p
+  
+
 ## Export ------------------------------------------------------------------
 
 pdf(file.path(intermediate_output_dir, 'plots.pdf'), width = 15, height = 15)
