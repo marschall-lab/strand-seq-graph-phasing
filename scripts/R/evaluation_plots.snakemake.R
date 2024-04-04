@@ -770,10 +770,52 @@ p <-
 plots[['rukki_assignment_sizes_na']] <- p
 
 
-## By CC --------------------------------------------------------------------
+## By Cluster --------------------------------------------------------------------
 # Rukki Assignment Sizes by connected component?
 # TODO
+p <-
+  plot_data %>% 
+  left_join(cluster_df, by = c('sample', 'unitig')) %>% 
+  ggplot()  +
+  geom_col(aes(x=cluster, y=qlen/1e6, fill=assignment))+
+  facet_wrap(~sample, scales = 'free_x') +
+  ylab('Size (Mbp)')  +
+  xlab('Cluster') +
+  ggtitle('Rukki Assignment Sizes by Cluster') +
+  scale_fill_manual(values=okabeito_palette, name=NULL, na.value='grey50') +
+  scale_y_continuous(expand = expansion(mult=c(0,0.1))) +
+  theme_bw() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.text.x = element_text(angle = 90, hjust = 1),
+  )
 
+plots[['rukki_assignment_sizes_clust']] <- p 
+
+
+p <-
+  plot_data %>% 
+  left_join(cluster_df, by = c('sample', 'unitig')) %>% 
+  group_by(sample, cluster) %>% 
+  mutate(qlen = qlen/sum(qlen, na.rm = TRUE)) %>% 
+  ggplot()  +
+  geom_col(aes(x=cluster, y=qlen, fill=assignment))+
+  facet_wrap(~sample, scales = 'free_x') +
+  ylab('Fraction of Cluster')  +
+  xlab('Cluster') +
+  ggtitle('Rukki Assignment Fractions by Cluster') +
+  scale_fill_manual(values=okabeito_palette, name=NULL, na.value='grey50') +
+  scale_y_continuous(expand = expansion(mult=c(0,0)), breaks = seq(0, 1, 0.1)) +
+  theme_bw() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.text.x = element_text(angle = 90, hjust = 1),
+  )
+
+plots[['rukki_assignment_fractions_clust']] <- p
+ 
 ## By Ref Chromosome ---------------------------------------------------------
 
 # Rukki Assignment Sizes by Ref Chrom
