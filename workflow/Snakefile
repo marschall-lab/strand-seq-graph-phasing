@@ -457,6 +457,15 @@ rule remove_acrocentric_tangle:
 ############ Phase Unitigs ############
 #######################################
 
+def if_file_exists(file_name):
+    file_path = pathlib.Path(file_name)
+    if file_path.is_file():
+        return str(file_path)
+    else:
+        return ""
+
+def get_optional_phasing_input(wildcards, what):
+    return if_file_exists('phasing_input/' + wildcards.sample + '/' + what)
 
 rule count_sseq_alignments:
     input:
@@ -499,7 +508,12 @@ rule count_haplotype_markers:
     params:
         segment_length_threshold=segment_length_threshold,
         cluster_PAR_with_haploid = lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['cluster_PAR_with_haploid'],
-        script = get_script_path('R','clustering_orient_strandstate.snakemake.R')
+        script = get_script_path('R','clustering_orient_strandstate.snakemake.R'),
+        il = lambda wildcards: get_optional_phasing_input(wildcards,'included_libraries.tsv'),
+        ic = lambda wildcards: get_optional_phasing_input(wildcards,'initial_clusters.tsv'),
+        fc = lambda wildcards: get_optional_phasing_input(wildcards,'final_clusters.tsv'),
+        uo = lambda wildcards: get_optional_phasing_input(wildcards,'unitig_orientation.tsv'),
+        cm = lambda wildcards: get_optional_phasing_input(wildcards,'counting_methods.tsv')
     singularity: singularity_r_env
     conda: conda_r_env
     threads: 1
@@ -519,11 +533,11 @@ rule count_haplotype_markers:
         --cluster-PAR-with-haploid {params.cluster_PAR_with_haploid} \\
         --threads {threads} \\
         --intermediate-output-dir {output.imo} \\
-        --included-libs \\
-        --initial-clusters \\
-        --final-clusters \\
-        --unitig-orientation \\
-        --counting-methods \\
+        --included-libraries {params.il} \\
+        --initial-clusters {params.ic} \\
+        --final-clusters {params.fc} \\
+        --unitig-orientation {params.uo} \\
+        --counting-methods {params.cm} \\
         --output-marker-counts {output.mc} \\
         --output-lib {output.lib}) > {log} 2>&1
         '''
