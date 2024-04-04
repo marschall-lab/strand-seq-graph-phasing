@@ -228,8 +228,7 @@ exact_match_counts_df <-
   filter(length >= segment_length_threshold) %>%
   select(-length)
 
-
-# Special Coverage Weighted Mean ------------------------------------------
+# Coverage Weighted Mean --------------------------------------------------
 
 unitig_coverage_df <-
   counts_df %>% 
@@ -246,6 +245,7 @@ unitig_coverage <-
   with(unitig_coverage_df, set_names(coverage, unitig))
 
 coverage_weighted_mean <- cwm_(unitig_coverage)
+
 # SSF Matrix --------------------------------------------------------------
 
 #TODO make this parameter more visible. Explain why only 10
@@ -254,6 +254,7 @@ min_n <- 10
 ssf_mat <-
   counts_df %>%
   with(make_wc_matrix(w, c, lib, unitig, min_n=min_n))
+
 # Library QC --------------------------------------------------------------
 
 
@@ -385,8 +386,6 @@ if(length(temp) != 0) {
     cluster_df %>%
     right_join(long_unitigs_df, by='unitig')
   
-  
-  
   ## Remove Micro Clusters ---------------------------------------------------
   
   cat('Removing micro clusters: \n')
@@ -432,17 +431,12 @@ if(length(temp) != 0) {
   
 }
 
-
 # Cluster Refinement ------------------------------------------------------
-
 
 # Cosine Similarity Matrix ------------------------------------------------
 
 # TODO only calculate the cosine similarity mat if it is used (eg, if final
 # clusters and strand orientation is provided)
-
-# TODO The mean cosine similarities should be weighted by the number of
-# shared libraries?
 
 # Why 5? 
 min_overlaps <- 5
@@ -511,47 +505,18 @@ if(length(temp) != 0) {
   
   ## Cosine Cluster Merging ----------------------------------------------------
   
-  # optimistic_unitigs <-
-  #   unitig_lengths_df %>% 
-  #   filter(length >= 10e6) %>% 
-  #   pull(unitig)
-  # 
-  # cluster_df <-
-  #   cluster_df %>% 
-  #   mutate(cluster = ifelse(is.na(cluster) & (unitig %in% optimistic_unitigs), paste0('LGoptim_', unitig), cluster))
-  
   cat('Cosine cluster merging\n')
   # Sometimes, some of the newly created clusters will should be merged
   # into other components on cluster (centromere troubles especially)
   
   cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
   cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.66, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
-
+  
   ## Hemiploid/Sex Chrom Merging ---------------------------------------------
 
-  
-  # cluster_df <- merge_similar_clusters_on_components(abs_cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.9)
-  # cluster_df <- merge_similar_clusters(abs_cosine_similarity_mat, cluster_df, similarity_threshold = 0.9)
-  
-  # TODO justify this threshold w/ expected noise + expected number of libraries w/ shared overlap.
-  # cluster_df <- merge_similar_clusters_on_components(norm_abs_dp, cluster_df, components_df, similarity_threshold = 0.75)
-  # cluster_df <- merge_similar_clusters(norm_abs_dp, cluster_df, similarity_threshold = 0.75)
-  # debugonce(merge_similar_clusters)
   cluster_df <- merge_similar_clusters_on_components(hadamard_mean_mat, cluster_df, components_df, similarity_threshold = 0.6, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
   cluster_df <- merge_similar_clusters(hadamard_mean_mat, cluster_df, similarity_threshold = 0.6, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
-  # 
-  # debugonce(merge_similar_clusters)
-  # cluster_df <- merge_similar_clusters(abs_dp/length(included_libraries), cluster_df, similarity_threshold = 0.8)
-  #   
-  # cluster_df <-
-  #   cluster_unitigs(
-  #     norm_abs_dp,
-  #     cluster_df,
-  #     cluster_unitig_similarity_threshold = 0.75,
-  #     unitig_unitig_similarity_threshold = 0.75,
-  #     new_cluster_id = 'LGabscos'
-  #   )
-  # 
+  
   cluster_df <-
     cluster_unitigs(
       hadamard_mean_mat,
@@ -563,17 +528,6 @@ if(length(temp) != 0) {
       mat_f = abs, 
       na.rm=TRUE
     )
-  
-  
-  # cluster_df <-
-  #   cluster_unitigs(
-  #     abs_cosine_similarity_mat,
-  #     cluster_df,
-  #     cluster_unitig_similarity_threshold = 0.9,
-  #     unitig_unitig_similarity_threshold = 0.9,
-  #     new_cluster_id = 'LGabscos'
-  #   )
-  # 
   
   ## PAR Detection -----------------------------------------------------------
   cat('Detecting PAR\n')
@@ -751,7 +705,6 @@ if(length(temp) != 0) {
       
     })
   
-  
   ## Hclust ------------------------------------------------------------------
   
   
@@ -760,7 +713,7 @@ if(length(temp) != 0) {
       cat('Detecting Orientations in Cluster: ', nm, '\n')
       return(pairwise_complete_hclust_n(x, n=2, agg_f=coverage_weighted_mean, na.rm=TRUE))
     }) 
-  
+
   strand_orientation_clusters_df <-
     strand_orientation_clusters_df %>% 
     map_dfr(tibble::enframe, 'unitig_dir', 'strand_cluster') %>% 
@@ -791,8 +744,6 @@ if(length(temp) != 0) {
     col_names = FALSE
   )
 }
-
-
 
 # Phase Chromosomes -------------------------------------------------------
 cat('Computing marker counts\n')
@@ -841,7 +792,6 @@ prcomps <-
   map(prcomp)
 
 ## Calculate WC and WW Basis Vectors ----------------------------------------
-
 
 ### Count and Rotate --------------------------------------------------------
 oriented_counts_df <-
@@ -1197,21 +1147,18 @@ readr::write_csv(marker_counts, output_counts)
 library_weights <-
   library_weights %>% 
   mutate(lib = factor(lib, levels = lib_names)) %>% 
-  tidyr::complete(cluster, lib) #%>% 
-# mutate(across(contains('ssf'), function(x) ifelse(is.na(x), 0, x)))
+  tidyr::complete(cluster, lib) 
 
 # TODO schema checks
-
 
 ### CSV ---------------------------------------------------------------------
 
 readr::write_csv(library_weights, output_lib)
 
-
-
-
 # Plots -------------------------------------------------------------------
 # TODO: Alpha values according to n
+# TODO within cluster plots
+
 library(ggplot2)
 
 plots <- list()
@@ -1609,6 +1556,7 @@ cluster_plots_ndp <-
 
 
 ## Phasing Planes ----------------------------------------------------------
+
 facet_labeller <- function(x) {
   x %>% 
     left_join(pca_perc_var_df, by='cluster') %>% 

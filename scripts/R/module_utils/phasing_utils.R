@@ -426,7 +426,6 @@ cluster_unitigs <-
            cluster_df,
            cluster_unitig_similarity_threshold = 0.50,
            unitig_unitig_similarity_threshold = 0.50,
-           optimistic_unitigs = character(),
            new_cluster_id = 'LGcos',
            new_cluster_start_ix = 0,
            agg_f=mean_abs, 
