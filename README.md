@@ -62,6 +62,8 @@ The sample sheet is a .tsv file with the following columns:
 
 `segmentLengthThreshold: int` Filtration parameter. Unitigs in the input assembly graph `.gfa` less than `segmentLengthThreshold` in basepairs will be filtered out.
 
+`tangleSegmentLengthThreshold: int (optional, default: 250000)` Filtration parameter. Unitigs in the input assembly graph `.gfa` less than `tangleSegmentLengthThreshold` in basepairs will be considered during large tangle removal.
+
 `per_thread_memory: bool (optional, default:False)` If `True`, memory specified for each rule is divided by the number of threads. 
 
 These two parameters only apply to the rules which use R Bioconductor packages:

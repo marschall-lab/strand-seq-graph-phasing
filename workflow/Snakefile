@@ -9,7 +9,7 @@ import pathlib
 ################################
 
 segment_length_threshold = config["segmentLengthThreshold"]
-
+tangle_segment_length_threshold = config.get('tangleSegmentLengthThreshold', 250000)
 deploy_offline = config["deploy_offline"]
 
 scripts_dir = config["scripts_dir"]
@@ -435,7 +435,7 @@ rule remove_acrocentric_tangle:
     output: gfa = 'gfa/gfa/{sample}_exploded.gfa',
             ccs = 'gfa/ccs/{sample}_exploded_ccs.tsv'
     params:
-        segment_length_threshold = segment_length_threshold,
+        segment_length_threshold = tangle_segment_length_threshold,
         script = get_script_path('R','explode_largest_component.R')
     conda: 'envs/env_Renv.yaml'
     resources:
