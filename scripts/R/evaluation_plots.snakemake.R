@@ -724,8 +724,8 @@ plots[['clust_chrom_error']] <- p
 plot_data <-
   rukki_paths_df %>%
   filter(!is_gap) %>%
-  full_join(unitig_lengths_df, by=c('sample', 'unitig')) %>% 
-  count(sample, assignment, wt=qlen, name='qlen') 
+  full_join(unitig_lengths_df, by=c('sample', 'unitig')) #%>% 
+  # count(sample, assignment, wt=qlen, name='qlen') 
 
 p <-
   plot_data %>% 
@@ -753,7 +753,7 @@ p <-
   plot_data %>% 
   filter(is.na(assignment)) %>% 
   ggplot() +
-  geom_col(aes(x=sample, y=qlen/1e6, fill=assignment)) +
+  geom_col(aes(x=sample, y=qlen/1e6, fill=assignment), color='black', linewidth = 0.05) +
   ylab('Size (Mbp)') +
   ggtitle('Rukki NA Assignment Sizes') +
   xlab(NULL) +
