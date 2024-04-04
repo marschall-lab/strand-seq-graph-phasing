@@ -78,7 +78,10 @@ cwm_ <- function(unitig_coverage) {
   return(cwm)
 }
 
-
+# make alpha-numeric factor
+manf <- function(x) {
+  factor(x, levels = stringr::str_sort(unique(x), numeric=TRUE))
+}
 
 # Command Line ------------------------------------------------------------
 
@@ -1138,6 +1141,22 @@ marker_counts <-
   left_join(strand_orientation_clusters_df, by=c('unitig')) %>%
   dplyr::rename(unitig_orientation = strand_cluster)
 
+pca_perc_var_df <-
+  prcomps %>% 
+  map(summary) %>% 
+  map('importance') %>% 
+  map(function(x) x[2, 1:2]) %>% 
+  bind_rows(.id = 'cluster') %>%
+  mutate(cluster = manf(cluster))
+
+pca_perc_var_df <-
+  pca_perc_var_df %>% 
+  dplyr::rename(PC1_pvar = PC1, PC2_pvar = PC2)
+
+marker_counts <-
+  marker_counts %>%
+  left_join(pca_perc_var_df, by='cluster')
+
 ### Bandage Cluster Colors -----------------------------------------------------
 
 cluster_palette <-
@@ -1199,10 +1218,7 @@ plots <- list()
 cluster_plots_ssf <- list()
 cluster_plots_sim <- list()
 cluster_plots_ndp <- list()
-# make alpha-numeric factor
-manf <- function(x) {
-  factor(x, levels = stringr::str_sort(unique(x), numeric=TRUE))
-}
+
 ## SSF Barcodes ------------------------------------------------------------
 
 
@@ -1232,7 +1248,7 @@ plot_data <-
 p <-
 ggplot(plot_data) +
   geom_raster(aes(x = lib, y = unitig, fill = ssf)) +
-  scale_fill_viridis_c(limits = c(-1, 1),  option = 'E') +
+  scale_fill_viridis_c(limits = c(-1, 1),  option = 'E', na.value = 'darkred') +
   scale_x_discrete(expand = expansion()) +
   scale_y_discrete(expand = expansion()) +
   ggtitle('SSF Values') +
@@ -1274,7 +1290,7 @@ for(clust in stringr::str_sort(pull_distinct(plot_data, cluster), numeric = TRUE
     filter(cluster == clust) %>%
     ggplot() +
     geom_raster(aes(x = lib, y = unitig, fill = ssf)) +
-    scale_fill_viridis_c(limits = c(-1, 1),  option = 'E') +
+    scale_fill_viridis_c(limits = c(-1, 1),  option = 'E', na.value = 'darkred') +
     facet_grid(cols = vars(cluster),
                switch = 'y',
                scales = 'free_y') +
@@ -1349,7 +1365,7 @@ make_cosine_sim_plot_data <- function(cosine_similarity_mat) {
 
 make_cosine_sim_heatmap_plots <-
   function(cosine_similarity_mat,
-           f_agg = mean_abs,
+           f_agg = function(x, ...) coverage_weighted_mean(x, mat_f = abs, ...),
            f_ind = abs,
            title = '',
            colorbar_title = '',
@@ -1376,7 +1392,7 @@ make_cosine_sim_heatmap_plots <-
     plot_data_tmp %>%
     ggplot() +
     geom_raster(aes(x = cluster_1, y = cluster_2, fill = sim)) +
-    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E') +
+    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E', na.value = 'darkred') +
     ggtitle(paste('Aggregated', title)) +
     xlab('Cluster/Unitig') +
     ylab('Cluster/Unitig') +
@@ -1404,7 +1420,7 @@ make_cosine_sim_heatmap_plots <-
     plot_data_tmp %>% 
     ggplot() +
     geom_raster(aes(x = unitig_1, y = unitig_2, fill = f_ind(sim))) +
-    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E') +
+    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E', na.value = 'darkred') +
     scale_x_discrete(expand = expansion()) +
     scale_y_discrete(expand = expansion()) +
     theme(axis.text.x = element_text(angle = 360 - 45, hjust = 0)) +
@@ -1460,7 +1476,7 @@ make_cosine_sim_heatmap_plots <-
     ggplot() +
     geom_raster(aes(x = unitig_1, y=unitig_2, fill=f_ind(sim))) +
     facet_wrap(~cluster_1, scales = 'free') +
-    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E') +
+    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E', na.value = 'darkred') +
     theme_classic() +
     theme(
       axis.text = element_text(size = 5),
@@ -1501,7 +1517,7 @@ plots_sim_abs_ssf <-
     hadamard_mean_mat,
     f_agg = mean,
     f_ind = identity,
-    title = 'Num Library Normalized Dot Product on Absolute SSF',
+    title = 'Mean Hadamard Product on Absolute SSF',
     colorbar_title = 'sim',
     limits = c(0, 1)
   )
@@ -1517,7 +1533,7 @@ plots <- c(plots,
 
 make_cosine_sim_cluster_heatmap_plots <-
   function(cosine_similarity_mat,
-           f_agg = mean_abs,
+           f_agg = function(x, ...) coverage_weighted_mean(x, mat_f = abs, ...) ,
            f_ind = abs,
            title = '',
            colorbar_title = '',
@@ -1553,7 +1569,7 @@ make_cosine_sim_cluster_heatmap_plots <-
         ggplot() +
         geom_raster(aes(x = unitig_1, y=unitig_2, fill=f_ind(sim))) +
         facet_wrap(~cluster_1, scales = 'free') +
-        scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E') +
+        scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E', na.value = 'darkred') +
         theme_classic() +
         theme(
           axis.text = element_text(size = 5),
@@ -1586,22 +1602,28 @@ cluster_plots_ndp <-
     hadamard_mean_mat,
     f_agg = mean,
     f_ind = identity,
-    title = 'Num Library Normalized Dot Product on Absolute SSF',
+    title = 'Mean Hadamard Product on Absolute SSF',
     colorbar_title = 'sim',
     limits = c(0, 1)
   )
 
 
 ## Phasing Planes ----------------------------------------------------------
+facet_labeller <- function(x) {
+  x %>% 
+    left_join(pca_perc_var_df, by='cluster') %>% 
+    mutate(PC1_pvar = round(PC1_pvar * 100), PC2_pvar = round(PC2_pvar * 100), tot=round(PC1_pvar+PC2_pvar)) %>%
+    mutate(annotation=paste0('[',PC1_pvar, ':', PC2_pvar, '] [', tot, ']')) %>% 
+    mutate(cluster = paste(cluster, annotation)) %>% 
+    select(cluster)
+}
 
 pca_df <-
   bind_rows(model_input, .id = 'cluster') %>%
+  mutate(cluster = manf(cluster)) %>% 
   select(cluster, unitig, unitig_dir, length, y, everything())
 
-pca_df <-
-  pca_df %>% 
-  mutate(cluster = manf(cluster))
-
+  
 projected_ww_vectors_glm_plot <-
   coefs %>%
   map_dfr(function(x) as_tibble(as.list(x)), .id='cluster')
@@ -1609,12 +1631,14 @@ projected_ww_vectors_glm_plot <-
 projected_ww_vectors_rbc_plot <-
   projected_ww_vectors_rbc %>%
   map(as.data.frame.list) %>%
-  bind_rows(.id = 'cluster')
+  bind_rows(.id = 'cluster') %>% 
+  mutate(cluster = manf(cluster))
 
 projected_ww_vectors_plot <-
   projected_ww_vectors %>%
   map(as_tibble) %>%
-  bind_rows(.id = 'cluster')
+  bind_rows(.id = 'cluster')%>% 
+  mutate(cluster = manf(cluster))
 
 projected_ww_vectors_plot <-
   list(`Count and Rotate` = projected_ww_vectors_plot,
@@ -1622,12 +1646,13 @@ projected_ww_vectors_plot <-
        `Logistic Regression` = projected_ww_vectors_glm_plot
        ) %>% 
   map(function(x) select(x, cluster, PC1, PC2)) %>% 
-  bind_rows(.id='method')
+  bind_rows(.id='method') %>% 
+  mutate(cluster = manf(cluster))
 
 
 p <-
   pca_df %>%
-  filter(!y) %>%
+  # filter(!y) %>%
   dplyr::rename(inverted = y) %>%
   ggplot() +
   # Guidelines
@@ -1654,18 +1679,19 @@ p <-
   geom_point(aes(
     x = PC1,
     y = PC2,
-    size = length
+    size = length,
+    shape=inverted
   ),
   fill='darkgrey',
-  alpha = 0.5,
-  shape = 21) +
-  facet_wrap( ~ cluster) +
+  alpha = 0.5) +
+  facet_wrap( ~ cluster, labeller = facet_labeller) +
+  scale_shape_manual(guide = 'none', values = c('TRUE' = NA, 'FALSE' = 21)) +
   scale_size_area(name='Unitig Size') +
   # scale_fill_viridis_d(option = 'E') +
   scale_colour_brewer(name='WW Calculation Method', palette = 'Dark2') +
   scale_linetype_discrete(name='WW Calculation Method') +
   ggtitle('Fastmap Principal Components Plot') +
-  # coord_equal() +
+  # coord_equal() + 
   theme_classic() +
   theme(panel.border = element_rect(size = 1, fill=NA))
 

@@ -332,7 +332,6 @@ unitig_to_tname_df <-
   ungroup() %>% 
   distinct(sample, unitig, tname)
 
-
 # Palette -----------------------------------------------------------------
 
 # Stupid fucking conda doesn't have ggokabeito availible on the cluster.
@@ -532,6 +531,41 @@ p <-
   ) 
 
 plots[['largest_cluster_div_tlen']] <- p
+
+
+# PCA Variances -----------------------------------------------------------
+
+plot_data <-
+  haplotype_marker_df %>% 
+  group_by(sample, cluster, PC1_pvar, PC2_pvar) %>% 
+  summarise(length = sum(length))
+
+p <-
+  plot_data %>% 
+  ggplot() +
+  geom_point(aes(x=PC1_pvar, y=PC2_pvar, size=length/1e6), alpha=0.25, shape=21, fill='darkgrey') +
+  facet_wrap(~sample) +
+  scale_size_area(name = 'Total Cluster Length (Mbp)') +
+  xlab('PC1 %Var') +
+  ylab('PC2 %Var') +
+  ggtitle('Principal Components Variation Explained') +
+  theme_linedraw()
+
+plots[['pca_variances']] <- p
+
+
+p <-
+  plot_data %>% 
+  ggplot() +
+  geom_text(aes(x=PC1_pvar, y=PC2_pvar, label=cluster), alpha=0.33) +
+  facet_wrap(~sample) +
+  xlab('PC1 %Var') +
+  ylab('PC2 %Var') +
+  ggtitle('Principal Components Variation Explained') +
+  theme_linedraw()
+
+plots[['pca_variances_label']] <- p
+
 
 # Cluster Error By Chromosome ---------------------------------------------
 merge_hap_tnames <- function(x, hap_chrs) {
