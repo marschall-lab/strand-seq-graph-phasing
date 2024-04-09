@@ -816,6 +816,26 @@ link_homology <- function(cluster_df, homology_df, components_df) {
 }
 
 
+remove_small_clusters <- function(cluster_df, unitig_lengths_df, threshold=1e7) {
+
+  cluster_sizes <-
+    cluster_df %>%
+    left_join(unitig_lengths_df) %>%
+    group_by(cluster) %>%
+    summarise(length = sum(length), .groups = 'drop')
+  
+  small_clusters <-
+    cluster_sizes %>%
+    filter(length < threshold) %>%
+    pull(cluster)
+  
+  cluster_df <-
+    cluster_df %>%
+    mutate(cluster = ifelse(cluster %in% small_clusters, NA, cluster))
+  
+  return(cluster_df)
+}
+
 # Phasing -----------------------------------------------------------------
 orient_counts <- function(counts_df, strand_orientation_clusters_df){
   out <-
@@ -948,3 +968,135 @@ project_through <- function(x, y) {
   return(x - 2 * gram_schmidt_orthognalize(x, y))
 }
 
+
+# contiBAIT ---------------------------------------------------------------
+
+preprocessStrandTable <-
+  function (strandTable, strandTableThreshold = 0.8, filterThreshold = 0.8, 
+            orderMethod = "libsAndConc", lowQualThreshold = 0.9, verbose = TRUE, 
+            minLib = 10) 
+  {
+    strandTableLength <- nrow(strandTable)
+    lowQualList <- data.frame(library = vector(), quality = vector())
+    qualList <- lowQualList
+    if (!(is.null(lowQualThreshold))) {
+      if (verbose) {
+        message("-> Checking for high quality libraries")
+      }
+      for (col in seq_len(ncol(strandTable))) {
+        libName <- colnames(strandTable, do.NULL = FALSE)[col]
+        backGroundC <- abs(mean(strandTable[, col][which(strandTable[, 
+                                                                     col] < -0.6)], na.rm = TRUE))
+        backGroundW <- abs(mean(strandTable[, col][which(strandTable[, 
+                                                                     col] > 0.6)], na.rm = TRUE))
+        libraryQual <- round((backGroundC + backGroundW)/2, 
+                             digits = 3)
+        colQual <- data.frame(library = libName, quality = libraryQual)
+        if (libraryQual < lowQualThreshold || libraryQual == 
+            "NaN") {
+          if (libraryQual == "NaN" & verbose) {
+            message(paste("    -> ", libName, " has insufficient reads. Removing", 
+                          sep = ""))
+          }
+          else {
+            if (verbose) {
+              message(paste("    -> ", libName, " has high background (", 
+                            (1 - libraryQual) * 100, " %). Removing", 
+                            sep = ""))
+            }
+          }
+          lowQualList <- rbind(lowQualList, colQual)
+        }
+        else {
+          qualList <- rbind(qualList, colQual)
+        }
+      }
+      if (nrow(lowQualList) == ncol(strandTable)) {
+        warning("-> WARNING! ALL LIBRARIES ARE OF LOW QUALITY!! UNABLE TO REMOVE HIGH BACKGROUND LIBRARIES!")
+      }
+      else if (nrow(lowQualList) == 0 & verbose) {
+        message("-> All libraries of good quality")
+      }
+      else {
+        if (verbose) {
+          stCol <- ncol(strandTable)
+          lqRow <- nrow(lowQualList)
+          message(paste("-> Removed ", lqRow, " libraries from a total of ", 
+                        stCol, ". ", stCol - lqRow, " remaining (", 
+                        round((stCol - lqRow)/stCol * 100, digits = 1), 
+                        "%)", sep = ""))
+        }
+        strandTable <- strandTable[, !(colnames(strandTable) %in% 
+                                         lowQualList[, 1])]
+      }
+    }
+    rawTable <- strandTable
+    strandTable[strandTable >= strandTableThreshold] <- 1
+    strandTable[strandTable <= -strandTableThreshold] <- 3
+    strandTable[strandTable < strandTableThreshold & strandTable > 
+                  -strandTableThreshold] <- 2
+    preFilterData <- function(strandTable, filterThreshold, 
+                              minLib, onlyWC = FALSE) {
+      strandTable <- strandTable[which(apply(strandTable, 
+                                             1, function(x) {
+                                               length(which(!is.na(x)))
+                                             } >= minLib)), ]
+      strandTable <- strandTable[, which(apply(strandTable, 
+                                               2, function(x) {
+                                                 length(which(is.na(x)))
+                                               } <= length(x) * filterThreshold))]
+      WCvaluesCon <- apply(strandTable, 1, function(row) {
+        sum(row == 2, na.rm = TRUE)/sum(is.element(row, 
+                                                   c(1, 2, 3)), na.rm = TRUE)
+      })
+      WCvaluesLib <- apply(strandTable, 2, function(col) {
+        sum(col == 2, na.rm = TRUE)/sum(is.element(col, 
+                                                   c(1, 2, 3)), na.rm = TRUE)
+      })
+      if (onlyWC) {
+        strandTable <- strandTable[which(WCvaluesCon > filterThreshold), 
+        ]
+      }
+      else {
+        strandTable <- strandTable[which(WCvaluesCon <= 
+                                           filterThreshold), ]
+        strandTable <- strandTable[, which(WCvaluesLib <= 
+                                             filterThreshold)]
+      }
+      return(strandTable)
+    }
+    strandTableAWC <- preFilterData(strandTable, filterThreshold, 
+                                    minLib, onlyWC = TRUE)
+    AWCrange <- rownames(strandTableAWC)
+    AWClengths <- sub(".*:", "", AWCrange)
+    # AWCrange <- GRanges(seqnames = sub(":.*", "", AWCrange), 
+    #                     IRanges(start = as.numeric(sub("-.*", "", AWClengths)), 
+    #                             end = as.integer(sub(".*-", "", AWClengths))))
+    strandTable <- preFilterData(strandTable, filterThreshold, 
+                                 minLib)
+    rawTable <- rawTable[rownames(strandTable), ]
+    rawTable <- rawTable[, colnames(strandTable)]
+    if (orderMethod == "libsAndConc") {
+      if (verbose) {
+        message("-> Computing QA measures for contigs and sorting by best quality first")
+      }
+      contigNAs <- apply(strandTable, 1, function(x) {
+        length(which(!is.na(x)))
+      })/ncol(strandTable)
+      computeOneAgreement <- function(contigName) {
+        contigCall <- strandTable[contigName, ]
+        contigRaw <- rawTable[contigName, ]
+        mean(ifelse(contigCall == 2, (strandTableThreshold - 
+                                        abs(contigRaw))/strandTableThreshold, (abs(contigRaw) - 
+                                                                                 strandTableThreshold)/(1 - strandTableThreshold))[!is.na(contigCall)])
+      }
+      contigAgreement <- sapply(rownames(strandTable), computeOneAgreement)
+      contigQA <- contigAgreement * contigNAs
+      strandTable <- strandTable[names(sort(contigQA, decreasing = TRUE)), 
+      ]
+    }
+    strandTable[is.na(strandTable)] <- NA
+    # strandTable <- StrandStateMatrix(strandTable)
+    return(list(strandMatrix = strandTable, qualList = qualList, 
+                lowQualList = lowQualList, AWCcontigs = AWCrange, contigQA=contigQA))
+  }
