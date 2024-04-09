@@ -514,8 +514,8 @@ rule count_haplotype_markers:
         fc = lambda wildcards: get_optional_phasing_input(wildcards,'final_clusters.tsv'),
         uo = lambda wildcards: get_optional_phasing_input(wildcards,'unitig_orientation.tsv'),
         cm = lambda wildcards: get_optional_phasing_input(wildcards,'counting_methods.tsv')
-    singularity: singularity_r_env
-    conda: conda_r_env
+    # singularity: singularity_r_env
+    conda: 'envs/env_R-COS.yaml'
     threads: 1
     resources:
         mem_mb=calc_mem(12),
