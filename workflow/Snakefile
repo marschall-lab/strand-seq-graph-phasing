@@ -552,7 +552,7 @@ rule fudge_haplotype_markers:
     singularity: singularity_r_env
     conda: conda_r_env
     resources:
-        mem_mb=calc_mem(),
+        mem_mb=calc_mem(4),
         walltime=calc_walltime()
     log: "log/fudge_haplotype_markers_{sample}.log"
     benchmark: "benchmark/fudge_haplotype_markers_{sample}.benchmark"
