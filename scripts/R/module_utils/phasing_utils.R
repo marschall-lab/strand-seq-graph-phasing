@@ -235,6 +235,12 @@ aggregate_over_subsets <- function(mat, sets, contrasts, col_names=c('id_1', 'id
       return(out)
     })
   
+ out <-
+   bind_rows(
+     out,
+     tibble(id_1=character(), id_2=character(), value=double()) 
+   )
+ 
   out <-
     set_names(out, col_names)
   
