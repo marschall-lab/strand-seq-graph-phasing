@@ -575,7 +575,7 @@ plots[['pca_variances_label']] <- p
 
 plot_data <-
   haplotype_marker_df %>% 
-  filter(length >= segment_length_threshold) %>% 
+  filter(length >= slt) %>% 
   filter(hap_1_counts == 0 & hap_2_counts == 0) %>% 
   mutate(clustered = !is.na(cluster)) %>% 
   arrange(desc(length)) %>% 
@@ -592,7 +592,7 @@ p <-
   ylab('Count') +
   ggtitle(paste0('0 Marker Unitigs >= ', slt/1e6, 'Mbp')) +
   theme_classic() +
-  theme(panel.border = element_rect(fill = NA, color='black', linewidth = 1))
+  theme(panel.border = element_rect(fill = NA, color='black', size = 1))
 
 plots[['0_marker_unitigs_hist']] <- p
 
@@ -690,7 +690,7 @@ p <-
     alpha = 0.33,
     linetype = 'dashed'
   ) +
-  geom_col(aes(fill = color), color='black', linewidth=0.2, data = plot_data) +
+  geom_col(aes(fill = color), color='black', size=0.2, data = plot_data) +
   geom_text(aes(label = paste0(round(100 * perc, 1), '%')), size=2, nudge_y = 0.05, data =
               label_data) +
   facet_wrap( ~ sample, scales = 'free_y', drop=FALSE) +
