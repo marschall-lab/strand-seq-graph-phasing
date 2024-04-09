@@ -109,9 +109,13 @@ output <- get_values('--output', singular=TRUE)
 out_width <- as.numeric(get_values('--plot-width', singular=TRUE))
 out_height <- as.numeric(get_values('--plot-height', singular=TRUE))
 
+# included_dip_regex <- '(chr|CHR)[0-9]+'
 included_dip_regex <- get_values('--included-diploid-chroms-regex', singular=TRUE)
+# included_hap_regex <- '(chr|CHR)[yY]'
 included_hap_regex <- get_values('--included-haploid-chroms-regex', singular = TRUE)
+# included_hem_regex  <- '(chr|CHR)[xX]'
 included_hem_regex  <- get_values('--included-hemiploid-chroms-regex', singular = TRUE)
+# hta_regex <-'(chr|CHR)(13|14|15|21|22)'
 hta_regex <- get_values('--hta-chroms-regex', singular = TRUE)
 
 # TODO condition handling on empty reference alignments
