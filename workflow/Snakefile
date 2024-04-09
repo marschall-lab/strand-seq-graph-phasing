@@ -649,6 +649,7 @@ rule run_rukki:
 
     log: "log/run_rukki_{sample}.log"
     benchmark: "benchmark/run_rukki_{sample}.benchmark"
+    priority: 1
     shell:
         '''
         params=""
