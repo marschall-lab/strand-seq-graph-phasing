@@ -105,47 +105,6 @@ invert_hex <- function(hex_code) {
 
 # Distances ---------------------------------------------------------------
 
-
-# TODO weighted cosine similarity?
-pairwise_complete_hadamard_mean_ <- function(x, y, min_overlaps=5, x_trans=identity, y_trans=identity) {
-  stopifnot(all_have_same_length(x, y))
-  
-  overlapping_ix <- !is.na(x) & !is.na(y)
-  
-  if(sum(overlapping_ix) < min_overlaps) {
-    return(NA)
-  }
-  
-  x <- x[overlapping_ix]
-  y <- y[overlapping_ix]
-  
-  x <- x_trans(x)
-  y <- y_trans(y) 
-  
-  out <- mean(x * y)
-  
-  return(out)
-}
-
-pairwise_complete_hadamard_mean <- function(mat,  min_overlaps=5, ...) {
-  # Samples in rows
-  out <- 
-    matrix(nrow=nrow(mat), ncol=nrow(mat))
-  
-  dimnames(out) <- list(rownames(mat), rownames(mat))
-  n <- nrow(mat)
-  
-  for(i in 1:n) {
-    for(j in i:n) {
-      val <- pairwise_complete_hadamard_mean_(mat[i, ,drop=FALSE], mat[j, ,drop=FALSE], min_overlaps, ...)
-      out[i, j] <- val
-      out[j, i] <- val
-    }
-  }
-  
-  return(out)
-}
-
 # TODO weighted cosine similarity?
 pairwise_complete_dp_ <- function(x, y, min_overlaps=5, x_trans=identity, y_trans=identity) {
   stopifnot(all_have_same_length(x, y))

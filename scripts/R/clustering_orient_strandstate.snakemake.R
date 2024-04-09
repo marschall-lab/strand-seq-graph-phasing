@@ -261,27 +261,9 @@ ssf_mat <-
 
 strand.freq <-
   ssf_mat
-  # spoof_rownames(ssf_mat) %>%
-  # StrandFreqMatrix()
-
-
-# getMethod(plotWCdistribution, "StrandFreqMatrix")
-# debugonce(plotWCdistribution, signature = "StrandFreqMatrix")
-# plotWCdistribution(strand.freq)
-
-# It seems that more libraries can be removed than is explicitly stated during
-# contiBAIT preprocessing. EG, it will say 5 libs are removed for insufficent
-# read counts, but far fewer than 5 are removed in the strand state matrix.
-
-# UPDATE: It does appear that the additional libraries removed are indeed
-# strangely or improperly behaved. EG, a normal library will show three wfrac
-# peaks, at -1, 0, 1, while a library that was removed unannounced will have a
-# wfrac distribution looking like a normal centered at 0. So I guess there is a
-# good reason some additional libraries are excluded, but the fact that this
-# isn't properly announced is so frustrating.
 
 cat('Running contiBAIT QC\n')
-# debugonce(preprocessStrandTable, signature = 'StrandFreqMatrix')
+
 strand.states <-
   preprocessStrandTable(
     strand.freq,
@@ -344,8 +326,6 @@ cosine_similarity_mat <-
 
 # TODO addd back micro cluster on component removal?
 
-### END COVERAGE MERGE CYCLE
-
 temp <- get_values('--final-clusters', null_ok=TRUE)
 if(length(temp) != 0) {
   cat('Importing final clustering.\n')
@@ -406,22 +386,19 @@ if(length(temp) != 0) {
       mat_f=abs,
       na.rm=TRUE
     )
-  
-  ## Max-Based Assignment ----------------------------------------------------
-  
-  # TODO Assign a unitig to a cluster if it has a very high similarity with any of the individual members?
+
   
   ## POCC-----------------------------------------------------------
   
   cat('Propagating one cluster components\n')
-
+  cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
   
   ## Cosine Cluster Merging ----------------------------------------------------
   
   cat('Cosine cluster merging\n')
   # Sometimes, some of the newly created clusters will should be merged
   # into other components on cluster (centromere troubles especially)
-  cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
+
   cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
   cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.5, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
 
@@ -496,213 +473,6 @@ hap_name <- paste(hap_clusters, collapse='_')
 cluster_df <-
   cluster_df %>%
   mutate(cluster = ifelse(cluster %in% hap_clusters, hap_name, cluster))
-
-# # Haploid Chromosome Handling ---------------------------------------------
-# 
-# ## Hemiploid/Sex Chrom Merging ---------------------------------------------
-# 
-# hadamard_mean_mat <-
-#   pairwise_complete_hadamard_mean(abs(ssf_mat), min_overlaps = min_overlaps)
-
-# old_cluster_df <- cluster_df
-# 
-# cluster_df <-
-#   cluster_unitigs(
-#     hadamard_mean_mat,
-#     cluster_df,
-#     cluster_unitig_similarity_threshold = 0.6,
-#     unitig_unitig_similarity_threshold = 0.6,
-#     new_cluster_id = 'Ch',
-#     agg_f = coverage_weighted_mean, 
-#     mat_f = abs, 
-#     na.rm=TRUE
-#   )
-# 
-# cluster_df <- merge_similar_clusters_on_components(hadamard_mean_mat, cluster_df, components_df, similarity_threshold = 0.6, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
-# cluster_df <- merge_similar_clusters(hadamard_mean_mat, cluster_df, similarity_threshold = 0.6, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
-# 
-# cluster_df <-
-#   cluster_unitigs(
-#     hadamard_mean_mat,
-#     cluster_df,
-#     cluster_unitig_similarity_threshold = 0.6,
-#     unitig_unitig_similarity_threshold = 0.6,
-#     new_cluster_id = 'Ch',
-#     agg_f = coverage_weighted_mean, 
-#     mat_f = abs, 
-#     na.rm=TRUE
-#   )
-# 
-# ## Sex Chrom Detection1 --------------------------------------------------
-# # TODO Only one hap cluster by design? This feels weird what if there are two
-# # clusters here?
-# hap_clusters <-
-#   anti_join(cluster_df, old_cluster_df, by=c('unitig', 'cluster')) %>%
-#   pull_distinct(cluster)
-# 
-# cluster_df <-
-#   cluster_df %>%
-#   mutate(cluster = ifelse(cluster %in% hap_clusters, 'sex_LG', cluster))
-# 
-# 
-# ## Sex Chrom Detection2 --------------------------------------------------
-# 
-# # TODO Only one hap cluster by design? This feels weird what if there are two
-# # clusters here?
-# 
-# sets <-
-#   cluster_df %>%
-#   filter(!is.na(cluster)) %>%
-#   with(split(unitig, cluster))
-# 
-# contrasts <-
-#   imap(sets, function(unused, nm) {
-#     c(nm, 'all_libs')
-#   })
-# 
-# sets <- c(sets, list(all_libs = colnames(ssf_mat)))
-# 
-# hap_scores <-
-#   aggregate_over_subsets(
-#     abs(ssf_mat),
-#     sets,
-#     contrasts,
-#     col_names = c('clust_1', 'libs', 'sim'),
-#     agg_f = mean,
-#     na.rm=TRUE
-#   )
-# 
-# arrange(hap_scores, desc(sim))
-# sets <-
-#   cluster_df %>%
-#   filter(!is.na(cluster)) %>%
-#   with(split(unitig, cluster))
-# 
-# contrasts <-
-#   imap(sets, function(unused, nm) {
-#     c(nm, nm)
-#   })
-# 
-# hap_scores <-
-#   aggregate_over_subsets(
-#     hadamard_mean_mat,
-#     sets,
-#     contrasts,
-#     col_names = c('clust_1', 'clust_2', 'sim'),
-#     agg_f = coverage_weighted_mean,
-#     na.rm=TRUE
-#   )
-# 
-# arrange(hap_scores, desc(sim))
-# 
-# hap_clusters <-
-#   # cluster_similarities %>% 
-#   # filter(sim >= 0.6) %>% 
-#   hap_scores %>% 
-#   filter(sim >= 0.69) %>% 
-#   pull_distinct(clust_1)
-# 
-# cluster_df <-
-#   cluster_df %>%
-#   mutate(cluster = ifelse(cluster %in% hap_clusters, 'sex_LG', cluster))
-# 
-# ## Sex Chrom Detection3 --------------------------------------------------
-# 
-# cluster_df <-
-#   cluster_df %>%
-#   mutate(cluster = ifelse(grepl('^Ch', cluster), 'sex_LG', cluster))
-# 
-# ## PAR Detection -----------------------------------------------------------
-# cat('Detecting PAR\n')
-# 
-# # TODO add some sort of size based threshold for the PAR (hpc and non-hpc)
-# 
-# # TODO, add a percentage check to declare a PAR cluster. EG the sex cluster must
-# # take up at least X% of the cluster on a component or something like that.
-# 
-# haploid_component_fractions_df <-
-#   cluster_df %>%
-#   left_join(components_df, by='unitig') %>%
-#   left_join(unitig_lengths_df, b='unitig') %>%
-#   group_by(component) %>%
-#   filter(any(grepl('^sex', cluster))) %>%
-#   ungroup()
-# 
-# haploid_component_fractions_df <-
-#   haploid_component_fractions_df %>%
-#   group_by(component, cluster) %>%
-#   summarise(length = sum(length), .groups="drop") %>%
-#   group_by(component) %>%
-#   mutate(perc = length/sum(length)) %>%
-#   ungroup()
-# 
-# # TODO handle warning when nrow(haploid_component_fractions_df) == 0
-# 
-# # TODO
-# # Only a haploid component if x% of the             unitigs on a component are haploid clustered?
-# # Only a haploid component if x% of the *clustered* unitigs on a component are haploid clustered?
-# 
-# perc_threshold <- 0.90
-# 
-# # TODO experiment with filtering criteria that doesn't demand a flag.
-# 
-# # Haploid unititgs sometimes appear in the degenerate regions of other
-# # chromosomes (i've noticed them in the big circular tangle on Chr1 a couple
-# # times) so there needs to be a little logic before calling a cluster a PAR
-# # cluster. Here a genuine haploid unitig is only called if it is the largest
-# # cluster among clustered unitigs, and occupies more than `perc_threshold`
-# # percent of a component
-# haploid_components <-
-#   haploid_component_fractions_df %>%
-#   filter(!is.na(cluster)) %>%
-#   group_by(component) %>%
-#   filter(perc == max(perc) & grepl('^sex', cluster) & perc >= perc_threshold) %>%
-#   ungroup() %>%
-#   pull_distinct(component)
-# 
-# haploid_component_unititgs <-
-#   components_df %>%
-#   filter(component %in% haploid_components) %>%
-#   semi_join(long_unitigs_df, by='unitig') %>%
-#   pull(unitig)
-# 
-# # cluster_PAR_with_haploid ~ only perform PAR detection for assemblies where the XY
-# # component is likely only conntected to the PAR. Hifiasm graphs are more
-# # tangled than that right now and therefore PAR detection for hifiasm likely
-# # shoould not be attempted. The condition that the haploid cluster be the
-# # largest likely would prevent anything from going wrong, but this flag is here
-# # to be extra safe.
-# par_clusters <-
-#   cluster_df %>%
-#   left_join(unitig_lengths_df) %>%
-#   filter(length < 2.8e6) %>% # size check
-#   filter(unitig %in% haploid_component_unititgs) %>%
-#   filter(!grepl('^sex', cluster)) %>%
-#   filter(!is.na(cluster)) %>%
-#   filter(cluster_PAR_with_haploid) %>%
-#   pull_distinct(cluster)
-# 
-# 
-# cat('No. PAR clusters detected: ', length(par_clusters), '\n')
-# 
-# if(length(par_clusters) > 1) {
-#   WARNINGS <-
-#     c(WARNINGS,
-#       "more than 1 PAR cluster, haven't thought about what will happen in this case")
-#   
-# }
-# 
-# ### Haploid Propagation------------------------------------------------------
-# 
-# par_unitigs <-
-#   cluster_df %>%
-#   filter(cluster %in% par_clusters) %>%
-#   pull(unitig)
-# 
-# # PAR and haploid need to be oriented together.
-# cluster_df <-
-#   cluster_df %>%
-#   mutate(cluster = ifelse(cluster %in% par_clusters | grepl('^sex', cluster), 'LGXY', cluster))
 
 ## Small Cluster Removal --------------------------------------------
 
@@ -814,8 +584,8 @@ exact_match_counts_df <-
   orient_counts(exact_match_counts_df, strand_orientation_clusters_df)
 #
 # ## Principal Components ----------------------------------------------------
-# TODO modify this so that alll PCAs are note recomputed and only new clusters
-# are recopmuted.
+# TODO modify this so that all PCAs are note recomputed and only new clusters
+# are recomputed.
 
 em_counts <-
   exact_match_counts_df %>%
@@ -889,7 +659,6 @@ projected_ww_vectors <-
     ww_mat <- matrix(y$ww_ssf, nrow=1)
     colnames(ww_mat) <- y$lib
     ww_mat[is.na(ww_mat)] <- 0 
-    # browser()
     # there seems to be a bug if there is only one row?
     ww_mat <- rbind(ww_mat, ww_mat)
     predict(x, ww_mat)$coord[1, 1:2] %>% 
@@ -1041,7 +810,6 @@ library_weights <-
 ## Count Haplotype Markers -------------------------------------------------
 
 count_haplotype_markers <- function(counts, lib_weights) {
-  # browser()
 
   lib_weights <-
     lib_weights %>% 
@@ -1172,10 +940,6 @@ marker_counts <-
   left_join(strand_orientation_clusters_df, by=c('unitig')) %>%
   dplyr::rename(unitig_orientation = strand_cluster)
 
-# TODO a variance estimate that takes into acount the sizes of each unitig.
-# Right now, there can be bias is one haplotype is much more contiguous than the
-# other, with more fragmented haplotype recieving a disproportionate amount of
-# variance.
 pca_perc_var_df <-
   prcomps %>% 
   map('eig') %>% 
@@ -1240,8 +1004,6 @@ library_weights <-
 readr::write_csv(library_weights, output_lib)
 
 # Plots -------------------------------------------------------------------
-# TODO: Alpha values according to n
-# TODO within cluster plots
 
 library(ggplot2)
 
@@ -1695,7 +1457,7 @@ p <-
     linetype = method
   ), 
   data = projected_ww_vectors_plot) +
-# 
+  # WC vectors
 #   geom_abline(
 #     aes(
 #       slope = -PC1 / PC2,
