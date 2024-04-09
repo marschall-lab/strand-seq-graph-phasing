@@ -606,8 +606,7 @@ p <-
   xlab('Log10 Length') +
   ylab('Unitig') +
   ggtitle(paste0('0 Marker Unitigs >= ', slt/1e6, 'Mbp')) +
-  theme_linedraw() +
-  theme(panel.border = element_rect(fill = NA, color='black', linewidth = 1))
+  theme_linedraw() 
 
 plots[['0_marker_unitigs_point']] <- p
 
