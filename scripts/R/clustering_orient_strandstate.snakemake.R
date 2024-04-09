@@ -305,7 +305,7 @@ if(length(temp) != 0) {
 
 excluded_libraries <- setdiff(lib_names, included_libraries)
 WARNINGS <- character()
-WARNINGS <- c(WARNINGS, paste0(length(included_libraries)/length(lib_names), '% of Strand-seq libraries pass QC'))
+WARNINGS <- c(WARNINGS, paste0(100*length(included_libraries)/length(lib_names), '% of Strand-seq libraries pass QC'))
 
 counts_df <-
   counts_df %>%
