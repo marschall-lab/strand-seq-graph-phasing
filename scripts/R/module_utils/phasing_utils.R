@@ -526,7 +526,8 @@ cluster_unitigs <-
         
         clustered_similarities_cu <- 
           clustered_similarities_cu %>% 
-          filter(cluster != cur_clusters)
+          filter(cluster != cur_clusters) %>% 
+          filter(unitig != max_contrast$unitig)
         
         clustered_similarities_uu <- 
           clustered_similarities_uu %>% 
