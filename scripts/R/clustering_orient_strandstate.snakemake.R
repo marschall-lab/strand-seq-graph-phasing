@@ -188,6 +188,25 @@ intermediate_output_dir <- get_values('--intermediate-output-dir')
 output_counts <- get_values('--output-marker-counts')
 output_lib <- get_values('--output-lib')
 
+
+# Parameters --------------------------------------------------------------
+
+#TODO add QC Params
+PARAMS <- list(
+  segment_length_threshold = segment_length_threshold,
+  # To compute the SSF
+  min_n_mem = 10,
+  min_n_fm = 4,
+  # To compute cosine similarity
+  min_overlaps = 5,
+  # To cluster
+  cos_sim_threshold = 0.5,
+  # Remove clusters smaller than
+  minimum_cluster_size = 1e7,
+  # To call a cluster as haploid
+  hap_pc2_var_threshold = 0.20
+)
+
 # Import ------------------------------------------------------------------
 
 ## Connected Components in Exploded Graph ----------------------------------
@@ -248,11 +267,10 @@ coverage_weighted_mean <- cwm_(unitig_coverage)
 # SSF Matrix --------------------------------------------------------------
 
 #TODO make this parameter more visible. Explain why only 10
-min_n <- 10
 
 ssf_mat <-
   counts_df %>%
-  with(make_wc_matrix(w, c, lib, unitig, min_n=min_n))
+  with(make_wc_matrix(w, c, lib, unitig, min_n=PARAMS$min_n_mem))
 
 # Library QC --------------------------------------------------------------
 
@@ -314,16 +332,13 @@ if(length(temp) != 0) {
 
 # Cluster Refinement ------------------------------------------------------
 # Why 0.5?
-cos_sim_threshold <- 0.5
 # Cosine Similarity Matrix ------------------------------------------------
 
 # TODO only calculate the cosine similarity mat if it is used (eg, if final
 # clusters and strand orientation is provided)
 
-# Why 5? 
-min_overlaps <- 5
 cosine_similarity_mat <-
-  pairwise_complete_cosine_similarity(ssf_mat, min_overlaps = min_overlaps)
+  pairwise_complete_cosine_similarity(ssf_mat, min_overlaps = PARAMS$min_overlaps)
 
 # TODO addd back micro cluster on component removal?
 
@@ -346,9 +361,9 @@ if(length(temp) != 0) {
       cluster_unitigs(
         cosine_similarity_mat,
         cluster_df2,
-        new_cluster_id = paste0('[C', prop, ']'),
-        cluster_unitig_similarity_threshold = cos_sim_threshold,
-        unitig_unitig_similarity_threshold = cos_sim_threshold,
+        new_cluster_id = paste0('(C', prop, ')'),
+        cluster_unitig_similarity_threshold = PARAMS$cos_sim_threshold,
+        unitig_unitig_similarity_threshold = PARAMS$cos_sim_threshold,
         agg_f = coverage_weighted_mean, 
         mat_f=abs,
         na.rm=TRUE
@@ -365,7 +380,7 @@ if(length(temp) != 0) {
         cosine_similarity_mat,
         cluster_df,
         components_df,
-        similarity_threshold = cos_sim_threshold,
+        similarity_threshold = PARAMS$cos_sim_threshold,
         agg_f = coverage_weighted_mean,
         mat_f = abs,
         na.rm = TRUE
@@ -375,7 +390,7 @@ if(length(temp) != 0) {
       merge_similar_clusters(
         cosine_similarity_mat,
         cluster_df,
-        similarity_threshold = cos_sim_threshold,
+        similarity_threshold = PARAMS$cos_sim_threshold,
         agg_f = coverage_weighted_mean,
         mat_f = abs,
         na.rm = TRUE
@@ -388,9 +403,10 @@ if(length(temp) != 0) {
   
   cat('Assigning "high-noise" unitigs using cosine similarity \n')
   
-  minimum_cluster_size <-1e7
   cluster_df <-
-    remove_small_clusters(cluster_df, unitig_lengths_df, threshold = minimum_cluster_size)
+    remove_small_clusters(cluster_df,
+                          unitig_lengths_df,
+                          threshold = PARAMS$minimum_cluster_size)
   
   cluster_df <-
     propagate_one_cluster_components(cluster_df, components_df)
@@ -401,7 +417,7 @@ if(length(temp) != 0) {
       cosine_similarity_mat,
       cluster_df,
       components_df,
-      similarity_threshold = cos_sim_threshold,
+      similarity_threshold = PARAMS$cos_sim_threshold,
       agg_f = coverage_weighted_mean,
       mat_f = abs,
       na.rm = TRUE
@@ -410,7 +426,7 @@ if(length(temp) != 0) {
     merge_similar_clusters(
       cosine_similarity_mat,
       cluster_df,
-      similarity_threshold = cos_sim_threshold,
+      similarity_threshold = PARAMS$cos_sim_threshold,
       agg_f = coverage_weighted_mean,
       mat_f = abs,
       na.rm = TRUE
@@ -421,8 +437,8 @@ if(length(temp) != 0) {
       cosine_similarity_mat,
       cluster_df,
       new_cluster_id = 'C',
-      cluster_unitig_similarity_threshold = cos_sim_threshold,
-      unitig_unitig_similarity_threshold = cos_sim_threshold,
+      cluster_unitig_similarity_threshold = PARAMS$cos_sim_threshold,
+      unitig_unitig_similarity_threshold = PARAMS$cos_sim_threshold,
       agg_f = coverage_weighted_mean,
       mat_f=abs,
       na.rm=TRUE
@@ -445,7 +461,7 @@ if(length(temp) != 0) {
       cosine_similarity_mat,
       cluster_df,
       components_df,
-      similarity_threshold = cos_sim_threshold,
+      similarity_threshold = PARAMS$cos_sim_threshold,
       agg_f = coverage_weighted_mean,
       mat_f = abs,
       na.rm = TRUE
@@ -455,7 +471,7 @@ if(length(temp) != 0) {
     merge_similar_clusters(
       cosine_similarity_mat,
       cluster_df,
-      similarity_threshold = cos_sim_threshold,
+      similarity_threshold = PARAMS$cos_sim_threshold,
       agg_f = coverage_weighted_mean,
       mat_f = abs,
       na.rm = TRUE
@@ -480,7 +496,7 @@ em_counts <-
 
 em_ssf_mats <- 
   map(em_counts, function(x) {
-    with(x, make_wc_matrix(w, c, lib, unitig, min_n=4)) 
+    with(x, make_wc_matrix(w, c, lib, unitig, min_n=PARAMS$min_n_fm)) 
   })
 
 # Concatenate with inverted unitigs
@@ -502,7 +518,8 @@ em_ssf_mats <-
     return(x)
   }) 
 
-prcomps <-
+# TODO if a cluster is detected as haploid. Save this plot? So before and after can be seen?
+prcomps_unoriented <-
   em_ssf_mats %>% 
   map(function(x){
     row_weights <- with(unitig_lengths_df, set_names(length, unitig))
@@ -514,14 +531,14 @@ prcomps <-
   })
 
 component_percent_variances <- 
-  prcomps %>% 
+  prcomps_unoriented %>% 
   map(function(x) x$eig[1:2, 2])
 
-hap_threshold <- 0.20
+
 
 hap_clusters <-
   component_percent_variances %>% 
-  keep(function(x) x['comp 2'] <= hap_threshold * 100) %>% 
+  keep(function(x) x['comp 2'] <= PARAMS$hap_pc2_var_threshold * 100) %>% 
   names()
 
 if(!(length(hap_clusters) %in% c(0, 2))){
@@ -541,8 +558,10 @@ cluster_df <-
 
 # Small Cluster Removal --------------------------------------------
 
-cluster_df <- remove_small_clusters(cluster_df, unitig_lengths_df, threshold = minimum_cluster_size)
-
+cluster_df <-
+  remove_small_clusters(cluster_df,
+                        unitig_lengths_df,
+                        threshold = PARAMS$minimum_cluster_size)
 
 # Unclustered Warning -----------------------------------------------------
 
@@ -550,7 +569,7 @@ unclustered_unitig_lengths <-
   unitig_lengths_df %>% 
   left_join(cluster_df, by='unitig') %>% 
   filter(is.na(cluster)) %>% 
-  filter(length >= minimum_cluster_size) %>% 
+  filter(length >= PARAMS$minimum_cluster_size) %>% 
   with(set_names(length, unitig))
 
 if(length(unclustered_unitig_lengths) > 0) {
@@ -678,9 +697,10 @@ em_counts <-
   arrange(cluster, unitig, lib) %>%
   split(.$cluster)
 
+
 em_ssf_mats <- 
   map(em_counts, function(x) {
-    with(x, make_wc_matrix(w, c, lib, unitig, min_n=4)) 
+    with(x, make_wc_matrix(w, c, lib, unitig, min_n=PARAMS$min_n_fm)) 
   })
 
 # Concatenate with inverted unitigs
@@ -1025,15 +1045,25 @@ marker_counts <-
   left_join(strand_orientation_clusters_df, by=c('unitig')) %>%
   dplyr::rename(unitig_orientation = strand_cluster)
 
+prcomps_unoriented <-
+  prcomps_unoriented[!(names(prcomps_unoriented) %in% names(prcomps))]
+
 pca_perc_var_df <-
   prcomps %>% 
   map('eig') %>% 
   map(function(x) x[1:2, 2]) %>% 
-  bind_rows(.id = 'cluster') %>%
-  mutate(cluster = manf(cluster))
+  bind_rows(.id = 'cluster') 
+
+pca_perc_var_hap_df <-
+  prcomps_unoriented %>% 
+  map('eig') %>% 
+  map(function(x) x[1:2, 2]) %>% 
+  bind_rows(.id = 'cluster')
 
 pca_perc_var_df <-
-  pca_perc_var_df %>% 
+  # pca_perc_var_df %>% 
+  bind_rows(final = pca_perc_var_df, not_final = pca_perc_var_hap_df, .id='is_final') %>% 
+  mutate(cluster = manf(cluster)) %>%
   dplyr::rename(PC1_pvar = `comp 1`, PC2_pvar = `comp 2`)
 
 marker_counts <-
@@ -1095,6 +1125,80 @@ library(ggplot2)
 plots <- list()
 cluster_plots_ssf <- list()
 cluster_plots_sim <- list()
+
+## Lengths -----------------------------------------------------------------
+# Dual ECDF plots
+plot_data <-
+  unitig_lengths_df %>% 
+  arrange(length) %>% 
+  mutate(length = as.double(length)) %>% 
+  mutate(cum_length = cumsum(length)) %>% 
+  mutate(
+    cum_size = cum_length/max(cum_length),
+    cum_n = 1:n()/n()
+    )
+
+plot_data <-
+  plot_data %>%
+  tidyr::pivot_longer(
+    cols = c(cum_size, cum_n),
+    names_to = 'metric',
+    values_to = 'percent'
+  )
+
+p <-
+  ggplot(plot_data) +
+  geom_vline(xintercept = segment_length_threshold, alpha=0.5, linetype='dashed') +
+  geom_step(aes(x=length, y=percent, color=metric)) +
+  scale_color_manual(name=NULL, values=c('#E69F00', '#56B4E9')) +
+  scale_x_log10(n.breaks = 10) +
+  scale_y_continuous(limits = c(0, 1), expand=expansion(c(0.005, 0.005)), n.breaks=20) +
+  ylab('Cumulative %') +
+  xlab('Unitig Length') +
+  ggtitle('Assembly Size/Unitig Length ECDF') +
+  theme_light()
+  
+
+plots[['length_ecdf']] <- p
+
+
+plot_data <-
+  list(mem = counts_df, fastmap = exact_match_counts_df) %>%
+  bind_rows(.id = 'aligner') %>%
+  semi_join(long_unitigs_df, by='unitig')
+
+plot_data <-
+  plot_data %>%
+  mutate(n_large = ifelse(aligner == 'mem', n >= PARAMS$min_n_mem, n >= PARAMS$min_n_fm)) %>%
+  group_by(aligner, unitig) %>%
+  summarise(
+    large_n = sum(n_large),
+    mean_n_large = mean(ifelse(n_large, n, NA), na.rm=TRUE)
+    ) %>%
+  ungroup()
+
+plot_data <-
+  plot_data %>%
+  left_join(unitig_lengths_df, by='unitig')
+
+p <-
+  plot_data %>%
+  ggplot() +
+  # geom_point(aes(x=length, y=large_n, color=mean_n_large)) +
+  geom_point(aes(x=length, y=large_n)) +
+  facet_wrap(~aligner, ncol = 1) +
+  scale_x_log10(n.breaks = 10) +
+  scale_y_continuous(expand=expansion(c(0.01, 0.01)), n.breaks=10) +
+  ylab('N QC-Passing Libraries Over Count Threshold') +
+  xlab('Unitig Length') +
+  ggtitle('N QC-Passing Libraries Over Count Threshold of Unitigs over Length Threshold') +
+  theme_light() +
+  theme(
+    strip.background = element_rect(fill=NA, color='grey'),
+    strip.text = element_text(color='black')
+    )
+
+plots[['length_n_lib']] <- p
 
 ## SSF ---------------------------------------------------------------------
 
@@ -1160,7 +1264,7 @@ plots[['ssfb1']] <- p1
 plots[['ssfb2']] <- p2
 
 
-## SSF Barcode by Cluster --------------------------------------------------
+### SSF Barcode by Cluster --------------------------------------------------
 
 # TODO height of each bar ~ size of unitig
 for(clust in stringr::str_sort(pull_distinct(plot_data, cluster), numeric = TRUE)) {
@@ -1200,9 +1304,9 @@ p <-
   facet_wrap(~cluster, scales = 'free_y') +
   scale_x_continuous(limits = c(-1, 1)) +
   scale_y_continuous(expand = expansion(c(0, 0.1))) +
-  theme_linedraw() +
+  theme_light() +
   theme(
-    strip.background = element_rect(fill='white'),
+    strip.background = element_rect(fill='NA', color='grey'),
     strip.text = element_text(color='black')
   )
 
@@ -1232,14 +1336,14 @@ plot_data <-
 p <-
   ggplot(plot_data) +
   geom_histogram(aes(abs(sim), fill=comparison), binwidth = 0.01) +
-  geom_vline(xintercept = cos_sim_threshold, linetype='dashed') +
+  geom_vline(xintercept = PARAMS$cos_sim_threshold, linetype='dashed') +
   scale_fill_manual(name=NULL, values=c('#E69F00', '#56B4E9')) +
   scale_y_continuous(expand = expansion(c(0, 0.1)), n.breaks = 10) +
-  scale_x_continuous(expand = expansion(0), limits=c(0,1), n.breaks = 10) +
+  scale_x_continuous(expand = expansion(0), n.breaks = 10) +
   ylab('N') +
   xlab('Absolute Cosine Similarity') +
-  ggtitle('Absolute Cosine Similarity Histogram')  +
-  theme_classic()
+  ggtitle('Absolute Cosine Similarity Histogram (Deduplicated, No Self)')  +
+  theme_light()
 
 plots[['sim_hist']] <- p
 
@@ -1247,15 +1351,18 @@ p <-
   ggplot(plot_data) +
   geom_rug(aes(abs(sim))) +
   geom_density(aes(abs(sim), fill=comparison)) +
-  geom_vline(xintercept = cos_sim_threshold, linetype='dashed') +
-  facet_wrap(~comparison) +
+  geom_vline(xintercept = PARAMS$cos_sim_threshold, linetype='dashed') +
+  facet_wrap(~comparison, ncol=1) +
   scale_fill_manual(guide='none', values=c('#E69F00', '#56B4E9')) +
-  scale_x_continuous(expand = expansion(0), n.breaks = 9, limits = c(0,1)) +
+  scale_x_continuous(expand = expansion(0), n.breaks = 10) +
   ylab('Density') +
   xlab('Absolute Cosine Similarity') +
-  ggtitle('Absolute Cosine Similarity Densities')  +
-  theme_classic() +
-  theme(panel.background = element_rect(fill=NA, color='black', size=1))
+  ggtitle('Absolute Cosine Similarity Densities (Deduplicated, No Self)')  +
+  theme_light() +
+  theme(
+    strip.background = element_rect(fill='NA', color='grey'),
+    strip.text = element_text(color='black')
+  )
 
 plots[['sim_dens']] <- p
 
@@ -1524,15 +1631,17 @@ cluster_sizes <-
   left_join(unitig_lengths_df, by='unitig') %>% 
   count(cluster, wt=length)
 
+# Clusters without sizes are haploid clusters that were merged together.
 plot_data <-
   pca_perc_var_df %>% 
   left_join(cluster_sizes, by='cluster') 
 
 p <-
   plot_data %>% 
-  ggplot() +
+  ggplot(aes(x = PC1_pvar, y = PC2_pvar)) +
   geom_abline(intercept = 100, slope=-1, alpha=0.5) +
-  geom_hline(yintercept=hap_threshold*100, alpha=0.5, linetype='dashed') +
+  geom_abline(intercept = 70, slope=-1, alpha=0.5, linetype='dashed') +
+  geom_hline(yintercept=PARAMS$hap_pc2_var_threshold*100, alpha=0.5, linetype='dashed') +
   xlab('PC1 %Variance') +
   ylab('PC2 %Variance') +
   ggtitle('First Two Principal Components Variation Scatter Plot') +
@@ -1543,11 +1652,12 @@ p <-
 
 plots[['var_points']] <-
   p + geom_point(
-    aes(x = PC1_pvar, y = PC2_pvar, size = n / 1e6),
+    aes(size = n / 1e6),
     shape = 21,
     fill = '#56B4E9',
     alpha = 0.5
-  )
+  ) +
+  geom_point(shape=3, data=filter(plot_data, is.na(n)))
 
 plots[['var_text']] <-
   p + geom_text(
@@ -1690,8 +1800,9 @@ plot_data <-
 
 p <-
   ggplot(plot_data) +
+  geom_vline(xintercept = PARAMS$minimum_cluster_size, alpha=0.5, linetype='dashed') +
   geom_histogram(aes(length, fill = clustered), color = 'black') +
-  scale_fill_discrete(name = 'Has Cluster') +
+  scale_fill_manual(name = 'Has Cluster', values=c('#E69F00', '#56B4E9')) +
   scale_y_continuous(expand = expansion(c(0, 0.1))) +
   scale_x_log10(limits = c(segment_length_threshold, NA)) +
   xlab('Log10 Length') +
@@ -1705,13 +1816,14 @@ plots[['0_marker_unitigs_hist']] <- p
 
 p <-
   ggplot(plot_data) +
+  geom_vline(xintercept = PARAMS$minimum_cluster_size, alpha=0.5, linetype='dashed') +
   geom_point(aes(y = unitig, x = length, fill= clustered), shape=21) +
-  scale_fill_discrete(name = 'Has Cluster') +
   scale_x_log10(limits = c(segment_length_threshold, NA)) +
+  scale_fill_manual(name = 'Has Cluster', values=c('#E69F00', '#56B4E9')) +
   xlab('Log10 Length') +
   ylab('Unitig') +
   ggtitle(paste0('0 Marker Unitigs >= ', segment_length_threshold/1e6, 'Mbp')) +
-  theme_linedraw()
+  theme_light()
 
 plots[['0_marker_unitigs_point']] <- p
 
