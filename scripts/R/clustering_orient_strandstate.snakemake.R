@@ -539,6 +539,26 @@ cluster_df <-
 
 cluster_df <- remove_small_clusters(cluster_df, unitig_lengths_df, threshold = minimum_cluster_size)
 
+
+# Unclustered Warning -----------------------------------------------------
+
+unclustered_unitig_lengths <-
+  unitig_lengths_df %>% 
+  left_join(cluster_df, by='unitig') %>% 
+  filter(is.na(cluster)) %>% 
+  filter(length >= minimum_cluster_size) %>% 
+  with(set_names(length, unitig))
+
+if(length(unclustered_unitig_lengths) > 0) {
+  WARNINGS <-
+    c(
+      WARNINGS,
+      paste(
+        'There are single unitigs longer than the minimum cluster length that are unclustered! These should be investigated:',
+        unclustered_unitig_lengths
+      )
+    )
+}
 # Orientation Detection ---------------------------------------------------
 
 temp <- get_values('--unitig-orientation', null_ok=TRUE)
