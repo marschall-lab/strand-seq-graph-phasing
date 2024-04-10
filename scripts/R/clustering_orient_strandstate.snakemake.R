@@ -528,6 +528,10 @@ if(!(length(hap_clusters) %in% c(0, 2))){
   WARNINGS <- c(WARNINGS, paste('An unexpected number of hap clusters has been detected', length(hap_clusters)))
 }
 
+# Why do the hap clusters need to be grouped together? ~ To be properly phased
+# with the PAR! An ideal model says that a PAR unitig will be equally similar to
+# either the X or the Y chromosome. By combining them into one and looking at
+# exact matches, we can properly phase the PAR
 hap_name <- paste(hap_clusters, collapse='_')
 cluster_df <-
   cluster_df %>%
