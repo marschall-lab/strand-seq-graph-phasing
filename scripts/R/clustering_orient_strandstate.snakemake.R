@@ -313,7 +313,8 @@ if(length(temp) != 0) {
 }
 
 # Cluster Refinement ------------------------------------------------------
-
+# Why 0.5?
+cos_sim_threshold <- 0.5
 # Cosine Similarity Matrix ------------------------------------------------
 
 # TODO only calculate the cosine similarity mat if it is used (eg, if final
@@ -346,8 +347,8 @@ if(length(temp) != 0) {
         cosine_similarity_mat,
         cluster_df2,
         new_cluster_id = paste0('[C', prop, ']'),
-        cluster_unitig_similarity_threshold = 0.5,
-        unitig_unitig_similarity_threshold = 0.5,
+        cluster_unitig_similarity_threshold = cos_sim_threshold,
+        unitig_unitig_similarity_threshold = cos_sim_threshold,
         agg_f = coverage_weighted_mean, 
         mat_f=abs,
         na.rm=TRUE
@@ -359,8 +360,26 @@ if(length(temp) != 0) {
       bind_rows(cluster_df2)
     
     
-    cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
-    cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.5, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
+    cluster_df <-
+      merge_similar_clusters_on_components(
+        cosine_similarity_mat,
+        cluster_df,
+        components_df,
+        similarity_threshold = cos_sim_threshold,
+        agg_f = coverage_weighted_mean,
+        mat_f = abs,
+        na.rm = TRUE
+      )
+    
+    cluster_df <-
+      merge_similar_clusters(
+        cosine_similarity_mat,
+        cluster_df,
+        similarity_threshold = cos_sim_threshold,
+        agg_f = coverage_weighted_mean,
+        mat_f = abs,
+        na.rm = TRUE
+      )
     
   }
 
@@ -369,19 +388,41 @@ if(length(temp) != 0) {
   
   cat('Assigning "high-noise" unitigs using cosine similarity \n')
   
+  minimum_cluster_size <-1e7
+  cluster_df <-
+    remove_small_clusters(cluster_df, unitig_lengths_df, threshold = minimum_cluster_size)
   
-  cluster_df <- remove_small_clusters(cluster_df, unitig_lengths_df, threshold = 1e7)
-  cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
+  cluster_df <-
+    propagate_one_cluster_components(cluster_df, components_df)
   
   # cat('Cosine cluster merging\n')
-  cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
-  cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.5, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
-
+  cluster_df <-
+    merge_similar_clusters_on_components(
+      cosine_similarity_mat,
+      cluster_df,
+      components_df,
+      similarity_threshold = cos_sim_threshold,
+      agg_f = coverage_weighted_mean,
+      mat_f = abs,
+      na.rm = TRUE
+    )
+  cluster_df <-
+    merge_similar_clusters(
+      cosine_similarity_mat,
+      cluster_df,
+      similarity_threshold = cos_sim_threshold,
+      agg_f = coverage_weighted_mean,
+      mat_f = abs,
+      na.rm = TRUE
+    )
+  
   cluster_df <-
     cluster_unitigs(
       cosine_similarity_mat,
       cluster_df,
       new_cluster_id = 'C',
+      cluster_unitig_similarity_threshold = cos_sim_threshold,
+      unitig_unitig_similarity_threshold = cos_sim_threshold,
       agg_f = coverage_weighted_mean,
       mat_f=abs,
       na.rm=TRUE
@@ -399,9 +440,27 @@ if(length(temp) != 0) {
   # Sometimes, some of the newly created clusters will should be merged
   # into other components on cluster (centromere troubles especially)
 
-  cluster_df <- merge_similar_clusters_on_components(cosine_similarity_mat, cluster_df, components_df, similarity_threshold = 0.5, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
-  cluster_df <- merge_similar_clusters(cosine_similarity_mat, cluster_df, similarity_threshold = 0.5, agg_f = coverage_weighted_mean, mat_f=abs, na.rm=TRUE)
-
+  cluster_df <-
+    merge_similar_clusters_on_components(
+      cosine_similarity_mat,
+      cluster_df,
+      components_df,
+      similarity_threshold = cos_sim_threshold,
+      agg_f = coverage_weighted_mean,
+      mat_f = abs,
+      na.rm = TRUE
+    )
+  
+  cluster_df <-
+    merge_similar_clusters(
+      cosine_similarity_mat,
+      cluster_df,
+      similarity_threshold = cos_sim_threshold,
+      agg_f = coverage_weighted_mean,
+      mat_f = abs,
+      na.rm = TRUE
+    )
+  
   readr::write_tsv(
     cluster_df,
     file.path(intermediate_output_dir, 'intermediate_clusters.tsv'),
@@ -474,9 +533,11 @@ cluster_df <-
   cluster_df %>%
   mutate(cluster = ifelse(cluster %in% hap_clusters, hap_name, cluster))
 
-## Small Cluster Removal --------------------------------------------
 
-cluster_df <- remove_small_clusters(cluster_df, unitig_lengths_df, threshold = 1e7)
+
+# Small Cluster Removal --------------------------------------------
+
+cluster_df <- remove_small_clusters(cluster_df, unitig_lengths_df, threshold = minimum_cluster_size)
 
 # Orientation Detection ---------------------------------------------------
 
@@ -1010,9 +1071,12 @@ library(ggplot2)
 plots <- list()
 cluster_plots_ssf <- list()
 cluster_plots_sim <- list()
-cluster_plots_ndp <- list()
 
-## SSF Barcodes ------------------------------------------------------------
+## SSF ---------------------------------------------------------------------
+
+
+
+### SSF Barcodes ------------------------------------------------------------
 
 ssf_counts_df <-
   orient_counts(counts_df, strand_orientation_clusters_df) %>%
@@ -1101,9 +1165,7 @@ for(clust in stringr::str_sort(pull_distinct(plot_data, cluster), numeric = TRUE
 }
 
 
-## SSF Histograms ----------------------------------------------------------
-
-## Marker Count SSF Histogram ----------------------------------------------
+### SSF Histograms ----------------------------------------------------------
 
 p <-
   marker_counts %>% 
@@ -1122,7 +1184,58 @@ p <-
 
 plots[['ssfh']] <- p
 
-## Cosine Similarity Heatmaps ----------------------------------------------
+
+
+## Cosine Similarity -------------------------------------------------------
+
+
+### Cosine Similarity Densities ---------------------------------------------
+plot_data <-
+  cosine_similarity_mat %>% 
+  as_tibble(rownames = 'unitig_1') %>% 
+  tidyr::pivot_longer(-unitig_1, names_to = 'unitig_2', values_to = 'sim') %>% 
+  left_join(cluster_df, by=c('unitig_1'='unitig')) %>% 
+  dplyr::rename(cluster_1=cluster) %>% 
+  left_join(cluster_df, by=c('unitig_2'='unitig')) %>% 
+  dplyr::rename(cluster_2=cluster)
+
+plot_data <-
+  plot_data %>% 
+  mutate(comparison = ifelse(cluster_1 == cluster_2, 'Within Cluster', 'Between Cluster')) %>% 
+  filter(unitig_1 != unitig_2) %>% 
+  filter(!duplicated(map2(unitig_1, unitig_2, function(x,y) sort(c(x,y))))) 
+  
+p <-
+  ggplot(plot_data) +
+  geom_histogram(aes(abs(sim), fill=comparison), binwidth = 0.01) +
+  geom_vline(xintercept = cos_sim_threshold, linetype='dashed') +
+  scale_fill_manual(name=NULL, values=c('#E69F00', '#56B4E9')) +
+  scale_y_continuous(expand = expansion(c(0, 0.1)), n.breaks = 10) +
+  scale_x_continuous(expand = expansion(0), limits=c(0,1), n.breaks = 10) +
+  ylab('N') +
+  xlab('Absolute Cosine Similarity') +
+  ggtitle('Absolute Cosine Similarity Histogram')  +
+  theme_classic()
+
+plots[['sim_hist']] <- p
+
+p <-
+  ggplot(plot_data) +
+  geom_rug(aes(abs(sim))) +
+  geom_density(aes(abs(sim), fill=comparison)) +
+  geom_vline(xintercept = cos_sim_threshold, linetype='dashed') +
+  facet_wrap(~comparison) +
+  scale_fill_manual(guide='none', values=c('#E69F00', '#56B4E9')) +
+  scale_x_continuous(expand = expansion(0), n.breaks = 9, limits = c(0,1)) +
+  ylab('Density') +
+  xlab('Absolute Cosine Similarity') +
+  ggtitle('Absolute Cosine Similarity Densities')  +
+  theme_classic() +
+  theme(panel.background = element_rect(fill=NA, color='black', size=1))
+
+plots[['sim_dens']] <- p
+
+### Cosine Similarity Heatmaps ----------------------------------------------
 
 make_cosine_sim_plot_data <- function(cosine_similarity_mat) {
   plot_data <-
@@ -1310,7 +1423,7 @@ plots <- c(plots,
 
 
 
-# Close Up Cosine Similarity Plots ----------------------------------------
+## Close Up Cosine Similarity Plots ----------------------------------------
 
 make_cosine_sim_cluster_heatmap_plots <-
   function(cosine_similarity_mat,
@@ -1379,6 +1492,46 @@ cluster_plots_sim <-
 
 
 ## Phasing Planes ----------------------------------------------------------
+
+
+### Variation Scatter -------------------------------------------------------
+cluster_sizes <-
+  cluster_df %>% 
+  left_join(unitig_lengths_df, by='unitig') %>% 
+  count(cluster, wt=length)
+
+plot_data <-
+  pca_perc_var_df %>% 
+  left_join(cluster_sizes, by='cluster') 
+
+p <-
+  plot_data %>% 
+  ggplot() +
+  geom_abline(intercept = 100, slope=-1, alpha=0.5) +
+  geom_hline(yintercept=hap_threshold*100, alpha=0.5, linetype='dashed') +
+  xlab('PC1 %Variance') +
+  ylab('PC2 %Variance') +
+  ggtitle('First Two Principal Components Variation Scatter Plot') +
+  scale_size_area(name='Cluster Size (Mbp)') +
+  scale_y_continuous(n.breaks = 10) +
+  scale_x_continuous(n.breaks = 10) +
+  theme_light()
+
+plots[['var_points']] <-
+  p + geom_point(
+    aes(x = PC1_pvar, y = PC2_pvar, size = n / 1e6),
+    shape = 21,
+    fill = '#56B4E9',
+    alpha = 0.5
+  )
+
+plots[['var_text']] <-
+  p + geom_text(
+    aes(x = PC1_pvar, y = PC2_pvar, label=cluster),
+    alpha = 0.5
+  )
+
+### Unitig Scatter ----------------------------------------------------------
 
 facet_labeller <- function(x) {
   x %>% 
