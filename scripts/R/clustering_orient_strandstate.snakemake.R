@@ -569,7 +569,7 @@ unclustered_unitig_lengths <-
   unitig_lengths_df %>% 
   left_join(cluster_df, by='unitig') %>% 
   filter(is.na(cluster)) %>% 
-  filter(length >= PARAMS$minimum_cluster_size) %>% 
+  filter(length >= PARAMS$minimum_cluster_size * 0.4) %>% 
   with(set_names(length, unitig))
 
 if(length(unclustered_unitig_lengths) > 0) {
@@ -577,8 +577,8 @@ if(length(unclustered_unitig_lengths) > 0) {
     c(
       WARNINGS,
       paste(
-        'There are single unitigs longer than the minimum cluster length that are unclustered! These should be investigated:',
-        unclustered_unitig_lengths
+        'There are single unitigs longer than 40% the minimum cluster length that are unclustered! These should be investigated:',
+        names(unclustered_unitig_lengths)
       )
     )
 }
