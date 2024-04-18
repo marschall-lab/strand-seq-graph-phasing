@@ -511,12 +511,12 @@ rule count_haplotype_markers:
         script = get_script_path('R','clustering_orient_strandstate.snakemake.R'),
         il = lambda wildcards: get_optional_phasing_input(wildcards,'included_libraries.tsv'),
         ic = lambda wildcards: get_optional_phasing_input(wildcards,'initial_clusters.tsv'),
+        rc= lambda wildcards: get_optional_phasing_input(wildcards,'refined_clusters.tsv'),
         fc = lambda wildcards: get_optional_phasing_input(wildcards,'final_clusters.tsv'),
         uo = lambda wildcards: get_optional_phasing_input(wildcards,'unitig_orientation.tsv'),
         cm = lambda wildcards: get_optional_phasing_input(wildcards,'counting_methods.tsv')
     # singularity: singularity_r_env
     conda: 'envs/env_R-COS.yaml'
-    threads: 1
     resources:
         mem_mb=calc_mem(12),
         walltime=calc_walltime()
@@ -530,11 +530,10 @@ rule count_haplotype_markers:
         --fastmap-counts {input.fastmap} \\
         --connected-components {input.connected_components} \\
         --segment-length-threshold {params.segment_length_threshold} \\
-        --cluster-PAR-with-haploid {params.cluster_PAR_with_haploid} \\
-        --threads {threads} \\
         --intermediate-output-dir {output.imo} \\
         --included-libraries {params.il} \\
         --initial-clusters {params.ic} \\
+        --refined-clusters {params.rc} \\
         --final-clusters {params.fc} \\
         --unitig-orientation {params.uo} \\
         --counting-methods {params.cm} \\
