@@ -22,3 +22,4 @@ dependencies:
     - r-tidyverse>=1.3.2
     - r-factominer
     - r-furrr
+    - r-coop

@@ -1,19 +1,5 @@
 # Functions ---------------------------------------------------------------
 
-# Spoofing for contibait functions to work
-spoof_range <- function(x) {
-  return(paste0(x, ':0-0'))
-}
-
-spoof_rownames <- function(mat) {
-  rownames(mat) <- spoof_range(rownames(mat))
-  return(mat)
-}
-
-strip_range <- function(x) {
-  return(stringr::str_remove(x, ':.*$'))
-}
-
 unproject_prcomp <- function(x, pca, name = 'lib', value = 'wc_ssf') {
   # From: http://factominer.free.fr/question/FAQ.html
   loadings <- sweep(pca$var$coord, 2,sqrt(pca$eig[1:ncol(pca$var$coord),1]),FUN="/")
@@ -50,31 +36,6 @@ make_bandage_colors <- function(color_hex, counts_1, counts_2) {
   color <- rgb(rgb_color[1], rgb_color[2], rgb_color[3], maxColorValue=255)
 
   return(color)
-}
-
-# Coverage weighted mean
-cwm_ <- function(unitig_coverage) {
-  unitig_coverage <- unitig_coverage
-  cwm<- function(mat, weight_f = sum, mat_f = identity, na.rm=FALSE) {
-    stopifnot(!is.null(rownames(mat)))
-    stopifnot(!is.null(colnames(mat)))
-    
-    weights <- matrix(nrow = nrow(mat), ncol = ncol(mat))
-    dimnames(weights) <- dimnames(mat)
-    for(unitig_1 in rownames(weights)) {
-      for(unitig_2 in colnames(weights)) {
-        weight_1 <- unitig_coverage[unitig_1]
-        weight_2 <- unitig_coverage[unitig_2]
-        weights[unitig_1, unitig_2] <- weight_f(weight_1, weight_2)
-      }
-    }
-    
-    mat <- mat_f(mat)
-    out <- weighted.mean(mat, weights, na.rm=na.rm)
-    return(out)
-  }
-  
-  return(cwm)
 }
 
 # make alpha-numeric factor
@@ -150,6 +111,7 @@ library(purrr)
 
 source(file.path(get_script_dir(), "module_utils/utils.R"))
 source(file.path(get_script_dir(), "module_utils/phasing_utils.R"))
+source(file.path(get_script_dir(), "module_utils/faster_phasing_utils.R"))
 # Parsing -----------------------------------------------------------------
 ## Expected Args
 expected_args <-
@@ -164,9 +126,7 @@ expected_args <-
     '--output-lib',
     
     ## Params
-    '--segment-length-threshold',
-    '--cluster-PAR-with-haploid',
-    '--threads'
+    '--segment-length-threshold'
   )
 
 stopifnot(all(expected_args %in% args))
@@ -177,14 +137,10 @@ fastmap_counts <- get_values("--fastmap-counts", singular=FALSE)
 connected_components <- get_values('--connected-components', singular=TRUE)
 
 ## Parameters
-segment_length_threshold <- as.numeric(get_values('--segment-length-threshold'), singular=TRUE)
-cluster_PAR_with_haploid <- as.logical(get_values('--cluster-PAR-with-haploid', singular=TRUE))
-n_threads <- as.numeric(get_values('--threads'))
-stopifnot(n_threads >= 1)
+segment_length_threshold <- as.numeric(get_values('--segment-length-threshold', singular=TRUE))
 
 ## Output
 intermediate_output_dir <- get_values('--intermediate-output-dir')
-
 output_counts <- get_values('--output-marker-counts')
 output_lib <- get_values('--output-lib')
 
@@ -193,19 +149,34 @@ output_lib <- get_values('--output-lib')
 
 #TODO add QC Params
 PARAMS <- list(
+  # To filter out unitigs from the start
   segment_length_threshold = segment_length_threshold,
+  
   # To compute the SSF
   min_n_mem = 10,
   min_n_fm = 4,
+  
   # To compute cosine similarity
   min_overlaps = 5,
+  
   # To cluster
   cos_sim_threshold = 0.5,
+  cluster_max_batch_size = 1000,
+  
   # Remove clusters smaller than
-  minimum_cluster_size = 1e7,
+  minimum_cluster_size = 25e6,
+  # TODO add a cluster size threshold for removing clusters before and after
+  # haploid merging.
+  
   # To call a cluster as haploid
-  hap_pc2_var_threshold = 0.20
+  haploid_detetection_mode = 'pca',
+  hap_pc2_var_threshold = 0.20,
+  
+  # Diagnostic parameter: controls plotting and warning
+  minimum_size_expect_clustered = 250e3# 25e6 * 0.4
 )
+
+stopifnot(PARAMS$haploid_detetection_mode %in%  c('ssf', 'pca'))
 
 # Import ------------------------------------------------------------------
 
@@ -262,15 +233,11 @@ unitig_coverage_df <-
 unitig_coverage <-
   with(unitig_coverage_df, set_names(coverage, unitig))
 
-coverage_weighted_mean <- cwm_(unitig_coverage)
-
 # SSF Matrix --------------------------------------------------------------
-
-#TODO make this parameter more visible. Explain why only 10
 
 ssf_mat <-
   counts_df %>%
-  with(make_wc_matrix(w, c, lib, unitig, min_n=PARAMS$min_n_mem))
+  make_ssf_mat(min_n=PARAMS$min_n_mem)
 
 # Library QC --------------------------------------------------------------
 
@@ -285,7 +252,7 @@ cat('Running contiBAIT QC\n')
 strand.states <-
   preprocessStrandTable(
     strand.freq,
-    lowQualThreshold = 0.7,
+    lowQualThreshold = 0.8,
     minLib = 10
   )
 
@@ -331,77 +298,74 @@ if(length(temp) != 0) {
 }
 
 # Cluster Refinement ------------------------------------------------------
-# Why 0.5?
+
 # Cosine Similarity Matrix ------------------------------------------------
 
 # TODO only calculate the cosine similarity mat if it is used (eg, if final
 # clusters and strand orientation is provided)
-
 cosine_similarity_mat <-
-  pairwise_complete_cosine_similarity(ssf_mat, min_overlaps = PARAMS$min_overlaps)
+  pwc_cos_sim(ssf_mat, min_overlaps = PARAMS$min_overlaps)
 
-# TODO addd back micro cluster on component removal?
+weights <- with(unitig_coverage_df, set_names(coverage, unitig))
 
-temp <- get_values('--final-clusters', null_ok=TRUE)
+# TODO add back micro cluster on component removal?
+temp <- get_values('--refined-clusters', null_ok=TRUE)
 if(length(temp) != 0) {
-  cat('Importing final clustering.\n')
+  cat('Importing refined clustering.\n')
   cluster_df <-
     readr::read_tsv(temp, col_names = c('cluster', 'unitig'), col_types = 'cc')
 } else {
-  
-  for(prop in seq(0.1, 1, 0.1)) {
+
+  n_batches <- max(5, ceiling(nrow(cluster_df)/PARAMS$cluster_max_batch_size))
+  props <- seq(0, 1, length.out = n_batches + 1)[-1]
+
+  for(prop in props) {
+    print(prop)
+    
     cluster_df2 <-
       cluster_df %>% 
-      left_join(unitig_coverage_df) %>% 
-      left_join(tibble::enframe(strand.states$contigQA, 'unitig', 'qual')) %>% 
+      left_join(unitig_coverage_df, by='unitig') %>% 
+      left_join(tibble::enframe(strand.states$contigQA, 'unitig', 'qual'), by='unitig') %>% 
+      mutate(qual = round(qual, digits = 1)) %>% 
       slice_max(tibble(qual, coverage), prop = prop) %>% 
       select(cluster, unitig)
     
+    c_id <- paste0(which(props == prop), '.', n_batches)
+    
     cluster_df2 <-
-      cluster_unitigs(
-        cosine_similarity_mat,
+      cluster_unitigs_2(
         cluster_df2,
-        new_cluster_id = paste0('(C', prop, ')'),
-        cluster_unitig_similarity_threshold = PARAMS$cos_sim_threshold,
-        unitig_unitig_similarity_threshold = PARAMS$cos_sim_threshold,
-        agg_f = coverage_weighted_mean, 
-        mat_f=abs,
-        na.rm=TRUE
+        abs(cosine_similarity_mat),
+        weights,
+        new_cluster_id = paste0('(C', c_id, ')'),
+        sim_threshold_cu = PARAMS$cos_sim_threshold,
+        sim_threshold_uu = PARAMS$cos_sim_threshold
       )
-
     
     cluster_df <-
       anti_join(cluster_df, cluster_df2, by='unitig') %>% 
       bind_rows(cluster_df2)
-    
-    
-    cluster_df <-
-      merge_similar_clusters_on_components(
-        cosine_similarity_mat,
-        cluster_df,
-        components_df,
-        similarity_threshold = PARAMS$cos_sim_threshold,
-        agg_f = coverage_weighted_mean,
-        mat_f = abs,
-        na.rm = TRUE
-      )
-    
-    cluster_df <-
-      merge_similar_clusters(
-        cosine_similarity_mat,
-        cluster_df,
-        similarity_threshold = PARAMS$cos_sim_threshold,
-        agg_f = coverage_weighted_mean,
-        mat_f = abs,
-        na.rm = TRUE
-      )
-    
-  }
 
+    cluster_df <-
+      merge_similar_clusters_on_components_2(
+        cluster_df,
+        abs(cosine_similarity_mat),
+        weights,
+        components_df,
+        PARAMS$cos_sim_threshold
+      )
+    
+    cluster_df <-
+      merge_similar_clusters_2(
+        cluster_df,
+        abs(cosine_similarity_mat),
+        weights,
+        PARAMS$cos_sim_threshold
+      )
+   
+  }
   
-  ## Cosine Unassigned -----------------------------------------------------
-  
-  cat('Assigning "high-noise" unitigs using cosine similarity \n')
+  cat('Final Refinement \n')
   
   cluster_df <-
     remove_small_clusters(cluster_df,
@@ -411,75 +375,40 @@ if(length(temp) != 0) {
   cluster_df <-
     propagate_one_cluster_components(cluster_df, components_df)
   
-  # cat('Cosine cluster merging\n')
-  cluster_df <-
-    merge_similar_clusters_on_components(
-      cosine_similarity_mat,
+  cluster_df <- 
+    cluster_unitigs_2(
       cluster_df,
+      abs(cosine_similarity_mat),
+      weights,
+      new_cluster_id = paste0('C'),
+      sim_threshold_cu = PARAMS$cos_sim_threshold,
+      sim_threshold_uu = PARAMS$cos_sim_threshold
+    )
+  
+  cluster_df <-
+    merge_similar_clusters_on_components_2(
+      cluster_df,
+      abs(cosine_similarity_mat),
+      weights,
       components_df,
-      similarity_threshold = PARAMS$cos_sim_threshold,
-      agg_f = coverage_weighted_mean,
-      mat_f = abs,
-      na.rm = TRUE
-    )
-  cluster_df <-
-    merge_similar_clusters(
-      cosine_similarity_mat,
-      cluster_df,
-      similarity_threshold = PARAMS$cos_sim_threshold,
-      agg_f = coverage_weighted_mean,
-      mat_f = abs,
-      na.rm = TRUE
+      PARAMS$cos_sim_threshold
     )
   
   cluster_df <-
-    cluster_unitigs(
-      cosine_similarity_mat,
+    merge_similar_clusters_2(
       cluster_df,
-      new_cluster_id = 'C',
-      cluster_unitig_similarity_threshold = PARAMS$cos_sim_threshold,
-      unitig_unitig_similarity_threshold = PARAMS$cos_sim_threshold,
-      agg_f = coverage_weighted_mean,
-      mat_f=abs,
-      na.rm=TRUE
-    )
-
-  
-  ## POCC-----------------------------------------------------------
-  
-  cat('Propagating one cluster components\n')
-  cluster_df <- propagate_one_cluster_components(cluster_df, components_df)
-  
-  ## Cosine Cluster Merging ----------------------------------------------------
-  
-  cat('Cosine cluster merging\n')
-  # Sometimes, some of the newly created clusters will should be merged
-  # into other components on cluster (centromere troubles especially)
-
-  cluster_df <-
-    merge_similar_clusters_on_components(
-      cosine_similarity_mat,
-      cluster_df,
-      components_df,
-      similarity_threshold = PARAMS$cos_sim_threshold,
-      agg_f = coverage_weighted_mean,
-      mat_f = abs,
-      na.rm = TRUE
+      abs(cosine_similarity_mat),
+      weights,
+      PARAMS$cos_sim_threshold
     )
   
   cluster_df <-
-    merge_similar_clusters(
-      cosine_similarity_mat,
-      cluster_df,
-      similarity_threshold = PARAMS$cos_sim_threshold,
-      agg_f = coverage_weighted_mean,
-      mat_f = abs,
-      na.rm = TRUE
-    )
-  
+    remove_small_clusters(cluster_df,
+                          unitig_lengths_df,
+                          threshold = PARAMS$minimum_cluster_size)
   readr::write_tsv(
     cluster_df,
-    file.path(intermediate_output_dir, 'intermediate_clusters.tsv'),
+    file.path(intermediate_output_dir, 'refined_clusters.tsv'),
     col_names = FALSE
   )
 }
@@ -488,80 +417,118 @@ if(length(temp) != 0) {
 
 # Haploid Chromosomes -----------------------------------------------------
 
-em_counts <-
-  exact_match_counts_df %>%
-  left_join(cluster_df, by='unitig') %>% 
-  arrange(cluster, unitig, lib) %>%
-  split(.$cluster)
+temp <- get_values('--final-clusters', null_ok=TRUE)
+if(length(temp) != 0) {
+  cat('Importing final clustering.\n')
+  cluster_df <-
+    readr::read_tsv(temp, col_names = c('unitig', 'cluster'), col_types = 'cc')
+} else { 
+  
+  # Remove cluster with no fastmap ssf values:
+  em_counts <-
+    exact_match_counts_df %>%
+    left_join(cluster_df, by='unitig') %>% 
+    arrange(cluster, unitig, lib) %>%
+    split(.$cluster)
+  
+  em_ssf_mats <- 
+    map(em_counts, function(x) {
+      make_ssf_mat(x, min_n=PARAMS$min_n_fm)
+      # with(x, make_wc_matrix(w, c, lib, unitig, min_n=PARAMS$min_n_fm))
+    })
+  
+  # Concatenate with inverted unitigs
+  em_ssf_mats_inverted <-
+    map(em_ssf_mats, `*`, -1) %>% 
+    map(function(x) {
+      rownames(x) <- paste0(rownames(x), '_inverted')
+      return(x)
+    })
+  
+  em_ssf_mats <- map2(em_ssf_mats, em_ssf_mats_inverted, rbind)
+  
+  em_ssf_mats <-
+    em_ssf_mats %>% 
+    # filling with 0s doesn't seem to affect first PC too much, compared to
+    # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
+    map(function(x) {
+      x[is.na(x)] <- 0 
+      return(x)
+    }) 
+  
+  # TODO if a cluster is detected as haploid. Save this plot? So before and after can be seen?
+  prcomps_unoriented <-
+    em_ssf_mats %>% 
+    map(function(x){
+      row_weights <- with(unitig_lengths_df, set_names(length, unitig))
+      col_weights <- with(strand.states$qualList, set_names(quality, library))
+      row_weights <- row_weights[gsub('_inverted$', '', rownames(x))]
+      col_weights <- col_weights[colnames(x)]
+      out <- FactoMineR::PCA(x, ncp = 2, row.w = row_weights, col.w = col_weights,  graph = FALSE)
+      return(out)
+    })
+  
+  component_percent_variances <- 
+    prcomps_unoriented %>% 
+    map(function(x) x$eig[1:2, 2])
+  
+  # clusters with NaN for both percentage variances are ones where there is no
+  # variation in the ssf mats. EG, likely the value in every cell is 0.
+  clusters_to_remove <-
+    component_percent_variances %>% 
+    keep(function(x) all(is.nan(x))) %>% 
+    names()
+  
+  cluster_df <-
+    cluster_df %>% 
+    mutate(cluster = ifelse(cluster %in% clusters_to_remove, NA, cluster))
+  
+  component_percent_variances <-
+    component_percent_variances[setdiff(names(component_percent_variances), clusters_to_remove)]
+  
+  if(PARAMS$haploid_detetection_mode == 'ssf') {
+    # TODO develop this direction for hifi only graphs?
+    clusters <-
+      cluster_df %>%
+      filter(!is.na(cluster)) %>%
+      with(split(unitig, cluster))
 
-em_ssf_mats <- 
-  map(em_counts, function(x) {
-    with(x, make_wc_matrix(w, c, lib, unitig, min_n=PARAMS$min_n_fm)) 
-  })
+    clusters <-
+      map(clusters, function(x) {
+        intersect(x, rownames(strand.states$strandMatrix))
+        })
 
-# Concatenate with inverted unitigs
-em_ssf_mats_inverted <-
-  map(em_ssf_mats, `*`, -1) %>% 
-  map(function(x) {
-    rownames(x) <- paste0(rownames(x), '_inverted')
-    return(x)
-  })
+    renamed_clusters <- 
+      findSexGroups(clusters, strand.states$strandMatrix, callThreshold = 0.3)
+    
+    detected_hap <- grepl('^sex', names(renamed_clusters))
+    
+    hap_clusters <- 
+      names(clusters)[detected_hap]
+    
+  } else {
+    # TODO add final clusters threshold
+    hap_clusters <-
+      component_percent_variances %>% 
+      keep(function(x) x['comp 2'] <= PARAMS$hap_pc2_var_threshold * 100) %>% 
+      names()
+  }
+  
+  if(!(length(hap_clusters) %in% c(0, 2))){
+    WARNINGS <- c(WARNINGS, paste('An unexpected number of hap clusters has been detected', length(hap_clusters)))
+  }
+  
+  # Why do the hap clusters need to be grouped together? ~ To be properly phased
+  # with the PAR! An ideal model says that a PAR unitig will be equally similar to
+  # either the X or the Y chromosome. By combining them into one and looking at
+  # exact matches, we can properly phase the PAR
+  hap_name <- paste(hap_clusters, collapse='_')
+  cluster_df <-
+    cluster_df %>%
+    mutate(cluster = ifelse(cluster %in% hap_clusters, hap_name, cluster))
 
-em_ssf_mats <- map2(em_ssf_mats, em_ssf_mats_inverted, rbind)
+  }
 
-em_ssf_mats <-
-  em_ssf_mats %>% 
-  # filling with 0s doesn't seem to affect first PC too much, compared to
-  # probabilistic or Bayesian PCA (from pcaMethods bioconductor package)
-  map(function(x) {
-    x[is.na(x)] <- 0 
-    return(x)
-  }) 
-
-# TODO if a cluster is detected as haploid. Save this plot? So before and after can be seen?
-prcomps_unoriented <-
-  em_ssf_mats %>% 
-  map(function(x){
-    row_weights <- with(unitig_lengths_df, set_names(length, unitig))
-    col_weights <- with(strand.states$qualList, set_names(quality, library))
-    row_weights <- row_weights[gsub('_inverted$', '', rownames(x))]
-    col_weights <- col_weights[colnames(x)]
-    out <- FactoMineR::PCA(x, ncp = 2, row.w = row_weights, col.w = col_weights,  graph = FALSE)
-    return(out)
-  })
-
-component_percent_variances <- 
-  prcomps_unoriented %>% 
-  map(function(x) x$eig[1:2, 2])
-
-
-
-hap_clusters <-
-  component_percent_variances %>% 
-  keep(function(x) x['comp 2'] <= PARAMS$hap_pc2_var_threshold * 100) %>% 
-  names()
-
-if(!(length(hap_clusters) %in% c(0, 2))){
-  WARNINGS <- c(WARNINGS, paste('An unexpected number of hap clusters has been detected', length(hap_clusters)))
-}
-
-# Why do the hap clusters need to be grouped together? ~ To be properly phased
-# with the PAR! An ideal model says that a PAR unitig will be equally similar to
-# either the X or the Y chromosome. By combining them into one and looking at
-# exact matches, we can properly phase the PAR
-hap_name <- paste(hap_clusters, collapse='_')
-cluster_df <-
-  cluster_df %>%
-  mutate(cluster = ifelse(cluster %in% hap_clusters, hap_name, cluster))
-
-
-
-# Small Cluster Removal --------------------------------------------
-
-cluster_df <-
-  remove_small_clusters(cluster_df,
-                        unitig_lengths_df,
-                        threshold = PARAMS$minimum_cluster_size)
 
 # Unclustered Warning -----------------------------------------------------
 
@@ -569,7 +536,7 @@ unclustered_unitig_lengths <-
   unitig_lengths_df %>% 
   left_join(cluster_df, by='unitig') %>% 
   filter(is.na(cluster)) %>% 
-  filter(length >= PARAMS$minimum_cluster_size * 0.4) %>% 
+  filter(length >= PARAMS$minimum_size_expect_clustered) %>% 
   with(set_names(length, unitig))
 
 if(length(unclustered_unitig_lengths) > 0) {
@@ -577,7 +544,7 @@ if(length(unclustered_unitig_lengths) > 0) {
     c(
       WARNINGS,
       paste(
-        'There are single unitigs longer than 40% the minimum cluster length that are unclustered! These should be investigated:',
+        'There are single unitigs longer than ', PARAMS$minimum_size_expect_clustered, ' bp that are unclustered! These should be investigated:',
         names(unclustered_unitig_lengths)
       )
     )
@@ -641,11 +608,11 @@ if(length(temp) != 0) {
   
   ## Hclust ------------------------------------------------------------------
   
-  
   strand_orientation_clusters_df<-
     imap(cluster_cosine_similarities, function(x, nm){
       cat('Detecting Orientations in Cluster: ', nm, '\n')
-      return(pairwise_complete_hclust_n(x, n=2, agg_f=coverage_weighted_mean, na.rm=TRUE))
+      return(get_strand_orientation_clusters(x, weights))
+      # return(pairwise_complete_hclust_n(x, n=2, agg_f=coverage_weighted_mean, na.rm=TRUE))
     }) 
 
   strand_orientation_clusters_df <-
@@ -682,12 +649,13 @@ if(length(temp) != 0) {
 # Phase Chromosomes -------------------------------------------------------
 cat('Computing marker counts\n')
 
+# TODO Add back in specific one-haplotype phasing?
 ## Orient Counts -----------------------------------------------------------
 
 exact_match_counts_df <-
   orient_counts(exact_match_counts_df, strand_orientation_clusters_df)
-#
-# ## Principal Components ----------------------------------------------------
+
+## Principal Components ----------------------------------------------------
 # TODO modify this so that all PCAs are note recomputed and only new clusters
 # are recomputed.
 
@@ -700,7 +668,8 @@ em_counts <-
 
 em_ssf_mats <- 
   map(em_counts, function(x) {
-    with(x, make_wc_matrix(w, c, lib, unitig, min_n=PARAMS$min_n_fm)) 
+    make_ssf_mat(x, min_n=PARAMS$min_n_fm)
+    # with(x, make_wc_matrix(w, c, lib, unitig, min_n=PARAMS$min_n_fm)) 
   })
 
 # Concatenate with inverted unitigs
@@ -810,9 +779,6 @@ projected_wc_vectors_rbc <-
     
     # Sometimes, noise can lead to a unitig to appear almost improperly
     # oriented.
-    # allowed_unitigs <- rownames(ww_signs)[ww_signs == 1]
-    # wc_projections <- wc_projections[allowed_unitigs, ,drop=FALSE]
-    
     max_pos_unitig <- rownames(projections)[which.max(projections)]
     max_neg_unitig <- rownames(projections)[which.min(projections)]
     # break ties
@@ -1123,11 +1089,10 @@ readr::write_csv(library_weights, output_lib)
 library(ggplot2)
 
 plots <- list()
-cluster_plots_ssf <- list()
-cluster_plots_sim <- list()
 
-## Lengths -----------------------------------------------------------------
-# Dual ECDF plots
+
+## Length ECDF -------------------------------------------------------------
+
 plot_data <-
   unitig_lengths_df %>% 
   arrange(length) %>% 
@@ -1148,7 +1113,8 @@ plot_data <-
 
 p <-
   ggplot(plot_data) +
-  geom_vline(xintercept = segment_length_threshold, alpha=0.5, linetype='dashed') +
+  geom_vline(xintercept = PARAMS$segment_length_threshold, alpha=0.5, linetype='dashed') +
+  geom_vline(xintercept = PARAMS$minimum_size_expect_clustered, alpha=0.5) +
   geom_step(aes(x=length, y=percent, color=metric)) +
   scale_color_manual(name=NULL, values=c('#E69F00', '#56B4E9')) +
   scale_x_log10(n.breaks = 10) +
@@ -1160,6 +1126,9 @@ p <-
   
 
 plots[['length_ecdf']] <- p
+
+
+## Length - Passing Libs ---------------------------------------------------
 
 
 plot_data <-
@@ -1200,426 +1169,108 @@ p <-
 
 plots[['length_n_lib']] <- p
 
-## SSF ---------------------------------------------------------------------
 
+## Haplotype Markers SSF Histogram -------------------------------------------
 
-
-### SSF Barcodes ------------------------------------------------------------
-
-ssf_counts_df <-
-  orient_counts(counts_df, strand_orientation_clusters_df) %>%
-  filter(!is.na(w) & !is.na(c))
-
-ssf_counts_df <-
-  ssf_counts_df %>%
-  bind_rows(anti_join(counts_df, ssf_counts_df, by = 'unitig'))
-
-ssf_counts_df <-
-  ssf_counts_df %>%
-  mutate(ssf = (w - c) / n)
-
-plot_data <-
-  ssf_counts_df %>%
-  left_join(cluster_df, by = 'unitig') %>%
-  mutate(cluster = coalesce(cluster, unitig)) %>% 
-  mutate(cluster = manf(cluster))
-
-plot_data <-
-  full_join(plot_data, long_unitigs_df) %>% 
-  mutate(unitig = manf(unitig))
-
-p <-
-ggplot(plot_data) +
-  geom_raster(aes(x = lib, y = unitig, fill = ssf)) +
-  scale_fill_viridis_c(limits = c(-1, 1),  option = 'E', na.value = 'darkred') +
-  scale_x_discrete(expand = expansion()) +
-  scale_y_discrete(expand = expansion()) +
-  ggtitle('SSF Values') +
-  xlab('Library') +
-  ylab('Cluster/Unitig') +
-  theme_classic() +
-  theme(
-    axis.text.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.ticks.y = element_blank(),
-    panel.spacing.y = unit(2, 'points'),
-    strip.text.y.left = element_text(angle = 0, size = 7)
-  )
-
-p1 <-
-  p + 
-  facet_grid(rows = vars(cluster),
-             switch = 'y',
-             scales = 'free_y',
-             space = 'free') 
-
-p2 <-
-  p + 
-  facet_grid(rows = vars(cluster),
-             switch = 'y',
-             scales = 'free_y') 
-
-plots[['ssfb1']] <- p1
-plots[['ssfb2']] <- p2
-
-
-### SSF Barcode by Cluster --------------------------------------------------
-
-# TODO height of each bar ~ size of unitig
-for(clust in stringr::str_sort(pull_distinct(plot_data, cluster), numeric = TRUE)) {
-  p <-
-    plot_data %>%
-    filter(cluster == clust) %>%
-    ggplot() +
-    geom_raster(aes(x = lib, y = unitig, fill = ssf)) +
-    scale_fill_viridis_c(limits = c(-1, 1),  option = 'E', na.value = 'darkred') +
-    facet_grid(cols = vars(cluster),
-               switch = 'y',
-               scales = 'free_y') +
-    scale_x_discrete(expand = expansion()) +
-    scale_y_discrete(expand = expansion()) +
-    ggtitle('SSF Values') +
-    xlab('Library') +
-    ylab('Unitig') +
-    theme_classic() +
-    theme(
-      panel.spacing.y = unit(2, 'points'),
-      strip.text.y.left = element_text(angle = 0, size = 7),
-      axis.text.x = element_text(angle = 360-90, hjust=0, vjust=0.5)
-    )
-
-  cluster_plots_ssf[[paste0('ssfb_', clust)]] <- p
-}
-
-
-### SSF Histograms ----------------------------------------------------------
-
-p <-
+plot_data <- 
   marker_counts %>% 
   filter(!is.na(cluster)) %>% 
-  mutate(cluster = manf(cluster)) %>% 
-  ggplot() +
-  geom_histogram(aes(ssf)) +
+  filter(n > 0) %>% 
+  mutate(cluster = manf(cluster))
+
+p <-
+  plot_data %>% 
+  ggplot()  +
   facet_wrap(~cluster, scales = 'free_y') +
-  scale_x_continuous(limits = c(-1, 1)) +
+  # scale_x_continuous(limits = c(-1, 1)) + # why does this lead to values being discarded? I don't know!
   scale_y_continuous(expand = expansion(c(0, 0.1))) +
+  xlab('Haplotype Marker SSF') +
+  ylab('N') + 
+  ggtitle('Haplotype Marker SSF Histograms (n > 0)') +
   theme_light() +
   theme(
     strip.background = element_rect(fill='NA', color='grey'),
     strip.text = element_text(color='black')
   )
 
-plots[['ssfh']] <- p
+plots[['ssfh']] <- p + geom_histogram(aes(ssf), center=0, binwidth = 0.05)
+
+plots[['ssfh_weighted']] <- 
+  p + 
+  geom_histogram(aes(ssf, weight=length/1e6), center=0, binwidth = 0.05) +
+  ylab('Mbp')
 
 
 
 ## Cosine Similarity -------------------------------------------------------
 
 
-### Cosine Similarity Densities ---------------------------------------------
+### Cosine Similarity Histograms ---------------------------------------------
+
+upper_tri_ix_mat <-
+  which(upper.tri(cosine_similarity_mat, diag = FALSE), arr.ind = TRUE)
+
 plot_data <-
-  cosine_similarity_mat %>% 
-  as_tibble(rownames = 'unitig_1') %>% 
-  tidyr::pivot_longer(-unitig_1, names_to = 'unitig_2', values_to = 'sim') %>% 
+  tibble(
+    unitig_1 = rownames(cosine_similarity_mat)[upper_tri_ix_mat[, 1]],
+    unitig_2 = colnames(cosine_similarity_mat)[upper_tri_ix_mat[, 2]],
+    sim = cosine_similarity_mat[upper_tri_ix_mat]
+    ) # %>% 
+  # cosine_similarity_mat %>% 
+  # as_tibble(rownames = 'unitig_1') %>% 
+  # tidyr::pivot_longer(-unitig_1, names_to = 'unitig_2', values_to = 'sim') %>% 
+  
+plot_data <-
+  plot_data %>%
+  filter(!is.na(sim)) %>% 
   left_join(cluster_df, by=c('unitig_1'='unitig')) %>% 
   dplyr::rename(cluster_1=cluster) %>% 
   left_join(cluster_df, by=c('unitig_2'='unitig')) %>% 
-  dplyr::rename(cluster_2=cluster)
-
-plot_data <-
-  plot_data %>% 
-  mutate(comparison = ifelse(cluster_1 == cluster_2, 'Within Cluster', 'Between Cluster')) %>% 
-  filter(unitig_1 != unitig_2) %>% 
-  filter(!duplicated(map2(unitig_1, unitig_2, function(x,y) sort(c(x,y))))) 
+  dplyr::rename(cluster_2=cluster) %>% 
+  mutate(comparison = ifelse(cluster_1 == cluster_2, 'Within Cluster', 'Between Cluster')) 
   
 p <-
   ggplot(plot_data) +
-  geom_histogram(aes(abs(sim), fill=comparison), binwidth = 0.01) +
   geom_vline(xintercept = PARAMS$cos_sim_threshold, linetype='dashed') +
   scale_fill_manual(name=NULL, values=c('#E69F00', '#56B4E9')) +
-  scale_y_continuous(expand = expansion(c(0, 0.1)), n.breaks = 10) +
+  scale_y_continuous(limits = c(0, NA), expand = expansion(c(0, 0.1)), n.breaks = 10) +
   scale_x_continuous(expand = expansion(0), n.breaks = 10) +
   ylab('N') +
   xlab('Absolute Cosine Similarity') +
-  ggtitle('Absolute Cosine Similarity Histogram (Deduplicated, No Self)')  +
+  ggtitle('Absolute Cosine Similarity Histogram (upper tri, no diag)')  +
   theme_light()
 
-plots[['sim_hist']] <- p
-
-p <-
-  ggplot(plot_data) +
-  geom_rug(aes(abs(sim))) +
-  geom_density(aes(abs(sim), fill=comparison)) +
-  geom_vline(xintercept = PARAMS$cos_sim_threshold, linetype='dashed') +
-  facet_wrap(~comparison, ncol=1) +
-  scale_fill_manual(guide='none', values=c('#E69F00', '#56B4E9')) +
-  scale_x_continuous(expand = expansion(0), n.breaks = 10) +
-  ylab('Density') +
-  xlab('Absolute Cosine Similarity') +
-  ggtitle('Absolute Cosine Similarity Densities (Deduplicated, No Self)')  +
-  theme_light() +
-  theme(
-    strip.background = element_rect(fill='NA', color='grey'),
-    strip.text = element_text(color='black')
-  )
-
-plots[['sim_dens']] <- p
-
-### Cosine Similarity Heatmaps ----------------------------------------------
-
-make_cosine_sim_plot_data <- function(cosine_similarity_mat) {
-  plot_data <-
-    cosine_similarity_mat %>% 
-    as_tibble(rownames = 'unitig_1') %>%
-    tidyr::pivot_longer(-unitig_1, names_to = 'unitig_2', values_to = 'sim')
-  
-  plot_data <-
-    plot_data %>% 
-    full_join(long_unitigs_df, by=c('unitig_1' = 'unitig')) %>% 
-    full_join(long_unitigs_df, by=c('unitig_2' = 'unitig')) 
-  
-  plot_data <-
-    plot_data %>% 
-    left_join(cluster_df, by=c('unitig_1' = 'unitig')) %>% 
-    dplyr::rename(cluster_1 = cluster) %>% 
-    left_join(cluster_df, by=c('unitig_2' = 'unitig')) %>% 
-    dplyr::rename(cluster_2 = cluster)
-  
-  plot_data <-
-    plot_data %>% 
-    mutate(cluster_1 = coalesce(cluster_1, unitig_1)) %>% 
-    mutate(cluster_2 = coalesce(cluster_2, unitig_2)) 
-  
-  # Floating point nonsense
-  plot_data <-
-    plot_data %>%
-    mutate(sim = ifelse(sim > 1, 1, sim)) %>% 
-    mutate(sim = ifelse(sim < -1, -1, sim))
-}
-
-make_cosine_sim_heatmap_plots <-
-  function(cosine_similarity_mat,
-           f_agg = function(x, ...) coverage_weighted_mean(x, mat_f = abs, ...),
-           f_ind = abs,
-           title = '',
-           colorbar_title = '',
-           limits = c(NA, NA)) {
-    
-  out <- list()
- 
-  plot_data <- make_cosine_sim_plot_data(cosine_similarity_mat)
-  ### Aggregated Plots --------------------------------------------------------
-  
-  plot_data_tmp <-
-    plot_data %>%
-    group_by(cluster_1, cluster_2) %>%
-    summarise(sim = f_agg(sim, na.rm = TRUE)) %>%
-    ungroup() %>%
-    arrange(desc(cluster_1), desc(cluster_2)) %>%
-    mutate(
-      cluster_1 = manf(cluster_1),
-      cluster_2 = manf(cluster_2)
-    ) %>%
-    mutate(cluster_2 = factor(cluster_2, levels = rev(levels(cluster_2))))
-  
-  p <-
-    plot_data_tmp %>%
-    ggplot() +
-    geom_raster(aes(x = cluster_1, y = cluster_2, fill = sim)) +
-    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E', na.value = 'darkred') +
-    ggtitle(paste('Aggregated', title)) +
-    xlab('Cluster/Unitig') +
-    ylab('Cluster/Unitig') +
-    theme_classic() +
-    theme(axis.text.x = element_text(angle = 360 - 45, hjust = 0)) 
-  
-  out[['acs']] <- p
-  
-  ### Unitig Plots ------------------------------------------------------------
-  
-  plot_data_tmp <-
-    plot_data %>%   
-    arrange(cluster_1, cluster_2) %>%
-    mutate(
-      cluster_1 = manf(cluster_1),
-      cluster_2 = manf(cluster_2)
-    ) %>% 
-    mutate(
-      unitig_1 = manf(unitig_1),
-      unitig_2 = manf(unitig_2)
-    ) %>% 
-    mutate(unitig_2 = factor(unitig_2, levels = rev(levels(unitig_2))))
-
-  p <-
-    plot_data_tmp %>% 
-    ggplot() +
-    geom_raster(aes(x = unitig_1, y = unitig_2, fill = f_ind(sim))) +
-    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E', na.value = 'darkred') +
-    scale_x_discrete(expand = expansion()) +
-    scale_y_discrete(expand = expansion()) +
-    theme(axis.text.x = element_text(angle = 360 - 45, hjust = 0)) +
-    ggtitle(title) +
-    xlab('Unitig within Cluster') +
-    ylab('Unitig within Cluster') +
-    theme_classic() +
-    theme(
-      axis.text.x = element_blank(),
-      axis.text.y = element_blank(),
-      axis.ticks.x = element_blank(),
-      axis.ticks.y = element_blank(),
-      panel.spacing = unit(2, 'points'),
-      strip.text.y.left = element_text(angle = 0),
-      strip.text.x = element_text(angle = 90),
-      strip.text = element_text(size = 7)
-    )
-  
-  p1 <-
-    p +
-    facet_grid(
-      cols = vars(cluster_1),
-      rows = vars(cluster_2),
-      scales = 'free',
-      space = 'free',
-      switch = 'y'
-    )
-  
-  p2 <-
-    p +
-    facet_grid(
-      cols = vars(cluster_1),
-      rows = vars(cluster_2),
-      scales = 'free',
-      # space = 'free',
-      switch = 'y'
-    ) 
-  
-  out[['cs1']] <- p1
-  out[['cs2']] <- p2
-  
-
-  ## Within Cluster ----------------------------------------------------------
-
-  plot_data_tmp <-
-    plot_data_tmp %>% 
-    filter(cluster_1 == cluster_2) %>% 
-    filter(!(as.character(unitig_1) == as.character(cluster_1))) %>% 
-    filter(!(as.character(unitig_2) == as.character(cluster_2))) 
-  
-  p <-
-    plot_data_tmp %>% 
-    ggplot() +
-    geom_raster(aes(x = unitig_1, y=unitig_2, fill=f_ind(sim))) +
-    facet_wrap(~cluster_1, scales = 'free') +
-    scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E', na.value = 'darkred') +
-    theme_classic() +
-    theme(
-      axis.text = element_text(size = 5),
-      axis.text.x = element_text(angle = 360 - 90, hjust = 0, vjust=0.5)
-      ) +
-    ggtitle(title) +
-    xlab('Unitig') +
-    ylab('Unitig') 
-  
-  out[['cswc']] <- p
-  
-  return(out)
-  }
-
-# plots_sim <-
-#   make_cosine_sim_heatmap_plots(
-#     cosine_similarity_mat,
-#     f_agg = mean,
-#     f_ind = identity,
-#     title = 'Cosine Similarities',
-#     colorbar_title = 'sim',
-#     limits = c(-1, 1)
+plots[['sim_hist']] <- p + geom_histogram(aes(abs(sim), fill=comparison), binwidth = 0.01)
+# 
+# p <-
+#   ggplot(plot_data) +
+#   # geom_rug(aes(abs(sim))) +
+#   geom_density(aes(abs(sim), fill=comparison)) +
+#   geom_vline(xintercept = PARAMS$cos_sim_threshold, linetype='dashed') +
+#   facet_wrap(~comparison, ncol=1) +
+#   scale_fill_manual(guide='none', values=c('#E69F00', '#56B4E9')) +
+#   scale_x_continuous(expand = expansion(0), n.breaks = 10) +
+#   scale_y_continuous(expand = expansion(0, 0.1)) +
+#   ylab('Density') +
+#   xlab('Absolute Cosine Similarity') +
+#   ggtitle('Absolute Cosine Similarity Densities')  +
+#   theme_light() +
+#   theme(
+#     strip.background = element_rect(fill='NA', color='grey'),
+#     strip.text = element_text(color='black')
 #   )
 
-plots_abs_sim <-
-  make_cosine_sim_heatmap_plots(
-    cosine_similarity_mat,
-    f_agg = mean_abs,
-    f_ind = abs,
-    title = 'Absolute Cosine Similarities',
-    colorbar_title = 'abs(sim)',
-    limits = c(0, 1)
-  )
-
-
-plots <- c(plots, 
-           # plots_sim, 
-           plots_abs_sim
-           )
-
-
-
-## Close Up Cosine Similarity Plots ----------------------------------------
-
-make_cosine_sim_cluster_heatmap_plots <-
-  function(cosine_similarity_mat,
-           f_agg = function(x, ...) coverage_weighted_mean(x, mat_f = abs, ...) ,
-           f_ind = abs,
-           title = '',
-           colorbar_title = '',
-           limits = c(NA, NA)) {
-    
-    out <- list()
-    
-    plot_data <- make_cosine_sim_plot_data(cosine_similarity_mat)
-
-    plot_data_tmp <-
-      plot_data %>%   
-      arrange(cluster_1, cluster_2) %>%
-      mutate(
-        cluster_1 = manf(cluster_1),
-        cluster_2 = manf(cluster_2)
-      ) %>% 
-      mutate(
-        unitig_1 = manf(unitig_1),
-        unitig_2 = manf(unitig_2)
-      ) %>% 
-      mutate(unitig_2 = factor(unitig_2, levels = rev(levels(unitig_2))))
-    
-    plot_data_tmp <-
-      plot_data_tmp %>% 
-      filter(cluster_1 == cluster_2) %>% 
-      group_by(cluster_1, cluster_2) %>% 
-      filter(n() > 1)
-    
-    for(cluster in stringr::str_sort(pull_distinct(plot_data_tmp, cluster_1), numeric=TRUE)) {
-      p <-
-        plot_data_tmp %>% 
-        filter(cluster_1 == cluster) %>% 
-        ggplot() +
-        geom_raster(aes(x = unitig_1, y=unitig_2, fill=f_ind(sim))) +
-        facet_wrap(~cluster_1, scales = 'free') +
-        scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E', na.value = 'darkred') +
-        theme_classic() +
-        theme(
-          axis.text = element_text(size = 5),
-          axis.text.x = element_text(angle = 360 - 90, hjust = 0, vjust=0.5)
-        ) +
-        ggtitle(title) +
-        xlab('Unitig') +
-        ylab('Unitig') 
-      
-      out[[paste0('cs_', cluster)]] <- p
-    }
-
-    
-    return(out)
-  }
-
-cluster_plots_sim <-
-  make_cosine_sim_cluster_heatmap_plots(
-    cosine_similarity_mat,
-    f_agg = mean_abs,
-    f_ind = abs,
-    title = 'Absolute Cosine Similarities',
-    colorbar_title = 'abs(sim)',
-    limits = c(0, 1)
-  )
+plots[['sim_hist_comp']] <- 
+  p +
+  geom_histogram(aes(abs(sim), y =..density.., fill=comparison), binwidth = 0.01) +
+  facet_wrap(~comparison, ncol=1) +
+  ylab('Density') +
+  ggtitle('Absolute Cosine Similarity Density Histogram (upper tri, no diag)') +
+    theme(
+      strip.background = element_rect(fill='NA', color='grey'),
+      strip.text = element_text(color='black')
+    ) +
+  scale_y_continuous(expand = expansion(0, 0.1)) 
 
 
 ## Phasing Planes ----------------------------------------------------------
@@ -1639,7 +1290,11 @@ plot_data <-
 p <-
   plot_data %>% 
   ggplot(aes(x = PC1_pvar, y = PC2_pvar)) +
+  # Delineate Allowed Vales
   geom_abline(intercept = 100, slope=-1, alpha=0.5) +
+  geom_abline(intercept = 0, slope=1, alpha=0.5) +
+  geom_abline(intercept = 0, slope=0, alpha=0.5) +
+  # Guidelines
   geom_abline(intercept = 70, slope=-1, alpha=0.5, linetype='dashed') +
   geom_hline(yintercept=PARAMS$hap_pc2_var_threshold*100, alpha=0.5, linetype='dashed') +
   xlab('PC1 %Variance') +
@@ -1787,7 +1442,6 @@ plots[['pcpl']] <- p +
     alpha = 0.5
   )
 
-
 ## Uncounted Markers -------------------------------------------------------
 
 plot_data <-
@@ -1800,12 +1454,12 @@ plot_data <-
 
 p <-
   ggplot(plot_data) +
-  geom_vline(xintercept = PARAMS$minimum_cluster_size, alpha=0.5, linetype='dashed') +
+  geom_vline(xintercept = PARAMS$minimum_size_expect_clustered, alpha=0.5, linetype='dashed') +
   geom_histogram(aes(length, fill = clustered), color = 'black') +
   scale_fill_manual(name = 'Has Cluster', values=c('#E69F00', '#56B4E9')) +
   scale_y_continuous(expand = expansion(c(0, 0.1))) +
-  scale_x_log10(limits = c(segment_length_threshold, NA)) +
-  xlab('Log10 Length') +
+  scale_x_log10() +
+  xlab('Length') +
   ylab('Count') +
   ggtitle(paste0('0 Marker Unitigs >= ', segment_length_threshold/1e6, 'Mbp')) +
   theme_classic() +
@@ -1814,44 +1468,430 @@ p <-
 plots[['0_marker_unitigs_hist']] <- p
 
 
-p <-
-  ggplot(plot_data) +
-  geom_vline(xintercept = PARAMS$minimum_cluster_size, alpha=0.5, linetype='dashed') +
-  geom_point(aes(y = unitig, x = length, fill= clustered), shape=21) +
-  scale_x_log10(limits = c(segment_length_threshold, NA)) +
-  scale_fill_manual(name = 'Has Cluster', values=c('#E69F00', '#56B4E9')) +
-  xlab('Log10 Length') +
-  ylab('Unitig') +
-  ggtitle(paste0('0 Marker Unitigs >= ', segment_length_threshold/1e6, 'Mbp')) +
-  theme_light()
-
-plots[['0_marker_unitigs_point']] <- p
-
+# p <-
+#   ggplot(plot_data) +
+#   geom_vline(xintercept = PARAMS$minimum_cluster_size, alpha=0.5, linetype='dashed') +
+#   geom_point(aes(y = unitig, x = length, fill= clustered), shape=21) +
+#   scale_x_log10(limits = c(segment_length_threshold, NA)) +
+#   scale_fill_manual(name = 'Has Cluster', values=c('#E69F00', '#56B4E9')) +
+#   xlab('Log10 Length') +
+#   ylab('Unitig') +
+#   ggtitle(paste0('0 Marker Unitigs >= ', segment_length_threshold/1e6, 'Mbp')) +
+#   theme_light()
+# 
+# plots[['0_marker_unitigs_point']] <- p
 
 ## Export ------------------------------------------------------------------
 
-pdf(file.path(intermediate_output_dir, 'plots.pdf'), width = 15, height = 15)
+
+pdf(file.path(intermediate_output_dir, 'plots.pdf'), width = 12, height = 12)
 iwalk(plots, function(x, nm) {
   cat('Plotting', nm, '\n')
   print(x)
 })
 dev.off()
 
-pdf(file.path(intermediate_output_dir, 'plots_cluster_ssf.pdf'), width = 15, height = 15)
-for(p in cluster_plots_ssf) {
-  print(p)
-}
-dev.off()
 
-pdf(file.path(intermediate_output_dir, 'plots_cluster_sim.pdf'), width = 15, height = 15)
-for(p in cluster_plots_sim) {
-  print(p)
+# Big Plots ---------------------------------------------------------------
+
+
+## SSF Barcodes ------------------------------------------------------------
+plots_barcode <- list()
+
+plot_data <-
+  orient_counts(counts_df, strand_orientation_clusters_df) %>%
+  make_ssf_mat(min_n=PARAMS$min_n_mem) %>% 
+  as_tibble(rownames = 'unitig') %>% 
+  tidyr::pivot_longer(-unitig, names_to = 'lib', values_to = 'ssf')
+
+# ssf_counts_df <-
+#   ssf_counts_df %>%
+#   bind_rows(anti_join(counts_df, ssf_counts_df, by = 'unitig'))
+# 
+# ssf_counts_df <-
+#   ssf_counts_df %>%
+#   mutate(ssf = (w - c) / n)
+
+plot_data <-
+  plot_data %>%
+  full_join(long_unitigs_df, by='unitig') %>% 
+  left_join(cluster_df, by = 'unitig') %>%
+  left_join(unitig_lengths_df, by='unitig') %>% 
+  filter(!is.na(cluster) | length >= PARAMS$minimum_size_expect_clustered) %>% 
+  mutate(cluster = coalesce(cluster, unitig)) %>% 
+  mutate(cluster = manf(cluster), unitig = manf(unitig))
+
+p <-
+  ggplot(plot_data) +
+  geom_raster(aes(x = lib, y = unitig, fill = ssf)) +
+  scale_fill_viridis_c(limits = c(-1, 1),  option = 'E', na.value = 'darkred') +
+  scale_x_discrete(expand = expansion()) +
+  scale_y_discrete(expand = expansion()) +
+  ggtitle(paste0('SSF Values, Clustered OR Size >= ', PARAMS$minimum_size_expect_clustered/1e6, ' Mbp')) +
+  xlab('Library') +
+  ylab('Cluster/Unitig') +
+  theme_classic() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.spacing.y = unit(2, 'points'),
+    strip.text.y.left = element_text(angle = 0, size = 7)
+  )
+
+p1 <-
+  p + 
+  facet_grid(rows = vars(cluster),
+             switch = 'y',
+             scales = 'free_y',
+             space = 'free') 
+
+p2 <-
+  p + 
+  facet_grid(rows = vars(cluster),
+             switch = 'y',
+             scales = 'free_y') 
+
+plots_barcode[['ssfb1']] <- p1
+plots_barcode[['ssfb2']] <- p2
+
+
+# Length Filtered 
+plot_data <-
+  filter(plot_data,  length >= PARAMS$minimum_size_expect_clustered)
+
+plots_barcode[['ssfb1_filtered']] <- 
+  (p1 %+% plot_data) + 
+  ggtitle(paste0('SSF Values, Size >= ', PARAMS$minimum_size_expect_clustered/1e6, ' Mbp'))
+
+plots_barcode[['ssfb2_filtered']] <- 
+  (p2 %+% plot_data) + 
+  ggtitle(paste0('SSF Values, Size >= ', PARAMS$minimum_size_expect_clustered/1e6, ' Mbp'))
+
+### SSF Barcode by Cluster --------------------------------------------------
+
+plots_barcode_cluster <- list()
+# TODO height of each bar ~ size of unitig
+for(clust in stringr::str_sort(pull_distinct(plot_data, cluster), numeric = TRUE)) {
+  pd <-
+    plot_data %>%
+    filter(cluster == clust) 
+  
+  p <- 
+    (p1 %+% pd) + 
+    ggtitle(paste0('SSF Values, Size >= ', PARAMS$minimum_size_expect_clustered/1e6, ' Mbp')) +
+    facet_grid(cols = vars(cluster),
+               switch = 'y',
+               scales = 'free_y')  +
+    theme_set(theme_classic()) +
+    theme(
+      panel.spacing.y = unit(2, 'points'),
+      strip.text.y.left = element_text(angle = 0, size = 7),
+      axis.text.x = element_text(angle = 360-90, hjust=0, vjust=0.5)
+    ) 
+
+  plots_barcode_cluster[[paste0('ssfb_', clust)]] <- p
 }
-dev.off()
+
+
+## Cosine Similarity Heatmaps ----------------------------------------------
+
+make_cosine_sim_plot_data <- function(cosine_similarity_mat) {
+  plot_data <-
+    cosine_similarity_mat %>% 
+    as_tibble(rownames = 'unitig_1') %>%
+    tidyr::pivot_longer(-unitig_1, names_to = 'unitig_2', values_to = 'sim')
+  
+  plot_data <-
+    plot_data %>% 
+    full_join(long_unitigs_df, by=c('unitig_1' = 'unitig')) %>% 
+    full_join(long_unitigs_df, by=c('unitig_2' = 'unitig')) 
+  
+  plot_data <-
+    plot_data %>% 
+    left_join(cluster_df, by=c('unitig_1' = 'unitig')) %>% 
+    dplyr::rename(cluster_1 = cluster) %>% 
+    left_join(cluster_df, by=c('unitig_2' = 'unitig')) %>% 
+    dplyr::rename(cluster_2 = cluster)
+  
+  plot_data <-
+    plot_data %>% 
+    mutate(cluster_1 = coalesce(cluster_1, unitig_1)) %>% 
+    mutate(cluster_2 = coalesce(cluster_2, unitig_2)) 
+  
+  # Floating point nonsense
+  plot_data <-
+    plot_data %>%
+    mutate(sim = ifelse(sim > 1, 1, sim)) %>% 
+    mutate(sim = ifelse(sim < -1, -1, sim))
+}
+
+make_cosine_sim_heatmap_plots <-
+  function(cosine_similarity_mat,
+           f_ind = abs,
+           title = '',
+           colorbar_title = '',
+           limits = c(NA, NA)) {
+    
+    out <- list()
+    
+    plot_data <- make_cosine_sim_plot_data(cosine_similarity_mat)
+    
+    unitigs_to_plot <-
+      full_join(long_unitigs_df, unitig_lengths_df, by='unitig') %>% 
+      left_join(cluster_df, by='unitig') %>% 
+      filter(!is.na(cluster) | length >= PARAMS$minimum_size_expect_clustered) %>% 
+      pull_distinct(unitig)
+    
+    plot_data <-
+      plot_data %>%   
+      filter(unitig_1 %in% unitigs_to_plot, unitig_2 %in% unitigs_to_plot) %>% 
+      arrange(cluster_1, cluster_2) %>%
+      mutate(
+        cluster_1 = manf(cluster_1),
+        cluster_2 = manf(cluster_2)
+      ) %>% 
+      mutate(
+        unitig_1 = manf(unitig_1),
+        unitig_2 = manf(unitig_2)
+      ) %>% 
+      mutate(unitig_2 = factor(unitig_2, levels = rev(levels(unitig_2))))
+    
+    ## Clustered Unitig Plots --------------------------------------------------
+    
+    p <-
+      plot_data %>%
+      ggplot() +
+      geom_raster(aes(x = unitig_1, y = unitig_2, fill = f_ind(sim))) +
+      scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E', na.value = 'darkred') +
+      scale_x_discrete(expand = expansion()) +
+      scale_y_discrete(expand = expansion()) +
+      theme(axis.text.x = element_text(angle = 360 - 45, hjust = 0)) +
+      ggtitle(title) +
+      xlab('Unitig within Cluster') +
+      ylab('Unitig within Cluster') +
+      theme_classic() +
+      theme(
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.spacing = unit(2, 'points'),
+        strip.text.y.left = element_text(angle = 0),
+        strip.text.x = element_text(angle = 90),
+        strip.text = element_text(size = 7)
+      )
+    
+    p1 <-
+      p +
+      facet_grid(
+        cols = vars(cluster_1),
+        rows = vars(cluster_2),
+        scales = 'free',
+        space = 'free',
+        switch = 'y'
+      )
+    
+    p2 <-
+      p +
+      facet_grid(
+        cols = vars(cluster_1),
+        rows = vars(cluster_2),
+        scales = 'free',
+        # space = 'free',
+        switch = 'y'
+      ) 
+    
+    out[['cos_sim_hm_c_1']] <- p1 # %+% plot_data
+    out[['cos_sim_hm_c_2']] <- p2 # %+% plot_data
+    
+    
+    # ## Unclustered Unitig Plots ------------------------------------------------
+    # 
+    # plot_data_tmp <- 
+    #   plot_data %>% 
+    #   filter(as.character(cluster_2) == as.character(unitig_2))
+    # 
+    # if(nrow(plot_data_tmp) > 0) {
+    #   out[['cos_sim_hm_uc']] <- p2 %+% plot_data_tmp
+    # }
+    # 
+    # ## Within Cluster ----------------------------------------------------------
+    # 
+    # plot_data_tmp <-
+    #   plot_data %>% 
+    #   filter(cluster_1 == cluster_2) %>% 
+    #   filter(!(as.character(unitig_1) == as.character(cluster_1))) %>% 
+    #   filter(!(as.character(unitig_2) == as.character(cluster_2))) 
+    # 
+    # p <-
+    #   plot_data_tmp %>% 
+    #   ggplot() +
+    #   geom_raster(aes(x = unitig_1, y=unitig_2, fill=f_ind(sim))) +
+    #   facet_wrap(~cluster_1, scales = 'free') +
+    #   scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E', na.value = 'darkred') +
+    #   theme_classic() +
+    #   theme(
+    #     axis.text = element_text(size = 5),
+    #     axis.text.x = element_text(angle = 360 - 90, hjust = 0, vjust=0.5)
+    #   ) +
+    #   ggtitle(title) +
+    #   xlab('Unitig') +
+    #   ylab('Unitig') 
+    # 
+    # out[['cos_cim_c_facets']] <- p
+    
+    return(out)
+  }
+
+# plots_sim <-
+#   make_cosine_sim_heatmap_plots(
+#     cosine_similarity_mat,
+#     f_agg = mean,
+#     f_ind = identity,
+#     title = 'Cosine Similarities',
+#     colorbar_title = 'sim',
+#     limits = c(-1, 1)
+#   )
+
+plots_sim_all <-
+  make_cosine_sim_heatmap_plots(
+    cosine_similarity_mat,
+    f_ind = abs,
+    title = paste0('Absolute Cosine Similarities, Clustered'),
+    colorbar_title = 'abs(sim)',
+    limits = c(0, 1)
+  )
+
+
+## Close Up Cosine Similarity Plots ----------------------------------------
+
+make_cosine_sim_cluster_heatmap_plots <-
+  function(cosine_similarity_mat,
+           f_ind = abs,
+           title = '',
+           colorbar_title = '',
+           limits = c(NA, NA)) {
+    
+    out <- list()
+    
+    plot_data <- make_cosine_sim_plot_data(cosine_similarity_mat)
+    
+    plot_data_tmp <-
+      plot_data %>%   
+      arrange(cluster_1, cluster_2) %>%
+      mutate(
+        cluster_1 = manf(cluster_1),
+        cluster_2 = manf(cluster_2)
+      ) %>% 
+      mutate(
+        unitig_1 = manf(unitig_1),
+        unitig_2 = manf(unitig_2)
+      ) %>% 
+      mutate(unitig_2 = factor(unitig_2, levels = rev(levels(unitig_2))))
+    
+    plot_data_tmp <-
+      plot_data_tmp %>% 
+      filter(cluster_1 == cluster_2) %>% 
+      group_by(cluster_1, cluster_2) %>% 
+      filter(n() > 1)
+    
+    for(cluster in stringr::str_sort(pull_distinct(plot_data_tmp, cluster_1), numeric=TRUE)) {
+      p <-
+        plot_data_tmp %>% 
+        filter(cluster_1 == cluster) %>% 
+        ggplot() +
+        geom_raster(aes(x = unitig_1, y=unitig_2, fill=f_ind(sim))) +
+        facet_wrap(~cluster_1, scales = 'free') +
+        scale_fill_viridis_c(name=colorbar_title, limits = limits, option = 'E', na.value = 'darkred') +
+        theme_classic() +
+        theme(
+          axis.text = element_text(size = 5),
+          axis.text.x = element_text(angle = 360 - 90, hjust = 0, vjust=0.5)
+        ) +
+        ggtitle(title) +
+        xlab('Unitig') +
+        ylab('Unitig') 
+      
+      out[[paste0('cs_', cluster)]] <- p
+    }
+    
+    
+    return(out)
+  }
+
+plots_sim_cluster <-
+  make_cosine_sim_cluster_heatmap_plots(
+    cosine_similarity_mat,
+    f_ind = abs,
+    title = paste0('Absolute Cosine Similarities, Clustered OR Size >= ', PARAMS$minimum_size_expect_clustered/1e6, ' Mbp'),
+    colorbar_title = 'abs(sim)',
+    limits = c(0, 1)
+  )
+
+
+## Export ------------------------------------------------------------------
+
+# Rough size heuristics
+unitigs_to_plot <-
+  full_join(long_unitigs_df, unitig_lengths_df, by='unitig') %>% 
+  left_join(cluster_df, by='unitig') %>% 
+  filter(!is.na(cluster) | length >= PARAMS$minimum_size_expect_clustered) %>% 
+  pull_distinct(unitig)
+
+size <- sqrt(length(unitigs_to_plot))
+
+if(length(unitigs_to_plot) <= 3000) {
+  pdf(file.path(intermediate_output_dir, 'plots_sim.pdf'), width = size, height = size)
+  iwalk(plots_sim_all, function(x, nm) {
+    cat('Plotting', nm, '\n')
+    print(x)
+  })
+  dev.off()
+}
+
+
+width <- length(included_libraries) / 7
+
+if(width * height <= 5e6) {
+  pdf(file.path(intermediate_output_dir, 'plots_barcode.pdf'), width = width, height = size)
+  iwalk(plots_barcode, function(x, nm) {
+    cat('Plotting', nm, '\n')
+    print(x)
+  })
+  dev.off()
+  
+}
+
+# A rough heuristic
+largest_cluster_size <-
+  count(cluster_df, cluster) %>% 
+  with(max(n))
+
+size <- largest_cluster_size/7
+
+if(largest_cluster_size <= 3000) {
+  
+  pdf(file.path(intermediate_output_dir, 'plots_sim_cluster.pdf'), width = size, height = size)
+  iwalk(plots_sim_cluster, function(x, nm) {
+    cat('Plotting', nm, '\n')
+    print(x)
+  })
+  dev.off()
+  
+  pdf(file.path(intermediate_output_dir, 'plots_barcode_cluster.pdf'), width = width, height = size)
+  iwalk(plots_barcode_cluster, function(x, nm) {
+    cat('Plotting', nm, '\n')
+    print(x)
+  })
+  
+  dev.off()
+}
+
 
 
 # Warnings ----------------------------------------------------------------
-
 
 for(w in WARNINGS) {
   warning(w)

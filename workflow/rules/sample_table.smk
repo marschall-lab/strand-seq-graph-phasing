@@ -51,10 +51,6 @@ def process_sample_sheet():
         # assembler
         sample_input[row.sample]['assembler'] = row.assembler
 
-        # assembler
-        sample_input[row.sample]['cluster_PAR_with_haploid'] = row.cluster_PAR_with_haploid
-
-
         # Coverage ~ Optional
         if not pandas.isna(row.coverage):
             sample_input[row.sample]['coverage'] = str(pathlib.Path(row.coverage).resolve(strict=True))
