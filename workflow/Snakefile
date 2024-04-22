@@ -507,7 +507,6 @@ rule count_haplotype_markers:
         imo=directory("intermediate_output/{sample}/"),
     params:
         segment_length_threshold=segment_length_threshold,
-        cluster_PAR_with_haploid = lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['cluster_PAR_with_haploid'],
         script = get_script_path('R','clustering_orient_strandstate.snakemake.R'),
         il = lambda wildcards: get_optional_phasing_input(wildcards,'included_libraries.tsv'),
         ic = lambda wildcards: get_optional_phasing_input(wildcards,'initial_clusters.tsv'),

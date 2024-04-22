@@ -600,13 +600,21 @@ if(length(temp) != 0) {
   # if whole row is NA ~ then it had 0 for all wfracs.
   cluster_cosine_similarities <-
     map(cluster_cosine_similarities, function(x) {
+      # Diagonals don't count. One needs to have a similarity between something
+      #other than just its own inversion. This can happen if a unitig had enough
+      #reads in at least  PARAMS$min_n_mem reads in at least PARAMS$min_overlaps
+      #libraries so that its similarity can be calculated with itself, but it
+      #does not reach that threshold when calculating the similarities with
+      #other unitigs
+      diag(x) <- NA
+      
       row_ix <-
         apply(x, 1, function(xx) all(is.na(xx)))
       
       col_ix <-
         apply(x, 2, function(xx) all(is.na(xx)))
       
-      
+      diag(x) <- 1
       x[!row_ix, !col_ix, drop=FALSE]
     })
   
@@ -1885,7 +1893,7 @@ if(length(unitigs_to_plot) <= 4000) {
 
 width <- length(included_libraries) / 7
 
-if(width * height <= 5e6) {
+if(width * size <= 5e6) {
   pdf(file.path(intermediate_output_dir, 'plots_barcode.pdf'), width = width, height = size)
   iwalk(plots_barcode, function(x, nm) {
     cat('Plotting', nm, '\n')
