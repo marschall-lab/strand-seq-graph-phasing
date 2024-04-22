@@ -913,6 +913,29 @@ preprocessStrandTable <-
             orderMethod = "libsAndConc", lowQualThreshold = 0.9, verbose = TRUE, 
             minLib = 10) 
   {
+    
+    
+    # strandTable	
+    # data.frame containing the strand table to use as input
+    # 
+    # strandTableThreshold	
+    # threshold at which to call a contig WW or CC rather than WC
+    # 
+    # filterThreshold	
+    # maximum number of libraries a contig can be NA or WC in
+    # 
+    # orderMethod	
+    # the method to oder contigs. currently libsAndConc only option. Set to FALSE to not order contigs based on library quality
+    # 
+    # lowQualThreshold	
+    # background threshold at which to toss an entire library. If NULL, function will not make an overall assessment of library quality. Very chimeric assemblies can appear low quality across all libraries.
+    # 
+    # verbose	
+    # messages written to terminal
+    # 
+    # minLib	
+    # minimum number of libraries a contig must be present in to be included in the output
+    # 
     strandTableLength <- nrow(strandTable)
     lowQualList <- data.frame(library = vector(), quality = vector())
     qualList <- lowQualList
