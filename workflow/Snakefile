@@ -517,7 +517,7 @@ rule count_haplotype_markers:
     # singularity: singularity_r_env
     conda: 'envs/env_R-COS.yaml'
     resources:
-        mem_mb=calc_mem(12),
+        mem_mb=calc_mem(32),
         walltime=calc_walltime()
     log: "log/count_haplotype_markers_{sample}.log"
     benchmark: "benchmark/count_haplotype_markers_{sample}.benchmark"
