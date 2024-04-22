@@ -319,7 +319,7 @@ temp <- get_values('--refined-clusters', null_ok=TRUE)
 if(length(temp) != 0) {
   cat('Importing refined clustering.\n')
   cluster_df <-
-    readr::read_tsv(temp, col_names = c('cluster', 'unitig'), col_types = 'cc')
+    readr::read_tsv(temp, col_names = c('unitig', 'cluster'), col_types = 'cc')
 } else {
 
   n_batches <- max(5, ceiling(nrow(cluster_df)/PARAMS$cluster_max_batch_size))
@@ -551,11 +551,17 @@ if(length(temp) != 0) {
   # either the X or the Y chromosome. By combining them into one and looking at
   # exact matches, we can properly phase the PAR
   hap_name <- paste(hap_clusters, collapse='_')
+  
   cluster_df <-
     cluster_df %>%
     mutate(cluster = ifelse(cluster %in% hap_clusters, hap_name, cluster))
-
-  }
+  
+  readr::write_tsv(
+    cluster_df,
+    file.path(intermediate_output_dir, 'final_clusters.tsv'),
+    col_names = FALSE
+  )
+}
 
 
 # Unclustered Warning -----------------------------------------------------
