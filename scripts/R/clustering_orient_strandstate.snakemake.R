@@ -174,6 +174,7 @@ PARAMS <- list(
   
   # To call a cluster as haploid
   haploid_detetection_mode = 'pca',
+  hap_pc1_var_threshold = 0.60,
   hap_pc2_var_threshold = 0.20,
   
   # to keep haplotype markers
@@ -539,6 +540,7 @@ if(length(temp) != 0) {
     hap_clusters <-
       component_percent_variances %>% 
       keep(function(x) x['comp 2'] <= PARAMS$hap_pc2_var_threshold * 100) %>% 
+      keep(function(x) x['comp 1'] >= PARAMS$hap_pc1_var_threshold * 100) %>% 
       names()
   }
   
@@ -1345,8 +1347,35 @@ p <-
   geom_abline(intercept = 0, slope=1, alpha=0.5) +
   geom_abline(intercept = 0, slope=0, alpha=0.5) +
   # Guidelines
-  geom_abline(intercept = 70, slope=-1, alpha=0.5, linetype='dashed') +
-  geom_hline(yintercept=PARAMS$hap_pc2_var_threshold*100, alpha=0.5, linetype='dashed') +
+  geom_segment(
+    y = 35,
+    yend = 0,
+    x = 35,
+    xend = 70,
+    alpha = 0.5,
+    linetype = 'dashed',
+    # this data slicing is because by default, ggplot2 draws the segment one
+    # time per row of data, which ruins the alpha values.
+    data = slice_head(plot_data, n = 1) 
+  ) +
+  geom_segment(
+    y = PARAMS$hap_pc2_var_threshold * 100,
+    yend = PARAMS$hap_pc2_var_threshold * 100,
+    x = PARAMS$hap_pc1_var_threshold * 100,
+    xend = (1 - PARAMS$hap_pc2_var_threshold) * 100,
+    alpha = 0.5,
+    linetype = 'dashed',
+    data = slice_head(plot_data, n = 1) 
+  ) +
+  geom_segment(
+    y = 0,
+    yend = PARAMS$hap_pc2_var_threshold * 100,
+    x = PARAMS$hap_pc1_var_threshold * 100,
+    xend = PARAMS$hap_pc1_var_threshold * 100,
+    alpha = 0.5,
+    linetype = 'dashed',
+    data = slice_head(plot_data, n = 1)
+  ) +
   xlab('PC1 %Variance') +
   ylab('PC2 %Variance') +
   ggtitle('First Two Principal Components Variation Scatter Plot') +
