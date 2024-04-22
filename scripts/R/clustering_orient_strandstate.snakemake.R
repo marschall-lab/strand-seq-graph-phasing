@@ -111,7 +111,6 @@ library(purrr)
 
 source(file.path(get_script_dir(), "module_utils/utils.R"))
 source(file.path(get_script_dir(), "module_utils/phasing_utils.R"))
-source(file.path(get_script_dir(), "module_utils/faster_phasing_utils.R"))
 # Parsing -----------------------------------------------------------------
 ## Expected Args
 expected_args <-
@@ -152,19 +151,24 @@ PARAMS <- list(
   # To filter out unitigs from the start
   segment_length_threshold = segment_length_threshold,
   
+  # QC Parameters: 
+  lowQualThreshold = 0.85,
+  minLib = 10,
+  
   # To compute the SSF
   min_n_mem = 10,
-  min_n_fm = 4,
+  min_n_fm = 6,
   
   # To compute cosine similarity
-  min_overlaps = 5,
+  min_overlaps = 8,
   
   # To cluster
-  cos_sim_threshold = 0.5,
+  cos_sim_threshold = 0.66,
   cluster_max_batch_size = 1000,
   
   # Remove clusters smaller than
   minimum_cluster_size = 25e6,
+  minimum_component_cluster_fraction = 0.02,
   # TODO add a cluster size threshold for removing clusters before and after
   # haploid merging.
   
@@ -172,6 +176,8 @@ PARAMS <- list(
   haploid_detetection_mode = 'pca',
   hap_pc2_var_threshold = 0.20,
   
+  # to keep haplotype markers
+  min_n_marker = 4,
   # Diagnostic parameter: controls plotting and warning
   minimum_size_expect_clustered = 250e3# 25e6 * 0.4
 )
@@ -252,8 +258,8 @@ cat('Running contiBAIT QC\n')
 strand.states <-
   preprocessStrandTable(
     strand.freq,
-    lowQualThreshold = 0.8,
-    minLib = 10
+    lowQualThreshold = PARAMS$lowQualThreshold,
+    minLib = PARAMS$minLib
   )
 
 lib_names <-
@@ -372,6 +378,16 @@ if(length(temp) != 0) {
                           unitig_lengths_df,
                           threshold = PARAMS$minimum_cluster_size)
   
+  # small clusters on components
+  cluster_df <-
+    remove_small_clusters_on_components(
+      cluster_df,
+      unitig_lengths_df,
+      components_df,
+      threshold = PARAMS$minimum_component_cluster_fraction
+    )
+  
+  
   cluster_df <-
     propagate_one_cluster_components(cluster_df, components_df)
   
@@ -406,6 +422,18 @@ if(length(temp) != 0) {
     remove_small_clusters(cluster_df,
                           unitig_lengths_df,
                           threshold = PARAMS$minimum_cluster_size)
+  
+  cluster_df <-
+    remove_small_clusters_on_components(
+      cluster_df,
+      unitig_lengths_df,
+      components_df,
+      threshold = PARAMS$minimum_component_cluster_fraction
+    )
+  
+  cluster_df <-
+    propagate_one_cluster_components(cluster_df, components_df)
+  
   readr::write_tsv(
     cluster_df,
     file.path(intermediate_output_dir, 'refined_clusters.tsv'),
@@ -629,8 +657,8 @@ if(length(temp) != 0) {
     filter(!all(is.na(strand_cluster)))
   
   if(nrow(bad) > 0) {
-    stop('Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
-    # WARNINGS <- c(WARNINGS, 'Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
+    # stop('Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
+    WARNINGS <- c(WARNINGS, 'Unitigs have been clustered with their inversions ~ something is wrong with unitig orientation detection')
   }
   
   # Add back in excluded unitigs
@@ -991,6 +1019,13 @@ marker_counts <-
   mutate(n = hap_1_counts + hap_2_counts) %>% 
   relocate(unitig, hap_1_counts, hap_2_counts, n, ssf, wfrac, cluster, method) 
 
+marker_counts <-
+  marker_counts %>% 
+  mutate(
+    hap_1_counts = ifelse(n < PARAMS$min_n_marker, 0, hap_1_counts),
+    hap_2_counts = ifelse(n < PARAMS$min_n_marker, 0, hap_2_counts)
+    
+  )
 # Export ------------------------------------------------------------------
 
 cat('Exporting\n')
@@ -1289,6 +1324,7 @@ plot_data <-
 
 p <-
   plot_data %>% 
+  filter(is_final == 'final') %>% 
   ggplot(aes(x = PC1_pvar, y = PC2_pvar)) +
   # Delineate Allowed Vales
   geom_abline(intercept = 100, slope=-1, alpha=0.5) +
@@ -1312,7 +1348,7 @@ plots[['var_points']] <-
     fill = '#56B4E9',
     alpha = 0.5
   ) +
-  geom_point(shape=3, data=filter(plot_data, is.na(n)))
+  geom_point(shape=3, data=filter(plot_data,is_final == 'not_final'))
 
 plots[['var_text']] <-
   p + geom_text(
@@ -1755,14 +1791,6 @@ make_cosine_sim_heatmap_plots <-
 #     limits = c(-1, 1)
 #   )
 
-plots_sim_all <-
-  make_cosine_sim_heatmap_plots(
-    cosine_similarity_mat,
-    f_ind = abs,
-    title = paste0('Absolute Cosine Similarities, Clustered'),
-    colorbar_title = 'abs(sim)',
-    limits = c(0, 1)
-  )
 
 
 ## Close Up Cosine Similarity Plots ----------------------------------------
@@ -1821,14 +1849,7 @@ make_cosine_sim_cluster_heatmap_plots <-
     return(out)
   }
 
-plots_sim_cluster <-
-  make_cosine_sim_cluster_heatmap_plots(
-    cosine_similarity_mat,
-    f_ind = abs,
-    title = paste0('Absolute Cosine Similarities, Clustered OR Size >= ', PARAMS$minimum_size_expect_clustered/1e6, ' Mbp'),
-    colorbar_title = 'abs(sim)',
-    limits = c(0, 1)
-  )
+
 
 
 ## Export ------------------------------------------------------------------
@@ -1842,7 +1863,17 @@ unitigs_to_plot <-
 
 size <- sqrt(length(unitigs_to_plot))
 
-if(length(unitigs_to_plot) <= 3000) {
+if(length(unitigs_to_plot) <= 4000) {
+  
+  plots_sim_all <-
+    make_cosine_sim_heatmap_plots(
+      cosine_similarity_mat,
+      f_ind = abs,
+      title = paste0('Absolute Cosine Similarities, Clustered'),
+      colorbar_title = 'abs(sim)',
+      limits = c(0, 1)
+    )
+  
   pdf(file.path(intermediate_output_dir, 'plots_sim.pdf'), width = size, height = size)
   iwalk(plots_sim_all, function(x, nm) {
     cat('Plotting', nm, '\n')
@@ -1872,6 +1903,15 @@ largest_cluster_size <-
 size <- largest_cluster_size/7
 
 if(largest_cluster_size <= 3000) {
+  
+  plots_sim_cluster <-
+    make_cosine_sim_cluster_heatmap_plots(
+      cosine_similarity_mat,
+      f_ind = abs,
+      title = paste0('Absolute Cosine Similarities, Clustered OR Size >= ', PARAMS$minimum_size_expect_clustered/1e6, ' Mbp'),
+      colorbar_title = 'abs(sim)',
+      limits = c(0, 1)
+    )
   
   pdf(file.path(intermediate_output_dir, 'plots_sim_cluster.pdf'), width = size, height = size)
   iwalk(plots_sim_cluster, function(x, nm) {

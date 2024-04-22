@@ -103,68 +103,6 @@ invert_hex <- function(hex_code) {
 }
 
 
-# Distances ---------------------------------------------------------------
-
-# TODO weighted cosine similarity?
-pairwise_complete_dp_ <- function(x, y, min_overlaps=5, x_trans=identity, y_trans=identity) {
-  stopifnot(all_have_same_length(x, y))
-  
-  overlapping_ix <- !is.na(x) & !is.na(y)
-  
-  if(sum(overlapping_ix) < min_overlaps) {
-    return(NA)
-  }
-  
-  x <- x[overlapping_ix]
-  y <- y[overlapping_ix]
-
-  x <- x_trans(x)
-  y <- y_trans(y) 
-  
-  out <- as.vector(x %*% y)
-  
-  return(out)
-}
-
-pairwise_complete_dp <- function(x, y, min_overlaps=5, x_trans=identity, y_trans=identity) {
-  stopifnot(ncol(x) == nrow(y))
-  
-  out <- matrix(nrow=nrow(x), ncol=ncol(y))
-  dimnames(out) <- list(rownames(x), colnames(y))
-  for(i in seq_len(nrow(x))) {
-    for(j in seq_len(ncol(y))) {
-      xx <- x[i, ]
-      yy <- y[, j]
-      out[i, j] <- pairwise_complete_dp_(xx, yy, min_overlaps, x_trans, y_trans)
-    }
-  }
-  
-  return(out)
-}
-
-pairwise_complete_cosine_similarity_ <- function(x, y, min_overlaps=5, ...) {
-  pairwise_complete_dp_(x, y, min_overlaps, x_trans = uv,y_trans = uv)
-}
-
-pairwise_complete_cosine_similarity <-function(mat,  min_overlaps=5, ...) {
-  # Samples in rows
-  similarity_mat <- 
-    matrix(nrow=nrow(mat), ncol=nrow(mat))
-  
-  dimnames(similarity_mat) <- list(rownames(mat), rownames(mat))
-  n <- nrow(mat)
-  
-  for(i in 1:n) {
-    for(j in i:n) {
-      sim <- pairwise_complete_cosine_similarity_(mat[i, ,drop=FALSE], mat[j, ,drop=FALSE], min_overlaps, ...)
-      similarity_mat[i, j] <- sim
-      similarity_mat[j, i] <- sim
-    }
-  }
-  
-  return(similarity_mat)
-}
-
 # Misc --------------------------------------------------------------------
 
 uv <- function(x, ...) {
