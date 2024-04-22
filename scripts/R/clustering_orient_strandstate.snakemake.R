@@ -1942,6 +1942,6 @@ if(largest_cluster_size <= 3000) {
 # Warnings ----------------------------------------------------------------
 
 for(w in WARNINGS) {
-  warning(w)
+  message(w)
 }
 
