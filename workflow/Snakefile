@@ -220,18 +220,13 @@ rule add_ss_libname_unmerged:
 rule homopolymer_compress_unmerged_ss:
     input: "ss/unmerged/{sample}/{lib}_{pair}.renamed.fasta"
     output: "ss/unmerged/{sample}/{lib}_{pair}.homopolymer-compressed.fasta"
-    params:
-        script=get_script_path('python','homopolymer_compress_fasta.py')
-    conda:'envs/env_pyenv.yaml'
+    conda:'envs/env_cl.yaml'
     resources:
         mem_mb=calc_mem(),
         walltime=calc_walltime()
-    log: "log/compress_unmerged_ss_{sample}_{lib}_{pair}.log"
     shell:
         '''
-        (python3 {params.script} \\
-        --input {input} \\
-        --output {output}) > {log} 2>&1
+        seqtk hpc {input} > {output}
         '''
 
 
@@ -289,17 +284,13 @@ rule add_ss_libname_merged:
 rule homopolymer_compress_merged_ss:
     input: "ss/merged/{sample}/{lib}.combined.renamed.fasta" # concat_assembled_with_first_pair_of_unassembled
     output: "ss/merged/{sample}/{lib}.combined.homopolymer-compressed.fasta"
-    params:
-        script=get_script_path('python','homopolymer_compress_fasta.py')
-    conda:'envs/env_pyenv.yaml'
+    conda:'envs/env_cl.yaml'
     resources:
         mem_mb=calc_mem(),
         walltime=calc_walltime()
     shell:
         '''
-        python3 {params.script} \\
-        --input {input} \\
-        --output {output}
+        seqtk hpc {input} > {output}
         '''
 
 #######################################
@@ -775,7 +766,7 @@ rule yak_count_split_fasta:
     threads: 24
     conda:'envs/env_yak.yaml'
     resources:
-        mem_mb=calc_mem(48),
+        mem_mb=calc_mem(96),
         walltime=calc_walltime()
     log:
         hap1="log/yak_count_fasta_hap1_{sample}.log",
