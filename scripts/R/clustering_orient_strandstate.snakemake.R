@@ -205,26 +205,30 @@ exact_match_counts_df <-
 
 stopifnot(setequal(pull_distinct(counts_df, unitig), pull_distinct(exact_match_counts_df, unitig)))
 
+
+
+# Prep --------------------------------------------------------------------
+
+
+## Warnings ----------------------------------------------------------------
+
+WARNINGS <- character()
+
+## Library Names -----------------------------------------------------------
+
+lib_names <-
+  counts_df %>%
+  pull_distinct(lib)
+
+## Unitig Lengths ----------------------------------------------------------
+
+
 unitig_lengths_df <-
   counts_df %>%
   distinct(unitig, length)
 
-long_unitigs_df <-
-  unitig_lengths_df %>%
-  filter(length >= segment_length_threshold) %>%
-  distinct(unitig)
 
-counts_df <-
-  counts_df %>%
-  filter(length >= segment_length_threshold) %>%
-  select(-length)
-
-exact_match_counts_df <-
-  exact_match_counts_df %>%
-  filter(length >= segment_length_threshold) %>%
-  select(-length)
-
-# Coverage Weighted Mean --------------------------------------------------
+## Unitig Coverage ---------------------------------------------------------
 
 unitig_coverage_df <-
   counts_df %>% 
@@ -237,14 +241,38 @@ unitig_coverage_df <-
     mutate(unitig_coverage_df, unitig = paste0(unitig, '_inverted'))
   )
 
-unitig_coverage <-
-  with(unitig_coverage_df, set_names(coverage, unitig))
 
-# SSF Matrix --------------------------------------------------------------
+## Unitig Length Filtering -------------------------------------------------
+
+
+long_unitigs_df <-
+  unitig_lengths_df %>%
+  filter(length >= PARAMS$segment_length_threshold) %>%
+  distinct(unitig)
+
+counts_df <-
+  counts_df %>%
+  filter(length >= PARAMS$segment_length_threshold) %>%
+  select(-length)
+
+exact_match_counts_df <-
+  exact_match_counts_df %>%
+  filter(length >= PARAMS$segment_length_threshold) %>%
+  select(-length)
+
+## SSF Matrix --------------------------------------------------------------
 
 ssf_mat <-
   counts_df %>%
   make_ssf_mat(min_n=PARAMS$min_n_mem)
+
+
+## Cosine Similarity -------------------------------------------------------
+
+# TODO only calculate the cosine similarity mat if it is used (eg, if final
+# clusters and strand orientation is not provided)
+cosine_similarity_mat <-
+  pwc_cos_sim(ssf_mat, min_overlaps = PARAMS$min_overlaps)
 
 # Library QC --------------------------------------------------------------
 
@@ -263,22 +291,22 @@ strand.states <-
     minLib = PARAMS$minLib
   )
 
-lib_names <-
-  counts_df %>%
-  pull_distinct(lib)
 
 temp <- get_values('--included-libraries', null_ok=TRUE)
 if(length(temp) != 0) {
+  
   cat('Importing included libraries.\n')
   included_libraries <-
     readr::read_tsv(temp, col_names = FALSE)[[1]]
+  
 } else {
+  
   included_libraries <- colnames(strand.states$strandMatrix)
   readr::write_tsv(tibble(included_libraries), file.path(intermediate_output_dir, 'included_libraries.tsv') ,col_names = FALSE)
+  
 }
 
 excluded_libraries <- setdiff(lib_names, included_libraries)
-WARNINGS <- character()
 WARNINGS <- c(WARNINGS, paste0(100*length(included_libraries)/length(lib_names), '% of Strand-seq libraries pass QC'))
 
 counts_df <-
@@ -291,29 +319,24 @@ exact_match_counts_df <-
 
 ssf_mat <- ssf_mat[, colnames(ssf_mat) %in% included_libraries, drop=FALSE]
 
+# Prior Clusters ----------------------------------------------------------
 
-# Initial Clustering ------------------------------------------------------
-temp <- get_values('--initial-clusters', null_ok=TRUE)
+temp <- get_values('--prior-clusters', null_ok=TRUE)
 if(length(temp) != 0) {
-  # TODO unitig should be first cluster in everything
-  cat('Importing initial clustering.\n')
+  
+  cat('Importing prior clusters.\n')
   cluster_df <- readr::read_tsv(temp, col_names = c('unitig', 'cluster'), col_types = 'cc')
+  
 } else {
-  #TODO doublecheck orering with initial clusters
+  
   cluster_df <- mutate(long_unitigs_df, cluster=NA)
-  readr::write_tsv(cluster_df, file.path(intermediate_output_dir, 'initial_clusters.tsv'), col_names = FALSE)
+  readr::write_tsv(cluster_df, file.path(intermediate_output_dir, 'prior_clusters.tsv'), col_names = FALSE)
+  
 }
 
 # Cluster Refinement ------------------------------------------------------
 
-# Cosine Similarity Matrix ------------------------------------------------
 
-# TODO only calculate the cosine similarity mat if it is used (eg, if final
-# clusters and strand orientation is provided)
-cosine_similarity_mat <-
-  pwc_cos_sim(ssf_mat, min_overlaps = PARAMS$min_overlaps)
-
-weights <- with(unitig_coverage_df, set_names(coverage, unitig))
 
 # TODO add back micro cluster on component removal?
 temp <- get_values('--refined-clusters', null_ok=TRUE)
@@ -323,117 +346,69 @@ if(length(temp) != 0) {
     readr::read_tsv(temp, col_names = c('unitig', 'cluster'), col_types = 'cc')
 } else {
 
+  weights <- with(unitig_coverage_df, set_names(coverage, unitig))
   n_batches <- max(5, ceiling(nrow(cluster_df)/PARAMS$cluster_max_batch_size))
   props <- seq(0, 1, length.out = n_batches + 1)[-1]
 
   for(prop in props) {
     print(prop)
     
-    cluster_df2 <-
-      cluster_df %>% 
-      left_join(unitig_coverage_df, by='unitig') %>% 
+    c_id <- paste0(which(props == prop), '.', n_batches)
+    
+    unitigs_to_consider <-
+      unitig_coverage_df %>%
       left_join(tibble::enframe(strand.states$contigQA, 'unitig', 'qual'), by='unitig') %>% 
       mutate(qual = round(qual, digits = 1)) %>% 
       slice_max(tibble(qual, coverage), prop = prop) %>% 
-      select(cluster, unitig)
-    
-    c_id <- paste0(which(props == prop), '.', n_batches)
+      pull(unitig)
+      
+    cluster_df2 <-
+      cluster_df %>% 
+      filter(unitig %in% unitigs_to_consider)
     
     cluster_df2 <-
-      cluster_unitigs_2(
+      cluster_and_merge(
         cluster_df2,
+        components_df,
         abs(cosine_similarity_mat),
         weights,
-        new_cluster_id = paste0('(C', c_id, ')'),
-        sim_threshold_cu = PARAMS$cos_sim_threshold,
-        sim_threshold_uu = PARAMS$cos_sim_threshold
+        cos_sim_threshold = PARAMS$cos_sim_threshold,
+        prefix = paste0('(C', c_id, ')')
       )
     
     cluster_df <-
       anti_join(cluster_df, cluster_df2, by='unitig') %>% 
       bind_rows(cluster_df2)
-
-    cluster_df <-
-      merge_similar_clusters_on_components_2(
-        cluster_df,
-        abs(cosine_similarity_mat),
-        weights,
-        components_df,
-        PARAMS$cos_sim_threshold
-      )
     
-    cluster_df <-
-      merge_similar_clusters_2(
-        cluster_df,
-        abs(cosine_similarity_mat),
-        weights,
-        PARAMS$cos_sim_threshold
-      )
-   
   }
   
   cat('Final Refinement \n')
   
   cluster_df <-
-    remove_small_clusters(cluster_df,
-                          unitig_lengths_df,
-                          threshold = PARAMS$minimum_cluster_size)
-  
-  # small clusters on components
-  cluster_df <-
-    remove_small_clusters_on_components(
+    refine_clusters(
       cluster_df,
       unitig_lengths_df,
       components_df,
-      threshold = PARAMS$minimum_component_cluster_fraction
-    )
-  
-  
-  cluster_df <-
-    propagate_one_cluster_components(cluster_df, components_df)
-  
-  cluster_df <- 
-    cluster_unitigs_2(
-      cluster_df,
-      abs(cosine_similarity_mat),
-      weights,
-      new_cluster_id = paste0('C'),
-      sim_threshold_cu = PARAMS$cos_sim_threshold,
-      sim_threshold_uu = PARAMS$cos_sim_threshold
+      minimum_cluster_size = PARAMS$minimum_cluster_size
     )
   
   cluster_df <-
-    merge_similar_clusters_on_components_2(
+    cluster_and_merge(
       cluster_df,
-      abs(cosine_similarity_mat),
-      weights,
       components_df,
-      PARAMS$cos_sim_threshold
-    )
-  
-  cluster_df <-
-    merge_similar_clusters_2(
-      cluster_df,
       abs(cosine_similarity_mat),
       weights,
-      PARAMS$cos_sim_threshold
+      cos_sim_threshold = PARAMS$cos_sim_threshold,
+      prefix = 'C'
     )
   
   cluster_df <-
-    remove_small_clusters(cluster_df,
-                          unitig_lengths_df,
-                          threshold = PARAMS$minimum_cluster_size)
-  
-  cluster_df <-
-    remove_small_clusters_on_components(
+    refine_clusters(
       cluster_df,
       unitig_lengths_df,
       components_df,
-      threshold = PARAMS$minimum_component_cluster_fraction
+      minimum_cluster_size = PARAMS$minimum_cluster_size
     )
-  
-  cluster_df <-
-    propagate_one_cluster_components(cluster_df, components_df)
   
   readr::write_tsv(
     cluster_df,
@@ -1525,7 +1500,7 @@ plots[['pcpl']] <- p +
 
 plot_data <-
   marker_counts %>%
-  filter(length >= segment_length_threshold) %>%
+  filter(length >= PARAMS$segment_length_threshold) %>%
   filter(hap_1_counts == 0 & hap_2_counts == 0) %>%
   mutate(clustered = !is.na(cluster))%>%
   arrange(desc(length)) %>%
@@ -1540,7 +1515,7 @@ p <-
   scale_x_log10() +
   xlab('Length') +
   ylab('Count') +
-  ggtitle(paste0('0 Marker Unitigs >= ', segment_length_threshold/1e6, 'Mbp')) +
+  ggtitle(paste0('0 Marker Unitigs >= ', PARAMS$segment_length_threshold/1e6, 'Mbp')) +
   theme_classic() +
   theme(panel.border = element_rect(fill = NA, color='black', size = 1))
 

@@ -881,6 +881,62 @@ remove_small_clusters_on_components <-
     
     return(cluster_df)
   }
+
+
+
+#  Clustering Blocks -------------------------------------------------------
+
+refine_clusters <- function(cluster_df, unitig_lengths_df, components_df, minimum_cluster_size) {
+  cluster_df <-
+    remove_small_clusters(cluster_df,
+                          unitig_lengths_df,
+                          threshold = minimum_cluster_size)
+  
+  cluster_df <-
+    remove_small_clusters_on_components(
+      cluster_df,
+      unitig_lengths_df,
+      components_df,
+      threshold = PARAMS$minimum_component_cluster_fraction
+    )
+  
+  cluster_df <-
+    propagate_one_cluster_components(cluster_df, components_df)
+  
+  return(cluster_df)
+}
+
+cluster_and_merge <- function(cluster_df, components_df, cosine_similarity_mat, weights, cos_sim_threshold, prefix='C') {
+  cluster_df <- 
+    cluster_unitigs_2(
+      cluster_df,
+      cosine_similarity_mat,
+      weights,
+      new_cluster_id = prefix,
+      sim_threshold_cu = cos_sim_threshold,
+      sim_threshold_uu = cos_sim_threshold
+    )
+  
+  cluster_df <-
+    merge_similar_clusters_on_components_2(
+      cluster_df,
+      cosine_similarity_mat,
+      weights,
+      components_df,
+      cos_sim_threshold
+    )
+  
+  cluster_df <-
+    merge_similar_clusters_2(
+      cluster_df,
+      cosine_similarity_mat,
+      weights,
+      cos_sim_threshold
+    )
+  
+  return(cluster_df)
+}
+
 # Phasing -----------------------------------------------------------------
 orient_counts <- function(counts_df, strand_orientation_clusters_df){
   out <-

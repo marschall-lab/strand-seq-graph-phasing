@@ -500,7 +500,7 @@ rule count_haplotype_markers:
         segment_length_threshold=segment_length_threshold,
         script = get_script_path('R','clustering_orient_strandstate.snakemake.R'),
         il = lambda wildcards: get_optional_phasing_input(wildcards,'included_libraries.tsv'),
-        ic = lambda wildcards: get_optional_phasing_input(wildcards,'initial_clusters.tsv'),
+        pc = lambda wildcards: get_optional_phasing_input(wildcards,'prior_clusters.tsv'),
         rc= lambda wildcards: get_optional_phasing_input(wildcards,'refined_clusters.tsv'),
         fc = lambda wildcards: get_optional_phasing_input(wildcards,'final_clusters.tsv'),
         uo = lambda wildcards: get_optional_phasing_input(wildcards,'unitig_orientation.tsv'),
@@ -522,7 +522,7 @@ rule count_haplotype_markers:
         --segment-length-threshold {params.segment_length_threshold} \\
         --intermediate-output-dir {output.imo} \\
         --included-libraries {params.il} \\
-        --initial-clusters {params.ic} \\
+        --prior-clusters {params.pc} \\
         --refined-clusters {params.rc} \\
         --final-clusters {params.fc} \\
         --unitig-orientation {params.uo} \\
