@@ -5,10 +5,6 @@ segmentLengthThreshold: 250000
 tangleSegmentLengthThreshold: 250000
 per_thread_memory: False
 
-# currently only applies to the R Bioconductor environment rules
-deploy_offline: True
-singularity_Renv: /absolute/path/to/singularity_environment/env_Renv2.sif
-
 # experimental features
 calc_breakpoints: True
 
@@ -20,5 +16,7 @@ plot_output_suffix: '_identifying-suffix'
 # Additional controls, if reference is provided:
 dip_chroms_regex: '(chr|CHR)[0-9]+'
 hap_chroms_regex: '(chr|CHR)[yY]'
+# hemiploid: sometimes diploid, sometimes haploid
 hem_chroms_regex: '(chr|CHR)[xX]'
+# Hard To Assemble chromosomes
 hta_chroms_regex: '(chr|CHR)(13|14|15|21|22)'

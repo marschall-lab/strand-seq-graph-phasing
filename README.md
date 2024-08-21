@@ -50,8 +50,6 @@ The sample sheet is a .tsv file with the following columns:
 
 `assembler: [verkko, hifiasm]` Which genome assembly program was used to create the input assembly graph. 
 
-`cluster_PAR_with_haploid: [TRUE, FALSE]` If TRUE, Graphasing will attempt to merge the PAR with any detected haploid chromosomes on the same connected component. Is safest if it can be expected that the only diploid component connected to the X and Y chromosomes will be the PAR. 
-
 #### Config settings
 
 `samples: str` Path to sample sheet. 
@@ -64,13 +62,7 @@ The sample sheet is a .tsv file with the following columns:
 
 `tangleSegmentLengthThreshold: int (optional, default: 250000)` Filtration parameter. Unitigs in the input assembly graph `.gfa` less than `tangleSegmentLengthThreshold` in basepairs will be considered during large tangle removal.
 
-`per_thread_memory: bool (optional, default:False)` If `True`, memory specified for each rule is divided by the number of threads. 
-
-These two parameters only apply to the rules which use R Bioconductor packages:
-
-`deploy_offline: bool` If True, use the singularity to run the rules using R Bioconductor packages
-
-`singularity_Renv:` Path to the R Singularty environment. Only needed if `deploy_offline: True`
+`per_thread_memory: bool (optional, default:False)` If `True`, memory specified for each rule is divided by the number of threads.
 
 ##### Experimental Features
 
@@ -105,7 +97,6 @@ snakemake \\
 -d ../wd/ \\
  --configfiles config/config.yaml \\
  --config samples=/path/to/samples.tsv  \\
- --use-singularity --singularity-args "-B /path/to/scripts/folder/:/path/to/scripts/folder/" \\
  --restart-times 3
 ```
 #### Explanation
@@ -115,8 +106,6 @@ snakemake \\
 `--configfiles` Path to config .yaml
 
 `--config samples=` Path to sample sheet. Overrides the config file.
-
-`--use-singularity --singularity-args "-B ..."` Used when using Singularity for the R Bioconductor environment. Unfortunately, the Singularity container can have trouble locating paths outside of the working directory, and thus may fail to locate the scripts folder. If that occurs, the path to the scripts folder needs to be explicitly bound in singularity: `-B /path/to/scripts/folder/:/path/to/scripts/folder/`.
 
 `--restart-times` While the resource allocation for each rule generally works on the first attempt, some rules occasionally need more memory. 3 restarts generally works to provide enough memory for the workflow to finish.
 
