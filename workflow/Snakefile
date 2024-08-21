@@ -10,7 +10,6 @@ import pathlib
 
 segment_length_threshold = config["segmentLengthThreshold"]
 tangle_segment_length_threshold = config.get('tangleSegmentLengthThreshold', 250000)
-deploy_offline = config["deploy_offline"]
 
 scripts_dir = config["scripts_dir"]
 
@@ -114,19 +113,6 @@ def sample2fastmap(wildcards):
     out = expand("bwa_alignments/fastmap/{{sample}}/{lib}_maximal_unique_exact_match.tsv",
         lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs'])
     return out
-
-#####################################
-############ Offline/Online #########
-#####################################
-
-if deploy_offline:
-    conda_r_env = None
-    singularity_r_env = config["singularity_Renv"]
-    if not pathlib.Path(singularity_r_env).is_file():
-        raise FileNotFoundError('R Singularity environment not found.')
-else:
-    conda_r_env = "envs/env_Renv2.yaml"
-    singularity_r_env = None
 
 ###################################
 ############ Rules ################
