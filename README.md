@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.13356328.svg)](https://doi.org/10.5281/zenodo.13356328)
+
 # Graphasing: Phasing Diploid Genome Assembly Graphs with Single-Cell Strand Sequencing
 
 ## Getting Started
