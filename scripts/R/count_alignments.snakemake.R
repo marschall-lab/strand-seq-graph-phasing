@@ -1,22 +1,72 @@
 
 # Helpers -----------------------------------------------------------------
-aggregate_by_unitig <- function(x) {
-  x <-
-    x %>% 
-    group_by(unitig) %>%
-    summarise(c = sum(strand == '+'), w = sum(strand == '-'), .groups="drop")
-  
-  return(x)
+
+read_targets_from_sam_lines <- function(sam_lines) {
+  # sam_lines ~ from readr::read_lines of a sam file.
+
+  targets <-
+    readr::read_tsv(
+      I(stringr::str_subset(sam_lines, '^\\@SQ')),
+      col_names = c('linetag', 'rname', 'rlen')
+    )
+
+
+  targets <-
+    targets %>%
+    tidyr::separate_wider_delim(c(rname, rlen), delim = ':', names_sep = '_') %>%
+    select(rname_2, rlen_2) %>%
+    rename(unitig = rname_2, length = rlen_2)
+
+  return(targets)
+
 }
 
-add_missing_unitigs <- function(x) {
-  x <-
-    x %>%
-    right_join(unitig_lengths_df, by = 'unitig') %>% 
-    mutate(c = coalesce(c, 0), w = coalesce(w, 0)) 
-  
-  return(x)
+
+read_alns_from_sam_lines <- function(sam_lines) {
+  sam_alns <-
+    readr::read_tsv(
+      I(stringr::str_subset(sam_lines, '^\\@', negate=TRUE)),
+      col_names = c(
+        'qname',
+        'flag',
+        'rname',
+        'pos',
+        'mapq',
+        'cigar',
+        'rnext',
+        'pnext',
+        'tlen',
+        'seq',
+        'qual'
+      )
+    )
+
+  return(sam_alns)
 }
+
+
+filter_alignments <- function(aln) {
+
+  aln <-
+    aln %>%
+    filter(sign(tlen) %in% c(-1, 1))
+
+  is_duplicated_qname <- duplicated(aln$qname)
+
+  if(any(is_duplicated_qname)) {
+    cat('Duplicated qnames found in:', basename(bam), '\n')
+    aln <-
+      aln %>%
+      filter(!is_duplicated_qname)
+  }
+
+  aln <-
+    aln %>%
+    filter(rnext == '=')
+
+  return(aln)
+}
+
 
 # Command Line ------------------------------------------------------------
 
@@ -24,8 +74,6 @@ add_missing_unitigs <- function(x) {
 ## Args --------------------------------------------------------------------
 
 args <- commandArgs(trailingOnly = FALSE)
-
-# source('/Users/henglinm/Documents/GitHub/strand-seq-graph-phasing/scripts/R/module_utils/phasing_test_args.R')
 
 ## Parsing Helper ----------------------------------------------------------
 ## Expected Args
@@ -48,10 +96,10 @@ arg_idx <- c(arg_idx, length(args) + 1) # edge case of last tag
 get_values <- function(arg, singular=TRUE){
   idx <- which(args == arg)
   stopifnot(length(idx) == 1)
-  
+
   next_idx <- arg_idx[which.max(arg_idx > idx)]
   values <- args[(idx + 1):(next_idx - 1)]
-  
+
   # More than one value? return list. One value ~ remove from list structure. It
   # is probably bad practice to return two different types like that, but most
   # arguments have single values and it makes the code less annoying to look at.
@@ -61,7 +109,7 @@ get_values <- function(arg, singular=TRUE){
   } else {
     # stopifnot(length(values)>1)
   }
-  
+
   return(values)
 }
 
@@ -79,8 +127,6 @@ print(args)
 
 library(dplyr)
 library(purrr)
-
-library(Rsamtools)
 
 source(file.path(get_script_dir(), "module_utils/utils.R"))
 source(file.path(get_script_dir(), "module_utils/phasing_utils.R"))
@@ -102,13 +148,15 @@ output_fastmap <- get_values('--output-fastmap')
 
 
 
+
 # Load Headers ------------------------------------------------------------
 
-cat('Scanning Bam Header:\n')
-# All bam headers should be the same right? Only need one
-unitig_lengths <- scanBamHeader(mem_alignment_files[[1]], what='targets')[[1]]$targets
-unitig_lengths_df <- tibble::enframe(unitig_lengths, name='unitig', value='length')
+cat('Scanning Header:\n')
+# All headers should be the same right? Only need one
 
+sam_lines <- readr::read_lines(mem_alignment_files[[1]])
+unitig_lengths_df <- read_targets_from_sam_lines(sam_lines)
+rm(sam_lines)
 
 # Count Alignments ---------------------------------------------------------
 
@@ -121,70 +169,42 @@ if(n_threads > 1) {
 }
 
 ### Count mem Alignments ------------------------------------------------------
-# fastmap_alignment_files <- list.files('bwa_alignments/mem/HG00733/', full.names = TRUE, pattern='bam$')[1:10]
-lib_names <- map_chr(mem_alignment_files, function(x) gsub('.mdup.bam$', '', basename(x)))
+lib_names <- map_chr(mem_alignment_files, function(x) gsub('.mdup.filt.sam$', '', basename(x)))
 
-counts_df <- import_mapper(mem_alignment_files, function(bam){
-  cat(paste('counting bwa-mem alignments in', basename(bam), '\n'))
-  aln <- scanBam(file = bam,
-                 param = ScanBamParam(
-                   what = c('qname', 'rname', 'strand', 'pos', 'qwidth', 'mrnm', 'isize', 'mapq'),
-                   flag = scanBamFlag(
-                     isSupplementaryAlignment = FALSE,
-                     isSecondaryAlignment = FALSE,
-                     isDuplicate = FALSE,
-                     # for the purpose of determining qname/direction mapping, having both mates simply provides redundant information?
-                     isFirstMateRead = TRUE,
-                     isProperPair = TRUE
-                   )
-                 ))
+counts_df <- import_mapper(mem_alignment_files, function(sam){
+  cat(paste('counting bwa-mem alignments in', basename(sam), '\n'))
+
+  aln_lines <- readr::read_lines(sam)
+  aln <- read_alns_from_sam_lines(aln_lines)
+  rm(aln_lines)
+
+  # TODO add check for nrow() > 0. nrow() = 0 can happen with mem alignments if
+  # one of the Strand-seq files is malformed.
+
+
+  aln <- filter_alignments(aln)
   
-  aln <- as_tibble(aln[[1]])
-  
-  #TODO add check for nrow() > 0. nrow() = 0 can happen with meme alignments if
-  #one of the Strand-seq files is malformed.
-  
-  # filter out alignments to short unitigs
-  aln <- 
-    aln %>%  
-    mutate(rname = as.character(rname)) # default is as.factor import?
-  
-  # Keep only reads that successfully aligned
-  aln <- 
-    aln %>% 
-    filter(strand %in% c('+','-'))
-  
-  # filter any ss_reads that map to too many unitigs
-  # dplyr::filter with lots of groups can be very slow -> duplicated is faster
-  is_duplicated_qname <-
-    with(aln, duplicated(qname))
-  
-  if(any(is_duplicated_qname)) {
-    cat('Duplicated qnames found in:', basename(bam), '\n')
-    aln <-
-      aln %>%
-      filter(!is_duplicated_qname)
-  }
-  
-  aln <-
-    aln %>% 
-    select(-qname)
-  
-  # to simplify, only keep alignments where both mates land on the same rname
-  aln <- 
-    aln %>% 
-    filter(rname == mrnm)
-  
+  # match necessary columns from old naming scheme
   aln <-
     aln %>%
-    dplyr::rename(unitig = rname)
+    mutate(strand = case_when(sign(tlen) == 1 ~ '+', sign(tlen) == -1 ~ '-', TRUE ~ NA)) %>%
+    rename(unitig = rname) %>%
+    select(unitig, strand, pos, mapq)
+  
   
   if(aggregate_alignments) {
-    aln <-
-      aln %>% 
-      aggregate_by_unitig() %>%
-      add_missing_unitigs() %>% 
-      mutate(n = c+w)  
+
+      aln <-
+        aln %>%
+        group_by(unitig) %>%
+        summarise(c = sum(strand == '+'), w = sum(strand == '-'), .groups="drop")
+
+      # explicit 0s
+      aln <-
+        aln %>%
+        right_join(unitig_lengths_df) %>%
+        mutate(c = coalesce(c, 0), w = coalesce(w, 0)) %>%
+        mutate(n = c+w)
   }
   
   return(aln)
@@ -197,9 +217,7 @@ counts_df <-
   set_names(lib_names) %>%
   bind_rows(.id = 'lib')  
 
-# raw_counts_df <- counts_df
 ### Count fastmap Alignments ------------------------------------------------
-# fastmap_alignment_files <- list.files('bwa_alignments/fastmap/NA18989/', full.names = TRUE)[1:10]
 lib_names <-
   map_chr(fastmap_alignment_files, function(x)
     gsub('_maximal_unique_exact_match.tsv$', '', basename(x)))
@@ -213,14 +231,19 @@ exact_match_counts_df <- import_mapper(fastmap_alignment_files, function(x) {
   aln <-
     aln %>% 
     select(-qname)
-  
+
   if(aggregate_alignments) {
-    aln <-
-      aln %>% 
-      aggregate_by_unitig() %>% 
-      add_missing_unitigs() %>% 
-      mutate(n = c+w)  
-    
+
+      aln <-
+        aln %>%
+        group_by(unitig) %>%
+        summarise(c = sum(strand == '+'), w = sum(strand == '-'), .groups="drop")
+
+      aln <-
+        aln %>%
+        right_join(unitig_lengths_df) %>%
+        mutate(c = coalesce(c, 0), w = coalesce(w, 0)) %>%
+        mutate(n = c+w)
   }
   
   return(aln)

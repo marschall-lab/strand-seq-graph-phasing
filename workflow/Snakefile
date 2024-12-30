@@ -105,7 +105,7 @@ def sample2mergedss(wildcards):
     return fpath
 
 def sample2mem(wildcards, ext='bam'):
-    out = expand("bwa_alignments/mem/{{sample}}/{lib}.mdup."+ext,
+    out = expand("bwa_alignments/mem/{{sample}}/{lib}.mdup.filt."+ext,
         lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs'])
     return out
 
@@ -311,7 +311,10 @@ rule bwa_index_unitigs:
 #####################################################################
 
 
-
+# This block step also filters out supplementary and secondary alignments,
+# then filters out duplicates and pairs where either read is unmapped, then
+# filters only for first mate reads in proper pairs.
+# https://broadinstitute.github.io/picard/explain-flags.html
 rule bwa_align_unmerged_ss_to_unitigs:
     input:
         unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta", # gfa_to_fasta
@@ -349,7 +352,7 @@ rule bwa_sort_unmerged_ss_alignments:
 
 rule unmerged_mark_duplicates:
     input:  "bwa_alignments/mem/{sample}/{lib}.bam" # bwa_sort
-    output: "bwa_alignments/mem/{sample}/{lib}.mdup.bam"
+    output: temp("bwa_alignments/mem/{sample}/{lib}.mdup.bam")
     conda:'envs/env_cl.yaml'
     resources:
         mem_mb=calc_mem(2),
@@ -361,10 +364,26 @@ rule unmerged_mark_duplicates:
         (time sambamba markdup {input} {output}) > {log} 2>&1
         '''
 
+# Some filtering happens at the alignment step to save a little time in duplicate marking, but this step can also
+# # stand alone for the filtering.
+rule unmerged_filter_bam:
+    input: rules.unmerged_mark_duplicates.output
+    output: "bwa_alignments/mem/{sample}/{lib}.mdup.filt.bam"
+    conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb=calc_mem(2),
+        walltime=calc_walltime()
+    log: "log/unmerged_mark_duplicates_{sample}_{lib}.log"
+    benchmark: "benchmark/unmerged_mark_duplicates_{sample}_{lib}.benchmark"
+    shell:
+        '''
+        samtools view -b -F 3340 -f 66 {input} > {output} 2> {log} 2>&1
+        '''
+
 # DO I still need this rule from Maryam? Does it make filtering and import of the Bams in the R program easier?
 rule unmerged_bwa_index:
-    input:  "bwa_alignments/mem/{sample}/{lib}.mdup.bam" # mark_duplicates
-    output: "bwa_alignments/mem/{sample}/{lib}.mdup.bam.bai"
+    input:  rules.unmerged_filter_bam.output[0]
+    output: rules.unmerged_filter_bam.output[0] + '.bai'
     conda:'envs/env_cl.yaml'
     resources:
         mem_mb=calc_mem(),
@@ -398,15 +417,6 @@ rule fastmap_ss_reads_to_unitigs:
 ############ Acrocentric Tangle Removal ###########
 ###################################################
 
-# Copying the assembly to the working directory is a convenience to get around having to manage paths related to the singularity environment
-
-# rule copy_assembly_to_wd:
-#     input:
-#         lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa']
-#     output:
-#         temp("{sample}/assembly.gfa")
-#     shell: 'cp {input} {output}'
-
 rule remove_acrocentric_tangle:
     input: lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa']
     output: gfa = 'gfa/gfa/{sample}_exploded.gfa',
@@ -434,28 +444,33 @@ rule remove_acrocentric_tangle:
 ############ Phase Unitigs ############
 #######################################
 
-def if_file_exists(file_name):
-    file_path = pathlib.Path(file_name)
-    if file_path.is_file():
-        return str(file_path)
-    else:
-        return ""
-
-def get_optional_phasing_input(wildcards, what):
-    return if_file_exists('phasing_input/' + wildcards.sample + '/' + what)
+# IN an effort to avoid using R bioconductor packages, which can be hard to install, output to SAM and read with
+# non-bioconductor R packages.
+rule counting_bam_to_sam:
+    input: rules.unmerged_bwa_index.input
+    output: temp('temp/sams/{sample}/{lib}.mdup.filt.sam')
+    conda:'envs/env_cl.yaml'
+    resources:
+        mem_mb=calc_mem(2),
+        walltime=calc_walltime()
+    log: "log/unmerged_mark_duplicates_{sample}_{lib}.log"
+    benchmark: "benchmark/unmerged_mark_duplicates_{sample}_{lib}.benchmark"
+    shell:
+        '''
+        samtools view --with-header {input} > {output} 2> {log} 2>&1
+        '''
 
 rule count_sseq_alignments:
     input:
-        bam=lambda wildcards: sample2mem(wildcards, 'bam'),
-        bai=lambda wildcards: sample2mem(wildcards, 'bam.bai'),
+        sam= lambda wildcards: expand('temp/sams/{{sample}}/{lib}.mdup.filt.sam', lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs']),
+        # bai=lambda wildcards: sample2mem(wildcards, 'bam.bai'),
         fastmap=sample2fastmap,
     output:
         mem = "sseq_alignment_counts/{sample}_sseq_mem_counts.csv",
         fastmap = "sseq_alignment_counts/{sample}_sseq_fastmap_counts.csv",
     params:
         script = get_script_path('R', 'count_alignments.snakemake.R')
-    singularity: singularity_r_env
-    conda: conda_r_env
+    conda: 'envs/env_Renv.yaml'
     threads: 1
     resources:
         mem_mb=calc_mem(32),
@@ -465,13 +480,23 @@ rule count_sseq_alignments:
     shell:
         '''
         (Rscript --vanilla {params.script} \\
-        --mem-alignment-bams {input.bam} \\
+        --mem-alignment-bams {input.sam} \\
         --fastmap-alignments {input.fastmap} \\
         --threads {threads} \\
         --aggregate-alignments TRUE \\
         --output-mem {output.mem} \\
         --output-fastmap {output.fastmap}) > {log} 2>&1
         '''
+
+def if_file_exists(file_name):
+    file_path = pathlib.Path(file_name)
+    if file_path.is_file():
+        return str(file_path)
+    else:
+        return ""
+
+def get_optional_phasing_input(wildcards, what):
+    return if_file_exists('phasing_input/' + wildcards.sample + '/' + what)
 
 rule count_haplotype_markers:
     input:
@@ -524,8 +549,7 @@ rule fudge_haplotype_markers:
         "haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.csv"
     params:
         script = get_script_path('R','fudge_marker_counts.snakemake.R')
-    singularity: singularity_r_env
-    conda: conda_r_env
+    conda: 'envs/env_Renv.yaml'
     resources:
         mem_mb=calc_mem(4),
         walltime=calc_walltime()
