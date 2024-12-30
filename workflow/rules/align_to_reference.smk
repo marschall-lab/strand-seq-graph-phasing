@@ -14,8 +14,6 @@ ref_out = 'reference/'+ref_name+'.homopolymer-compressed.fasta'
 rule homopolymer_compress_ref:
     input: reference
     output: ref_out
-    params:
-        script=get_script_path('python','homopolymer_compress_fasta.py')
     conda:'../envs/env_cl.yaml'
     resources:
         mem_mb = lambda wildcards, attempt: 1024 * 16 * attempt,
