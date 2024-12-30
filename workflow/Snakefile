@@ -12,24 +12,11 @@ segment_length_threshold = config["segmentLengthThreshold"]
 tangle_segment_length_threshold = config.get('tangleSegmentLengthThreshold', 250000)
 
 scripts_dir = config["scripts_dir"]
+per_thread_memory = config.get("per_thread_memory", False)
 
-## Additional rules
-
-reference = config.get('reference', None)
+## Experimental Features
 calc_breakpoints = config.get('calc_breakpoints', False)
 
-plot_evaluation = config.get('plot_evaluation', True)
-plot_width = config.get('plot_width', 20),
-plot_height = config.get('plot_width', 15)
-plot_output_suffix = config.get('plot_output_suffix', '')
-
-dip_chroms_regex = config.get('dip_chroms_regex', '(chr|CHR)[0-9]+')
-hap_chroms_regex = config.get('hap_chroms_regex', '(chr|CHR)[yY]')
-hem_chroms_regex = config.get('hem_chroms_regex', '(chr|CHR)[xX]')
-hta_chroms_regex = config.get('hta_chroms_regex', '(chr|CHR)(13|14|15|21|22)')
-## Resources
-
-per_thread_memory = config.get("per_thread_memory", False)
 
 ################################
 ########## Variables ###########
@@ -124,17 +111,6 @@ wildcard_constraints:
 
 include: 'rules/sample_table.smk'
 include: 'rules/collect_output.smk'
-
-if reference:
-    include: 'rules/align_to_reference.smk'
-    ALL_OUTPUT.append(expand("rmc/{sample}_{ref_name}_reference_marker_counts.csv",sample=SAMPLES,ref_name=ref_name))
-
-if plot_evaluation:
-    include: 'rules/evaluate.smk'
-    if reference:
-        ALL_OUTPUT.append(expand("plots/evaluation_plots_{ref_name}.pdf", ref_name=ref_name))
-    else:
-        ALL_OUTPUT.append("plots/evaluation_plots_noref.pdf")
 
 if calc_breakpoints:
     include: 'rules/strandseq_breakpoints.smk'
