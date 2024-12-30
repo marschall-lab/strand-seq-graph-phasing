@@ -329,7 +329,7 @@ if(length(temp) != 0) {
   
 } else {
   
-  cluster_df <- mutate(long_unitigs_df, cluster=NA)
+  cluster_df <- mutate(long_unitigs_df, cluster=NA_character_)
   readr::write_tsv(cluster_df, file.path(intermediate_output_dir, 'prior_clusters.tsv'), col_names = FALSE)
   
 }
