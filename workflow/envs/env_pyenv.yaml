@@ -1,4 +1,0 @@
-name: env_pyenv
-dependencies:
-  - ipdb
-  - pysam
