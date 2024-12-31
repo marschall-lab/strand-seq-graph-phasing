@@ -48,9 +48,9 @@ manf <- function(x) {
 
 ## Args --------------------------------------------------------------------
 
+
 args <- commandArgs(trailingOnly = FALSE)
 
-# source('/Users/henglinm/Documents/GitHub/strand-seq-graph-phasing/scripts/R/module_utils/phasing_test_args.R')
 
 ## Parsing Helper ----------------------------------------------------------
 
