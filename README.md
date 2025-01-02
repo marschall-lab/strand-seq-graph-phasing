@@ -18,7 +18,7 @@ mkdir wd/
 3. Create the conda environment that will be used to run snakemake. Keep this environment in the project directory. 
 
 ```bash
-conda env create -p strand-seq-graph-phasing/env/snakemake_runner/ -f strand-seq-graph-phasing/workflow/envs/env_snakemake.yaml
+conda env create -p snakemake_runner/ -f strand-seq-graph-phasing/workflow/envs/env_snakemake.yaml
 ```
 
 4. Adjust config file and sample sheet. Template config and sample sheets are `config/config.yaml` and `config/samples.tsv` respectively
@@ -26,13 +26,9 @@ conda env create -p strand-seq-graph-phasing/env/snakemake_runner/ -f strand-seq
 5. Before running Graphasing, activate the environment created in step 3. Once activated, you should be ready to go!
 
 ```bash
+conda activate snakemake_runner/
 cd strand-seq-graph-phasing/
-conda activate env/snakemake_runner/
 ```
-
-### Difficulties installing R Bioconductor Packages
-
-If there are difficulties in installing R Bioconductor packages in your execution environment, a [Singularity](https://docs.sylabs.io/guides/latest/user-guide/) container may be used. You can use the [definition file](https://docs.sylabs.io/guides/latest/user-guide/definition_files.html) provided at `workflow/envs/Renv2_singularity_definition.def` to [build the required Singularity container](https://docs.sylabs.io/guides/latest/user-guide/build_a_container.html). Once built, copy the `.sif` contained into the working directory created in step 2.
 
 ### Config and Sample Sheet
 
@@ -56,7 +52,7 @@ The sample sheet is a .tsv file with the following columns:
 
 `samples: str` Path to sample sheet. 
 
-`scripts_dir: str` Path to folder containing Graphasing R and python scripts. This is the folder `scripts` in the project folder.
+`scripts_dir: str` Path to folder containing Graphasing R scripts. This is the folder `scripts` in the project folder.
 
 `reference: str (optional, default:None)` Path to reference genome. If provided, the input assembly will be aligned to the reference using `minimap2`, and used to supplement the output summaries and evaluation plots.
 
@@ -66,31 +62,10 @@ The sample sheet is a .tsv file with the following columns:
 
 `per_thread_memory: bool (optional, default:False)` If `True`, memory specified for each rule is divided by the number of threads.
 
-##### Experimental Features
+##### Experimental Features: Settings
 
-##### Breakpoints
-`calc_breakpoints bool (optional, default:False)` If `True`, Graphasing will attempt to locate haplotype switches in the input assembly. Detected peaks, as well as plots, can be found in `breakpoints/`
-
-##### Evaluation Plots
-`plot_evaluation bool (optional, default:True)` If `True`, evaluation plots will be made for all input samples. If a reference is provided, evaluation plots will include reference-derived evaluations. Without a reference, some plots will be left blank. Evaluation plots can be found in `plots/`. 
-
-`plot_width, plot_height int (optional, default:20,15)` 
-Width and height of evaluation plots .pdf output file.
-
-`plot_output_suffix str (optional, default:'')`
-Suffix to output file name. May be useful if using multiple configs within the same working directory
-
-The following options are only needed if a reference is provided for the evaluation plots:
-
-`dip_chroms_regex: str (optional, default: '(chr|CHR)[0-9]+')` 
-\
-`hap_chroms_regex: str (optional, default: '(chr|CHR)[yY]'` 
-\
-`hem_chroms_regex: str (optional, default: '(chr|CHR)[xX]'` 
-\
-`hta_chroms_regex: str (optional, default: '(chr|CHR)(13|14|15|21|22)'`
-
-These regexs control what is plotted, as well as additional plot annotations. Annotations are made for chromosomes that are diploid, haploid, hemiploid (sometimes diploid or haploid eg, chr X in humans), and hard-to-assemble. Only chromosomes matching the diploid, haploid, and hemiploid regexs are plotted. Defaults are set for human genomes.
+##### Input Switch Error Detection
+`calc_breakpoints bool (optional, default:False)` If `True`, Graphasing will attempt to locate haplotype switches in the input assembly. See below for more detail.
 
 ## Example command
 
@@ -128,6 +103,7 @@ verkko
 # Pass the paths .gaf here:
 --paths {Graphasing_paths_gaf}
 ```
+
 ### hifiasm
 
 To generate phased assemblies with [hifiasm](https://github.com/chhylp123/hifiasm), the output Yak databases files, found at `yak/{sample}_hap[12].yak` can be passed to the `-1` and `-2` arguments of hifiasm trio mode assembly. Read overlaps from the unphased assembly can be reused by passing the same output prefix as the unphased assembly, eg:
@@ -140,14 +116,48 @@ See the [trio-phasing documentation](https://hifiasm.readthedocs.io/en/latest/tr
 
 ## Visualization with Bandage
 
-Graphasing outputs [bandage-friendly](https://rrwick.github.io/Bandage/) haplotype marker summaries, which can be found in `haplotype_marker_counts/`. Each chromosome cluster is assigned two opposing colors, one for each haplotype, and each unitig is shaded according to the haplotype markers that align to it, with grey representing a 50/50 balance of markers. If a reference genome was provided, then summaries, containing additional reference-alignment-derived annotations can be found in `rmc/`.
+Graphasing outputs [bandage-friendly](https://rrwick.github.io/Bandage/) haplotype marker summaries, which can be found in `haplotype_marker_counts/`. Each chromosome cluster is assigned two opposing colors, one for each haplotype, and each unitig is shaded according to the haplotype markers that align to it, with grey representing a 50/50 balance of markers. 
 
 ## Warnings
 
-### Results are stochastic
-
-An important step in the workflow is to cluster unitigs from the input assembly `.gfa` into groups corresponding to the same chromosome. Part of this step is achieved using a stochastic ensemble clustering algorithm from the `contiBAIT` package [(See figure 7.3)](https://open.library.ubc.ca/media/stream/pdf/24/1.0135595/1). Though `contiBAIT` parameters are set to attempt to limit variation in clustering, it is possible that the clustering of unitigs, as well as all downstream haplotype inference, will vary even if the pipeline is run multiple times with the same configuration.
-
 ### Haploid Chromosomes may be assigned to the same haplotype.
 
-Strand-seq alignments to haploid chromosomes have been observed to occasionally behave strangely, especially when they are already full phased in the input assembly .gfa; while normally unitigs from haploid chromosomes would each display a haploid alignment signal and cluster together, it has been observed that some or all haploid can display a diploid alignment signal and cluster separately. When this happens, it is possible for all haploid chromosomes, eg X and Y, to be assigned to the same haplotype.
+Strand-seq alignments to haploid chromosomes have been observed to occasionally behave strangely, especially when they are already full phased in the input assembly .gfa file. Normally unitigs from haploid chromosomes display a haploid alignment signal and cluster together. However, it has been observed that haploid unitigs can display a diploid alignment signal. When this happens, it is possible for all haploid chromosomes, eg X and Y, to be assigned to the same haplotype.
+
+
+## Experimental Features
+
+### Input Switch Error Detection
+
+When specified in the configuration file, Graphasing will attempt to identify haplotype switches within input unitigs. Roughly speaking, the switch error detection process convolves a step filter with the Strand-seq signal from Watson-Crick libraries, looking for signs of a sudden change, or "breakpoint peaks", in haplotype signal on a unitig. Breakpoints can only be calculated for unitigs that were assigned to a cluster during the phasing process, as knowledge of the inherited Strand-seq library state is necessary for the breakpoint calculation. Output can be found in the `breakpoints/` folder within the working directory. The output currently favors higher recall. More specific breakpoint detection can be achieved by filtering the output for homozygous state switches and big peaks. Alternatively, the breakpoint plots can be inspected to filter out spurious calls.
+
+### Manual Adjustments
+(more documentation to come)
+It is possible to manually intercede and adjust results as multiple points within the phasing process. Though not strictly necesssary, better understanding of this process can be achieved by reading the Graphasing [methods section](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-024-03409-1#Sec17)
+
+After running Graphasing, within the `intermediate_output/{sample}/` directory there will be a collection of output files reflecting the state of the phasing process at a particular point. The files are listed here in order of when the files are computed:
+
+* included_libraries.tsv
+  * What Strand-seq libraries are used for the phasing calculations. This is after QC is run to filter out loq-quality libraries. Modifying this list will require use of the files in the `library_ids/` directory.
+* prior_clusters.tsv
+  * Unitig clustering by chromosome before the clustering algorithm is run. It is expected for all cluster assignments to be `NA`
+* refined_clusters.tsv
+  * Unitig clustering by chromosome before final cluster refinement
+* final_clusters.tsv
+  * Final unitig clustering by chromosome
+* unitig_orientation.tsv
+  * The detetcted orientation of each unitig. Note that two unitigs appearing to be of differing orientation may reflect the flexiblity with which the same connection between two nodes can be specified, rather than a genuine misoriented unitig.
+* counting_methods.tsv
+  * What method is used to calculate the phase vector for each chromosome cluster of unitigs.
+
+To pass one of these files as input to Graphasing, create a directory named `phasing_input/` in the working directory and copy `intermediate_output/{sample}/` to `phasing_input/{sample}/`. Any files in this folder will be used in place of executing the corresponding calculations of the graphasing workflow during a subsequent run. One can manually edit these files to affect downstream calcuation. For example, manually editing  `final_clusters.tsv`, which is then used as input for unitig orientation detection, counting method decision, and ultimately the haplotype marker count output. Note that including downstream files may nullify the effect of upstream manual edits. For example, if both `refined_clusters.tsv` and `final_clusters.tsv` are included in `phasing_input/{sample}/`, then graphasing will use `final_clusters.tsv` as provided, and skip performing any calculations with  refined_clusters.tsv. 
+
+Some plots are also included in `intermediate_output/{sample}/` that can help to evaluate the quality of the results (more documentation to come). The most useful (possibly) for the purpose of evaluation and making manual edits are the cosine similarity heatmaps. For more fragmented assembiles, the similarity barcode and heatmap plots will not output, as the plots become too large.
+
+#### Manual Adjustments Summary
+
+* run graphasing workflow
+* copy `intermediate_output/{sample}/` to `phasing_input/{sample}/`
+* Using plots for assistance, make edits to corresponding files. Delete files downstream of the edits to ensure edited files used.
+* rerun graphasing
+* double check current files in `intermediate_output/{sample}/` to ensure edits were used as expected. Repeat editing process as necessary

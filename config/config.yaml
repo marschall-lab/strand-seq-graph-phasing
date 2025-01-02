@@ -1,22 +1,8 @@
 samples: /absolute/path/to/strand-seq-graph-phasing/config/samples.tsv
 scripts_dir: /absolute/path/to/strand-seq-graph-phasing/scripts/
-reference: /absolute/path/to/references/T2Tv11_hg002Yv2_chm13.fasta
 segmentLengthThreshold: 250000
 tangleSegmentLengthThreshold: 250000
 per_thread_memory: False
 
 # experimental features
 calc_breakpoints: True
-
-plot_evaluation: True
-plot_width: 20
-plot_height: 15
-plot_output_suffix: '_identifying-suffix'
-
-# Additional controls, if reference is provided:
-dip_chroms_regex: '(chr|CHR)[0-9]+'
-hap_chroms_regex: '(chr|CHR)[yY]'
-# hemiploid: sometimes diploid, sometimes haploid
-hem_chroms_regex: '(chr|CHR)[xX]'
-# Hard To Assemble chromosomes
-hta_chroms_regex: '(chr|CHR)(13|14|15|21|22)'
