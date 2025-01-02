@@ -89,7 +89,9 @@ snakemake \\
 
 ## Generating Phased Assemblies.
 
-### Verkko 
+### Verkko
+Note that verkko, being implemented in snakemake, is very sensitive to timestamps, an issue which can lead to the phased paths input being ignored. See [this issue] (https://github.com/marbl/verkko/issues/302#issuecomment-2495672213) for guidance on how to maintain proper timestamps while generating phased assemblies.
+
 To generate phased assemblies with [Verkko](https://github.com/marbl/verkko), the output .gaf file, found at `rukki/{sample}/{sample}_rukki_paths.gaf` can be passed to the `--paths` argument. At the same time, the folder containing the unphased assembly, as well as paths to the hifi and ONT reads used to constuct the unphased assembly, need to be input as well, eg:
 
 ```bash
@@ -105,7 +107,6 @@ verkko
 ```
 
 ### hifiasm
-
 To generate phased assemblies with [hifiasm](https://github.com/chhylp123/hifiasm), the output Yak databases files, found at `yak/{sample}_hap[12].yak` can be passed to the `-1` and `-2` arguments of hifiasm trio mode assembly. Read overlaps from the unphased assembly can be reused by passing the same output prefix as the unphased assembly, eg:
 
 ```bash
