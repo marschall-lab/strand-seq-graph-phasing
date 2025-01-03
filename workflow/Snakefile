@@ -11,7 +11,6 @@ import pathlib
 segment_length_threshold = config["segmentLengthThreshold"]
 tangle_segment_length_threshold = config.get('tangleSegmentLengthThreshold', 250000)
 
-scripts_dir = config["scripts_dir"]
 per_thread_memory = config.get("per_thread_memory", False)
 
 ## Experimental Features
@@ -29,7 +28,8 @@ bwa_index_suffices = ["amb", "ann", "bwt", "pac", "sa"]
 ################################
 
 def get_script_path(*args):
-    out = pathlib.Path(scripts_dir).joinpath(*args).resolve(strict=True)
+    file_directory = workflow.basedir
+    out = pathlib.Path(file_directory).joinpath('..', 'scripts').joinpath(*args).resolve(strict=True)
     return out.as_posix()
 
 def make_mem_calculator(scale=1024, per_thread_memory=False):

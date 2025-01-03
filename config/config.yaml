@@ -1,5 +1,4 @@
 samples: /absolute/path/to/strand-seq-graph-phasing/config/samples.tsv
-scripts_dir: /absolute/path/to/strand-seq-graph-phasing/scripts/
 segmentLengthThreshold: 250000
 tangleSegmentLengthThreshold: 250000
 per_thread_memory: False

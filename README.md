@@ -52,8 +52,6 @@ The sample sheet is a .tsv file with the following columns:
 
 `samples: str` Path to sample sheet. 
 
-`scripts_dir: str` Path to folder containing Graphasing R scripts. This is the folder `scripts` in the project folder.
-
 `reference: str (optional, default:None)` Path to reference genome. If provided, the input assembly will be aligned to the reference using `minimap2`, and used to supplement the output summaries and evaluation plots.
 
 `segmentLengthThreshold: int` Filtration parameter. Unitigs in the input assembly graph `.gfa` less than `segmentLengthThreshold` in basepairs will be filtered out.
