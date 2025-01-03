@@ -4,4 +4,6 @@ dependencies:
     - r-tidyverse>=2.0.0
     - r-pafr>=0.0.2
     - r-slider>=0.3.1
+    - r-argparse
+    - r-furrr
     # - r-ggokabeito
