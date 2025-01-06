@@ -166,7 +166,7 @@ rule unzip_ss:
 
 # TODO I don't think this step is necessary anymore
 rule add_ss_libname_unmerged:
-    input: "ss/unmerged/{sample}/{lib}_{pair}.fasta"
+    input: rules.unzip_ss.output
     output: temp("ss/unmerged/{sample}/{lib}_{pair}.renamed.fasta")
     conda:'envs/env_cl.yaml'
     threads: 1
@@ -180,7 +180,7 @@ rule add_ss_libname_unmerged:
         '''
 
 rule homopolymer_compress_unmerged_ss:
-    input: "ss/unmerged/{sample}/{lib}_{pair}.renamed.fasta"
+    input: rules.add_ss_libname_unmerged.output
     output: "ss/unmerged/{sample}/{lib}_{pair}.homopolymer-compressed.fasta"
     conda:'envs/env_cl.yaml'
     resources:
@@ -207,10 +207,10 @@ rule pear_merge_mates:
         fq1=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_pairs'][wildcards.lib]['file1'],
         fq2=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_pairs'][wildcards.lib]['file2']
     output:
-        "ss/merged/{sample}/{lib}.assembled.fastq",
-        "ss/merged/{sample}/{lib}.discarded.fastq",
-        "ss/merged/{sample}/{lib}.unassembled.forward.fastq",
-        "ss/merged/{sample}/{lib}.unassembled.reverse.fastq"
+        assembled = "ss/merged/{sample}/{lib}.assembled.fastq",
+        discarded = "ss/merged/{sample}/{lib}.discarded.fastq",
+        unassembled_forward = "ss/merged/{sample}/{lib}.unassembled.forward.fastq",
+        unassembled_reverse = "ss/merged/{sample}/{lib}.unassembled.reverse.fastq"
     conda:'envs/env_cl.yaml'
     resources:
         mem_mb=calc_mem(),
@@ -221,8 +221,8 @@ rule pear_merge_mates:
 
 rule concat_assembled_with_first_pair_of_unassembled:
     input:
-        "ss/merged/{sample}/{lib}.assembled.fastq",
-        "ss/merged/{sample}/{lib}.unassembled.forward.fastq"
+        rules.pear_merge_mates.output.assembled,
+        rules.pear_merge_mates.output.unassembled_forward
     output: temp("ss/merged/{sample}/{lib}.combined.fasta")
     conda:'envs/env_cl.yaml'
     resources:
@@ -232,7 +232,7 @@ rule concat_assembled_with_first_pair_of_unassembled:
     shell: "(time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1"
 
 rule add_ss_libname_merged:
-    input: "ss/merged/{sample}/{lib}.combined.fasta"
+    input: rules.concat_assembled_with_first_pair_of_unassembled.output
     output: temp("ss/merged/{sample}/{lib}.combined.renamed.fasta")
     conda:'envs/env_cl.yaml'
     resources:
@@ -244,7 +244,7 @@ rule add_ss_libname_merged:
         '''
 
 rule homopolymer_compress_merged_ss:
-    input: "ss/merged/{sample}/{lib}.combined.renamed.fasta" # concat_assembled_with_first_pair_of_unassembled
+    input: rules.add_ss_libname_merged.output
     output: "ss/merged/{sample}/{lib}.combined.homopolymer-compressed.fasta"
     conda:'envs/env_cl.yaml'
     resources:
@@ -272,7 +272,7 @@ rule gfa_to_fasta:
         '''
 
 rule bwa_index_unitigs:
-    input: "fasta/{sample}/{sample}_unitigs-hpc.fasta" # gfa_to_fasta
+    input: rules.gfa_to_fasta.output
     output: expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices)
     conda:'envs/env_cl.yaml'
     resources:
@@ -293,8 +293,8 @@ rule bwa_index_unitigs:
 # https://broadinstitute.github.io/picard/explain-flags.html
 rule bwa_align_unmerged_ss_to_unitigs:
     input:
-        unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta", # gfa_to_fasta
-        unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}", bwa_index_suffix=bwa_index_suffices), # bwa_index_unitigs
+        unitigs=rules.gfa_to_fasta.output,
+        unitigs_index=rules.bwa_index_unitigs.output,
         mate1=lambda wildcards: sample2unmergedss(wildcards, 1),
         mate2=lambda wildcards: sample2unmergedss(wildcards, 2)
     output: temp("temp_bwa_alignments/mem/{sample}/{lib}.bam")
@@ -313,7 +313,7 @@ rule bwa_align_unmerged_ss_to_unitigs:
         '''
 
 rule bwa_sort_unmerged_ss_alignments:
-    input:  "temp_bwa_alignments/mem/{sample}/{lib}.bam" # bwa_align
+    input:  rules.bwa_align_unmerged_ss_to_unitigs.output
     output: temp("bwa_alignments/mem/{sample}/{lib}.bam")
     conda:'envs/env_cl.yaml'
     resources:
@@ -327,7 +327,7 @@ rule bwa_sort_unmerged_ss_alignments:
         '''
 
 rule unmerged_mark_duplicates:
-    input:  "bwa_alignments/mem/{sample}/{lib}.bam" # bwa_sort
+    input:  rules.bwa_sort_unmerged_ss_alignments.output
     output: temp("bwa_alignments/mem/{sample}/{lib}.mdup.bam")
     conda:'envs/env_cl.yaml'
     resources:
@@ -358,7 +358,7 @@ rule unmerged_filter_bam:
 
 # DO I still need this rule from Maryam? Does it make filtering and import of the Bams in the R program easier?
 rule unmerged_bwa_index:
-    input:  rules.unmerged_filter_bam.output[0]
+    input:  rules.unmerged_filter_bam.output
     output: rules.unmerged_filter_bam.output[0] + '.bai'
     conda:'envs/env_cl.yaml'
     resources:
@@ -377,8 +377,8 @@ rule unmerged_bwa_index:
 
 rule fastmap_ss_reads_to_unitigs:
     input:
-        unitigs="fasta/{sample}/{sample}_unitigs-hpc.fasta",# gfa_to_fasta
-        unitigs_index=expand("fasta/{{sample}}/{{sample}}_unitigs-hpc.fasta.{bwa_index_suffix}",bwa_index_suffix=bwa_index_suffices),# bwa_index_unitigs
+        unitigs=rules.gfa_to_fasta.output,
+        unitigs_index=rules.bwa_index_unitigs.output,
         SSreads=sample2mergedss
     output: "bwa_alignments/fastmap/{sample}/{lib}_maximal_unique_exact_match.tsv" # fastmap doesn't output bam
     conda: 'envs/env_cl.yaml'
@@ -549,10 +549,8 @@ rule count_haplotype_markers:
 
 
 rule fudge_haplotype_markers:
-    input:
-        hmc = "haplotype_marker_counts/{sample}_haplotype_marker_counts.csv"
-    output:
-        "haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.csv"
+    input: rules.count_haplotype_markers.output.mc
+    output: "haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.csv"
     params:
         script = get_script_path('R','fudge_marker_counts.snakemake.R')
     conda: 'envs/env_Renv.yaml'
@@ -562,7 +560,7 @@ rule fudge_haplotype_markers:
     log: "log/fudge_haplotype_markers_{sample}.log"
     benchmark: "benchmark/fudge_haplotype_markers_{sample}.benchmark"
     shell:
-        'Rscript --vanilla {params.script} --hmc {input.hmc}  > {output} 2> {log}'
+        'Rscript --vanilla {params.script} --hmc {input}  > {output} 2> {log}'
 
 ################################################################
 ############ HiFiasm  Graph Hifi Coverage for Rukki ############
@@ -587,8 +585,7 @@ rule add_coverage_to_gfa:
     input:
         gfa=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['gfa'],
         coverage=lambda wildcards: MAP_SAMPLE_TO_INPUT[wildcards.sample]['coverage']
-    output:
-        temp('temp/{sample}_gfa_with_coverage.gfa')
+    output: temp('temp/{sample}_gfa_with_coverage.gfa')
     conda: 'envs/env_verkko.yaml'
     resources:
         mem_mb=calc_mem(),
@@ -601,7 +598,7 @@ rule add_coverage_to_gfa:
         '''
 
 rule convert_markers_to_tsv:
-    input: "haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.csv"
+    input: rules.fudge_haplotype_markers.output
     output: temp("haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.tsv")
     resources:
         mem_mb=calc_mem(),
@@ -633,8 +630,8 @@ def rukki_paramaterizer(wildcards, parameter) :
 
 rule run_rukki:
     input:
-        graph='temp/{sample}_gfa_with_coverage.gfa',
-        markers="haplotype_marker_counts/{sample}_fudged_haplotype_marker_counts.tsv"
+        graph=rules.add_coverage_to_gfa.output,
+        markers=rules.convert_markers_to_tsv.output
     output:
         tsv="rukki/{sample}/{sample}_rukki_paths.tsv",
         gaf="rukki/{sample}/{sample}_rukki_paths.gaf",
@@ -719,7 +716,7 @@ rule run_rukki:
 # FIXME This doesn't work, as the attempts to force rukki to assign HOM labels completely turn off the assignment of HOM
 #  labels (--issue-ratio), and therefore the paths need to be processed instead of the annotations.
 rule split_haplotype_annotations:
-    input: 'rukki/{sample}/{sample}_out_final_ann.csv'
+    input: rules.run_rukki.output.final_annotation
     output:
         hap1=temp('rukki/{sample}/{sample}_hap1_nodes.txt'),
         hap2=temp('rukki/{sample}/{sample}_hap2_nodes.txt')
@@ -734,9 +731,9 @@ rule split_haplotype_annotations:
 
 rule split_assembly_for_yak:
     input:
-        hap1_nodes = 'rukki/{sample}/{sample}_hap1_nodes.txt',
-        hap2_nodes = 'rukki/{sample}/{sample}_hap2_nodes.txt',
-        fasta= 'fasta/{sample}/{sample}_unitigs-hpc.fasta'
+        hap1_nodes = rules.split_haplotype_annotations.output.hap1,
+        hap2_nodes = rules.split_haplotype_annotations.output.hap2,
+        fasta= rules.gfa_to_fasta.output
     output:
         hap1=temp('fasta/{sample}/{sample}_unitigs_hap1.fasta'),
         hap2=temp('fasta/{sample}/{sample}_unitigs_hap2.fasta')
@@ -753,8 +750,8 @@ rule split_assembly_for_yak:
 
 rule duplicate_sequences_for_yak:
     input:
-        hap1 = 'fasta/{sample}/{sample}_unitigs_hap1.fasta',
-        hap2 = 'fasta/{sample}/{sample}_unitigs_hap2.fasta'
+        hap1 = rules.split_assembly_for_yak.output.hap1,
+        hap2 = rules.split_assembly_for_yak.output.hap2
     output:
         hap1=temp('fasta/{sample}/{sample}_unitigs_hap1_dup.fasta'),
         hap2=temp('fasta/{sample}/{sample}_unitigs_hap2_dup.fasta')
@@ -771,8 +768,8 @@ rule duplicate_sequences_for_yak:
 
 rule yak_count_split_fasta:
     input:
-        hap1='fasta/{sample}/{sample}_unitigs_hap1_dup.fasta',
-        hap2='fasta/{sample}/{sample}_unitigs_hap2_dup.fasta'
+        hap1=rules.duplicate_sequences_for_yak.output.hap1,
+        hap2=rules.duplicate_sequences_for_yak.output.hap2
     output:
         hap1='yak/{sample}_hap1.yak',
         hap2='yak/{sample}_hap2.yak'
