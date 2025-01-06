@@ -3,7 +3,7 @@
 rule count_sseq_alignments_mem_unaggregated:
     input:
         aln=lambda wildcards: expand('temp/sams/{{sample}}/{lib}.mdup.filt.sam', lib=MAP_SAMPLE_TO_INPUT[wildcards.sample]['strandseq_libs']),
-        unitig_lengths = 'temp/sam_header/unitig_lengths_{sample}.tsv'
+        unitig_lengths = 'temp/unitig_lengths/unitig_lengths_{sample}.tsv'
     output: "sseq_alignment_counts/{sample}_sseq_mem_unagg.csv",
     params:
         script = get_script_path('R', 'count_alignments_mem.snakemake.R')
