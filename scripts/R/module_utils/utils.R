@@ -104,6 +104,9 @@ invert_hex <- function(hex_code) {
 
 
 # Misc --------------------------------------------------------------------
+print_se <- function(x) {
+  cat(capture.output(print(x)), file = stderr(), sep = "\n")
+}
 
 uv <- function(x, ...) {
   x / sqrt(sum(x^2, ...))

@@ -43,113 +43,55 @@ manf <- function(x) {
   factor(x, levels = stringr::str_sort(unique(x), numeric=TRUE))
 }
 
-# Command Line ------------------------------------------------------------
 
+# Library -----------------------------------------------------------------
 
-## Args --------------------------------------------------------------------
-
-
-args <- commandArgs(trailingOnly = FALSE)
-
-
-## Parsing Helper ----------------------------------------------------------
-
-# Have to handle multiple inputs per tag
-arg_idx <- sort(which(grepl('^--', args)))
-arg_idx <- c(arg_idx, length(args) + 1) # edge case of last tag
-
-get_values <- function(arg, singular=TRUE, null_ok=FALSE){
-  idx <- which(args == arg)
-  if(length(idx) == 0) {
-    if(null_ok) {
-      return(character())
-    } else {
-      stop('arg: ', arg, ' not found')
-    } 
-  } 
-  stopifnot(length(idx) == 1)
-
-  next_idx <- arg_idx[which.max(arg_idx > idx)]
-  if(next_idx == idx + 1) {
-    if(null_ok) {
-      return(character())
-    } else {
-      stop('arg: ', arg, ' not found')
-    } 
-  }
-  values <- args[(idx + 1):(next_idx - 1)]
-
-  # More than one value? return list. One value ~ remove from list structure. It
-  # is probably bad practice to return two different types like that, but most
-  # arguments have single values and it makes the code less annoying to look at.
-  if(singular) {
-    stopifnot(length(values)==1)
-    values <- values[[1]]
-  } else {
-    stopifnot(length(values)>=1)
-  }
-
-  return(values)
-}
-
+library(argparse)
+library(dplyr)
+library(purrr)
 
 get_script_dir <- function() {
+  args <- commandArgs(trailingOnly = FALSE)
   needle <- '--file='
   script_path <- gsub(needle, '',  args[grepl(needle, args)])
   return(dirname(script_path))
 }
 
-
-print(args)
-
-# Library -----------------------------------------------------------------
-
-library(dplyr)
-library(purrr)
-
-# library(contiBAIT)
-
 source(file.path(get_script_dir(), "module_utils/utils.R"))
 source(file.path(get_script_dir(), "module_utils/phasing_utils.R"))
+
 # Parsing -----------------------------------------------------------------
-## Expected Args
-expected_args <-
-  c(
-    ## Input
-    '--mem-counts',
-    '--fastmap-counts',
-    '--connected-components',
-    ## Output
-    '--intermediate-output-dir',
-    '--output-marker-counts',
-    '--output-lib',
-    
-    ## Params
-    '--segment-length-threshold'
-  )
 
-stopifnot(all(expected_args %in% args))
-## Input
+print(commandArgs(trailingOnly = FALSE))
 
-mem_counts <- get_values("--mem-counts", singular=FALSE)
-fastmap_counts <- get_values("--fastmap-counts", singular=FALSE)
-connected_components <- get_values('--connected-components', singular=TRUE)
+parser <- ArgumentParser(description = 'Count Alignments')
+parser$add_argument('--mem-counts', required=TRUE, nargs = 1)
+parser$add_argument('--fastmap-counts', required=TRUE, nargs = 1)
+parser$add_argument('--connected-components', required=TRUE, nargs = 1)
 
-## Parameters
-segment_length_threshold <- as.numeric(get_values('--segment-length-threshold', singular=TRUE))
+parser$add_argument('--intermediate-output-dir', required=TRUE, nargs = 1)
 
-## Output
-intermediate_output_dir <- get_values('--intermediate-output-dir')
-output_counts <- get_values('--output-marker-counts')
-output_lib <- get_values('--output-lib')
+parser$add_argument('--included-libraries', required=FALSE, nargs = 1)
+parser$add_argument('--prior-clusters', required=FALSE, nargs = 1)
+parser$add_argument('--refined-clusters', required=FALSE, nargs = 1)
+parser$add_argument('--final-clusters', required=FALSE, nargs = 1)
+parser$add_argument('--unitig-orientation', required=FALSE, nargs = 1)
+parser$add_argument('--counting-methods', required=FALSE, nargs = 1)
 
+parser$add_argument('--output-marker-counts', required=TRUE, nargs = 1)
+parser$add_argument('--output-lib', required=TRUE, nargs = 1)
+parser$add_argument('--segment-length-threshold', required=TRUE, nargs = 1, type='double')
+
+
+args <- parser$parse_args()
+print(args)
 
 # Parameters --------------------------------------------------------------
 
 #TODO add QC Params
 PARAMS <- list(
   # To filter out unitigs from the start
-  segment_length_threshold = segment_length_threshold,
+  segment_length_threshold = args$segment_length_threshold,
   
   # QC Parameters: 
   lowQualThreshold = 0.85,
@@ -192,16 +134,16 @@ stopifnot(PARAMS$haploid_detetection_mode %in%  c('ssf', 'pca'))
 cat('Reading connected components\n')
 
 components_df <-
-  readr::read_tsv(connected_components)
+  readr::read_tsv(args$connected_components)
 
 ## Alignment Counts  ---------------------------------------------------------
 
 # TODO, a separate file with unitig lengths
 counts_df <-
-  readr::read_csv(mem_counts, col_types = 'cciiii')
+  readr::read_csv(args$mem_counts, col_types = 'cciiii')
 
 exact_match_counts_df <-
-  readr::read_csv(fastmap_counts, col_types = 'cciiii')
+  readr::read_csv(args$fastmap_counts, col_types = 'cciiii')
 
 stopifnot(setequal(pull_distinct(counts_df, unitig), pull_distinct(exact_match_counts_df, unitig)))
 
@@ -292,17 +234,17 @@ strand.states <-
   )
 
 
-temp <- get_values('--included-libraries', null_ok=TRUE)
-if(length(temp) != 0) {
+
+if(!is.null(args$included_libraries)) {
   
   cat('Importing included libraries.\n')
   included_libraries <-
-    readr::read_tsv(temp, col_names = FALSE)[[1]]
+    readr::read_tsv(args$included_libraries, col_names = FALSE)[[1]]
   
 } else {
   
   included_libraries <- colnames(strand.states$strandMatrix)
-  readr::write_tsv(tibble(included_libraries), file.path(intermediate_output_dir, 'included_libraries.tsv') ,col_names = FALSE)
+  readr::write_tsv(tibble(included_libraries), file.path(args$intermediate_output_dir, 'included_libraries.tsv') ,col_names = FALSE)
   
 }
 
@@ -321,16 +263,15 @@ ssf_mat <- ssf_mat[, colnames(ssf_mat) %in% included_libraries, drop=FALSE]
 
 # Prior Clusters ----------------------------------------------------------
 
-temp <- get_values('--prior-clusters', null_ok=TRUE)
-if(length(temp) != 0) {
+if(!is.null(args$prior_clusters)) {
   
   cat('Importing prior clusters.\n')
-  cluster_df <- readr::read_tsv(temp, col_names = c('unitig', 'cluster'), col_types = 'cc')
+  cluster_df <- readr::read_tsv(args$prior_clusters, col_names = c('unitig', 'cluster'), col_types = 'cc')
   
 } else {
   
   cluster_df <- mutate(long_unitigs_df, cluster=NA_character_)
-  readr::write_tsv(cluster_df, file.path(intermediate_output_dir, 'prior_clusters.tsv'), col_names = FALSE)
+  readr::write_tsv(cluster_df, file.path(args$intermediate_output_dir, 'prior_clusters.tsv'), col_names = FALSE)
   
 }
 
@@ -339,11 +280,11 @@ if(length(temp) != 0) {
 
 
 # TODO add back micro cluster on component removal?
-temp <- get_values('--refined-clusters', null_ok=TRUE)
-if(length(temp) != 0) {
+
+if(!is.null(args$refined_clusters)) {
   cat('Importing refined clustering.\n')
   cluster_df <-
-    readr::read_tsv(temp, col_names = c('unitig', 'cluster'), col_types = 'cc')
+    readr::read_tsv(args$refined_clusters, col_names = c('unitig', 'cluster'), col_types = 'cc')
 } else {
 
   weights <- with(unitig_coverage_df, set_names(coverage, unitig))
@@ -412,7 +353,7 @@ if(length(temp) != 0) {
   
   readr::write_tsv(
     cluster_df,
-    file.path(intermediate_output_dir, 'refined_clusters.tsv'),
+    file.path(args$intermediate_output_dir, 'refined_clusters.tsv'),
     col_names = FALSE
   )
 }
@@ -421,11 +362,11 @@ if(length(temp) != 0) {
 
 # Haploid Chromosomes -----------------------------------------------------
 
-temp <- get_values('--final-clusters', null_ok=TRUE)
-if(length(temp) != 0) {
+
+if(!is.null(args$final_clusters)) {
   cat('Importing final clustering.\n')
   cluster_df <-
-    readr::read_tsv(temp, col_names = c('unitig', 'cluster'), col_types = 'cc')
+    readr::read_tsv(args$final_clusters, col_names = c('unitig', 'cluster'), col_types = 'cc')
 } else { 
   
   # Remove cluster with no fastmap ssf values:
@@ -535,7 +476,7 @@ if(length(temp) != 0) {
   
   readr::write_tsv(
     cluster_df,
-    file.path(intermediate_output_dir, 'final_clusters.tsv'),
+    file.path(args$intermediate_output_dir, 'final_clusters.tsv'),
     col_names = FALSE
   )
 }
@@ -562,11 +503,10 @@ if(length(unclustered_unitig_lengths) > 0) {
 }
 # Orientation Detection ---------------------------------------------------
 
-temp <- get_values('--unitig-orientation', null_ok=TRUE)
-if(length(temp) != 0) {
+if(!is.null(args$unitig_orientation)) {
   cat('Importing unitig orientation.\n')
   strand_orientation_clusters_df <-
-    readr::read_tsv(temp, col_names = c('unitig', 'strand_cluster'), col_types = 'cn')
+    readr::read_tsv(args$unitig_orientation, col_names = c('unitig', 'strand_cluster'), col_types = 'cn')
 } else {
   
   cat('Detecting unitig orientation\n')
@@ -660,7 +600,7 @@ if(length(temp) != 0) {
   
   readr::write_tsv(
     strand_orientation_clusters_df,
-    file.path(intermediate_output_dir, 'unitig_orientation.tsv'),
+    file.path(args$intermediate_output_dir, 'unitig_orientation.tsv'),
     col_names = FALSE
   )
 }
@@ -954,11 +894,11 @@ marker_counts <-
 
 ## Pick Counting Method ----------------------------------------------------
 
-temp <- get_values('--counting-methods', null_ok=TRUE)
-if(length(temp) != 0) {
+
+if(!is.null(args$counting_methods)) {
   cat('Importing marker counting methods.\n')
   counting_methods_df <-
-    readr::read_tsv(temp, col_names = c('cluster', 'method'), col_types = 'cc')
+    readr::read_tsv(args$counting_methods, col_names = c('cluster', 'method'), col_types = 'cc')
 } else {
   
   counting_methods_df <-
@@ -967,7 +907,7 @@ if(length(temp) != 0) {
   
   readr::write_tsv(
     counting_methods_df,
-    file.path(intermediate_output_dir, 'counting_methods.tsv'),
+    file.path(args$intermediate_output_dir, 'counting_methods.tsv'),
     col_names = FALSE
   )
   
@@ -1095,7 +1035,7 @@ marker_counts <-
   marker_counts %>%
   select(unitig, hap_1_counts, hap_2_counts, n, everything())
 
-readr::write_csv(marker_counts, output_counts)
+readr::write_csv(marker_counts, args$output_marker_counts)
 
 ## Library Weights ---------------------------------------------------------
 # add missing libraries back in
@@ -1108,7 +1048,7 @@ library_weights <-
 
 ### CSV ---------------------------------------------------------------------
 
-readr::write_csv(library_weights, output_lib)
+readr::write_csv(library_weights, args$output_lib)
 
 # Plots -------------------------------------------------------------------
 
@@ -1538,7 +1478,7 @@ plots[['0_marker_unitigs_hist']] <- p
 ## Export ------------------------------------------------------------------
 
 
-pdf(file.path(intermediate_output_dir, 'plots.pdf'), width = 12, height = 12)
+pdf(file.path(args$intermediate_output_dir, 'plots.pdf'), width = 12, height = 12)
 iwalk(plots, function(x, nm) {
   cat('Plotting', nm, '\n')
   print(x)
@@ -1892,7 +1832,7 @@ if(length(unitigs_to_plot) <= 4000) {
       limits = c(0, 1)
     )
   
-  pdf(file.path(intermediate_output_dir, 'plots_sim.pdf'), width = size, height = size)
+  pdf(file.path(args$intermediate_output_dir, 'plots_sim.pdf'), width = size, height = size)
   iwalk(plots_sim_all, function(x, nm) {
     cat('Plotting', nm, '\n')
     print(x)
@@ -1904,7 +1844,7 @@ if(length(unitigs_to_plot) <= 4000) {
 width <- length(included_libraries) / 7
 
 if(width * size <= 5e6) {
-  pdf(file.path(intermediate_output_dir, 'plots_barcode.pdf'), width = width, height = size)
+  pdf(file.path(args$intermediate_output_dir, 'plots_barcode.pdf'), width = width, height = size)
   iwalk(plots_barcode, function(x, nm) {
     cat('Plotting', nm, '\n')
     print(x)
@@ -1931,14 +1871,14 @@ if(largest_cluster_size <= 3000) {
       limits = c(0, 1)
     )
   
-  pdf(file.path(intermediate_output_dir, 'plots_sim_cluster.pdf'), width = size, height = size)
+  pdf(file.path(args$intermediate_output_dir, 'plots_sim_cluster.pdf'), width = size, height = size)
   iwalk(plots_sim_cluster, function(x, nm) {
     cat('Plotting', nm, '\n')
     print(x)
   })
   dev.off()
   
-  pdf(file.path(intermediate_output_dir, 'plots_barcode_cluster.pdf'), width = width, height = size)
+  pdf(file.path(args$intermediate_output_dir, 'plots_barcode_cluster.pdf'), width = width, height = size)
   iwalk(plots_barcode_cluster, function(x, nm) {
     cat('Plotting', nm, '\n')
     print(x)

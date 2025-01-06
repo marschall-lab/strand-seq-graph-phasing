@@ -99,6 +99,7 @@ get_script_dir <- function() {
 print(args)
 
 # Library -----------------------------------------------------------------
+library(argparse)
 library(magrittr)
 library(dplyr)
 library(purrr)
@@ -106,46 +107,39 @@ library(ggplot2)
 
 # Parsing -----------------------------------------------------------------
 
-# Input
-# lib_weights <- "library_weights/NA21487_library_weights.csv"
-# lib_weights <- "library_weights/NA19434_library_weights.csv"
-# lib_weights <- "library_weights/HG01114_library_weights.csv"
-lib_weights <- get_values('--lib-weights')
+print(commandArgs(trailingOnly = FALSE))
 
-# raw_counts_df <-  "sseq_alignment_counts/NA21487_sseq_mem_raw.csv" 
-# raw_counts_df <-  "sseq_alignment_counts/NA19434_sseq_mem_raw.csv"
-# raw_counts_df <-  "sseq_alignment_counts/HG01114_sseq_mem_raw.csv"
-raw_counts_df <- get_values('--sseq-alignments')
+parser <- ArgumentParser(description = 'Locate Haplotype Switch Breakpoints')
+parser$add_argument('--lib-weights', required=TRUE, nargs = 1)
+parser$add_argument('--haplotype-marker-counts', required=TRUE, nargs = 1)
+parser$add_argument('--sseq-alignments', required=TRUE, nargs = 1)
+parser$add_argument('--output', required=TRUE, nargs = 1)
 
-# haplotype_marker_counts <- "haplotype_marker_counts/NA21487_fudged_haplotype_marker_counts.csv"
-# haplotype_marker_counts <- "haplotype_marker_counts/NA19434_fudged_haplotype_marker_counts.csv"
-# haplotype_marker_counts <- "haplotype_marker_counts/HG01114_fudged_haplotype_marker_counts.csv"
-haplotype_marker_counts <- get_values('--haplotype-marker-counts')
+args <- parser$parse_args()
+print(args)
 
-# Params
-# ratio_threshold <- as.numeric(get_values('--marker-ratio-threshold'))
+
+# Params ------------------------------------------------------------------
+
+
+# TODO pass from commandline?
 ratio_threshold <- 8
-# pvalue_threshold <- as.numeric(get_values('--peak-pvalue-threshold'))
 pvalue_threshold <- 1e-8
-# half_window_width <- as.integer(get_values('--half-window-width'))
 half_window_width <- 150
 
-## Output
-# output_table <- 'test_output.csv'
-output_table <- get_values('--output')
 
 
 # FIXME A better way of getting sample into things.Mostly used for plotting code to label facets.?
-# samp <- strsplit(basename(lib_weights), '_')[[1]][1]
+# samp <- strsplit(basename(args$lib_weights), '_')[[1]][1]
 
 
 # Import ------------------------------------------------------------------
 
 lib_weights <-
-  readr::read_csv(lib_weights)
+  readr::read_csv(args$lib_weights)
 
 haplotype_marker_counts <- 
-  readr::read_csv(haplotype_marker_counts)
+  readr::read_csv(args$haplotype_marker_counts)
 
 # Import and Filter Counts ------------------------------------------------
 
@@ -174,7 +168,7 @@ to_look_at <-
 # Lazy loading is faster when filtering most of the data out:
 mapq_threshold <- 10
 raw_counts_df <-
-  readr::read_csv(raw_counts_df, lazy=TRUE) %>% 
+  readr::read_csv(args$sseq_alignments, lazy=TRUE) %>% 
   filter(mapq >= mapq_threshold) %>% 
   semi_join(to_look_at, by=c('unitig'))
   
@@ -379,7 +373,7 @@ peak_windows <-
 
 peak_windows %>% 
   # select(unitig, window_min, window_max) %>% 
-  readr::write_csv(output_table)
+  readr::write_csv(args$output)
 
 
 # TODO This giant nested block is hideous
@@ -479,7 +473,7 @@ if(nrow(peak_windows) > 0) {
   ## Output Plot -------------------------------------------------------------
   
   
-  pdf(paste0(output_table, '.pdf'), width = 20)
+  pdf(paste0(args$output, '.pdf'), width = 20)
   print(p)
   dev.off()
   

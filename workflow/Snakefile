@@ -407,13 +407,12 @@ rule remove_acrocentric_tangle:
     log: "log/remove_acrocentric_tangle_{sample}.log"
     benchmark: "benchmark/remove_acrocentric_tangle_{sample}.benchmark"
     shell:
-        '''
-        (Rscript --vanilla {params.script} \\
-        --gfa {input} \\
-        --output-gfa {output.gfa} \\
-        --output-ccs {output.ccs} \\
-        --segment-length-threshold {params.segment_length_threshold}) > {log} 2>&1
-        '''
+        'Rscript --vanilla {params.script} ' 
+        '--gfa {input} '
+        '--output-gfa {output.gfa} '
+        '--output-ccs {output.ccs} '
+        '--segment-length-threshold {params.segment_length_threshold} > {log} 2>&1 '
+
 
 
 #######################################
@@ -492,15 +491,30 @@ rule count_sseq_alignments_fastmap:
         '--output {output} > {log} 2>&1'
 
 
-def if_file_exists(file_name):
-    file_path = pathlib.Path(file_name)
-    if file_path.is_file():
-        return str(file_path)
-    else:
-        return ""
+# def if_file_exists(file_name):
+#     file_path = pathlib.Path(file_name)
+#     if file_path.is_file():
+#         return str(file_path)
+#     else:
+#         return ""
 
-def get_optional_phasing_input(wildcards, what):
-    return if_file_exists('phasing_input/' + wildcards.sample + '/' + what)
+def get_optional_phasing_input(wildcards):
+    params_str = ''
+    files = [
+        'included_libraries.tsv',
+        'prior_clusters.tsv',
+        'refined_clusters.tsv',
+        'final_clusters.tsv',
+        'unitig_orientation.tsv',
+        'counting_methods.tsv'
+    ]
+    for file in files:
+        path = pathlib.Path(f'phasing_input/{wildcards.sample}/{file}')
+        if path.is_file():
+            arg_name = file.replace("_", "-").replace(".tsv", "")
+            params_str += f'--{arg_name} phasing_input/{wildcards.sample}/{file} '
+    return params_str
+
 
 rule count_haplotype_markers:
     input:
@@ -514,13 +528,7 @@ rule count_haplotype_markers:
     params:
         segment_length_threshold=segment_length_threshold,
         script = get_script_path('R','clustering_orient_strandstate.snakemake.R'),
-        il = lambda wildcards: get_optional_phasing_input(wildcards,'included_libraries.tsv'),
-        pc = lambda wildcards: get_optional_phasing_input(wildcards,'prior_clusters.tsv'),
-        rc= lambda wildcards: get_optional_phasing_input(wildcards,'refined_clusters.tsv'),
-        fc = lambda wildcards: get_optional_phasing_input(wildcards,'final_clusters.tsv'),
-        uo = lambda wildcards: get_optional_phasing_input(wildcards,'unitig_orientation.tsv'),
-        cm = lambda wildcards: get_optional_phasing_input(wildcards,'counting_methods.tsv')
-    # singularity: singularity_r_env
+        opi = lambda wildcards: get_optional_phasing_input(wildcards)
     conda: 'envs/env_R-COS.yaml'
     resources:
         mem_mb=calc_mem(32),
@@ -528,23 +536,17 @@ rule count_haplotype_markers:
     log: "log/count_haplotype_markers_{sample}.log"
     benchmark: "benchmark/count_haplotype_markers_{sample}.benchmark"
     shell:
-        '''
-        mkdir -p {output.imo} &&
-        (Rscript --vanilla {params.script} \\
-        --mem-counts {input.mem} \\
-        --fastmap-counts {input.fastmap} \\
-        --connected-components {input.connected_components} \\
-        --segment-length-threshold {params.segment_length_threshold} \\
-        --intermediate-output-dir {output.imo} \\
-        --included-libraries {params.il} \\
-        --prior-clusters {params.pc} \\
-        --refined-clusters {params.rc} \\
-        --final-clusters {params.fc} \\
-        --unitig-orientation {params.uo} \\
-        --counting-methods {params.cm} \\
-        --output-marker-counts {output.mc} \\
-        --output-lib {output.lib}) > {log} 2>&1
-        '''
+        'mkdir -p {output.imo} && '
+        'Rscript --vanilla {params.script} '
+        '--mem-counts {input.mem} '
+        '--fastmap-counts {input.fastmap} '
+        '--connected-components {input.connected_components} '
+        '--segment-length-threshold {params.segment_length_threshold} '
+        '--intermediate-output-dir {output.imo} '
+        '{params.opi} '
+        '--output-marker-counts {output.mc} '
+        '--output-lib {output.lib} > {log} 2>&1'
+
 
 rule fudge_haplotype_markers:
     input:
@@ -560,11 +562,8 @@ rule fudge_haplotype_markers:
     log: "log/fudge_haplotype_markers_{sample}.log"
     benchmark: "benchmark/fudge_haplotype_markers_{sample}.benchmark"
     shell:
-        '''
-        (Rscript --vanilla {params.script} \\
-        --hmc {input.hmc} \\
-        --output {output}) > {log} 2>&1
-        '''
+        'Rscript --vanilla {params.script} --hmc {input.hmc}  > {output} 2> {log}'
+
 ################################################################
 ############ HiFiasm  Graph Hifi Coverage for Rukki ############
 ################################################################
@@ -705,8 +704,8 @@ rule run_rukki:
         # Assign tangles flanked by solid nodes from the same class, # Allow dead-end nodes in the tangles
         params="$params --assign-tangles --tangle-allow-deadend"
 
-        ($CONDA_PREFIX/lib/verkko/bin/rukki trio -g {input.graph} -m {input.markers}              -p {output.tsv} $params) > {log} 2>&1
-        ($CONDA_PREFIX/lib/verkko/bin/rukki trio -g {input.graph} -m {input.markers} --gaf-format -p {output.gaf} $params) >> {log} 2>&1
+        $CONDA_PREFIX/lib/verkko/bin/rukki trio -g {input.graph} -m {input.markers}              -p {output.tsv} $params > {log} 2>&1
+        $CONDA_PREFIX/lib/verkko/bin/rukki trio -g {input.graph} -m {input.markers} --gaf-format -p {output.gaf} $params >> {log} 2>&1
         '''
 
 
