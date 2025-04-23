@@ -161,7 +161,7 @@ rule unzip_ss:
     log: "log/unzip_ss_{sample}_{lib}_{pair}.log"
     shell:
         '''
-        (time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1
+        bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output} > {log} 2>&1
         '''
 
 # TODO I don't think this step is necessary anymore
@@ -229,7 +229,7 @@ rule concat_assembled_with_first_pair_of_unassembled:
         mem_mb=calc_mem(),
         walltime=calc_walltime()
     log: "log/concat_merged_with_first_unmerged_{sample}_{lib}.log"
-    shell: "(time bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output}) > {log} 2>&1"
+    shell: "bioawk -c fastx '{{print \">\"$name; print $seq}}' <(cat {input}) > {output} > {log} 2>&1"
 
 rule add_ss_libname_merged:
     input: rules.concat_assembled_with_first_pair_of_unassembled.output
@@ -268,7 +268,7 @@ rule gfa_to_fasta:
     benchmark: "benchmark/gfa_to_fasta_{sample}.benchmark"
     shell:
         '''
-        (time grep S {input} | awk '{{print \">\"$2\"\\n\"$3}}' > {output}) > {log} 2<&1
+        grep S {input} | awk '{{print \">\"$2\"\\n\"$3}}' > {output} > {log} 2<&1
         '''
 
 rule bwa_index_unitigs:
@@ -280,7 +280,7 @@ rule bwa_index_unitigs:
         walltime=calc_walltime(1, 8)
     log: "log/bwa_index_unitigs_{sample}.log"
     benchmark: "benchmark/bwa_index_unitigs_{sample}.benchmark"
-    shell: "(time bwa index {input}) > {log} 2>&1"
+    shell: "bwa index {input} > {log} 2>&1"
 
 #####################################################################
 ############ bwa mem Unmerged SS Reads to Assembly Unitigs ##########
@@ -323,7 +323,7 @@ rule bwa_sort_unmerged_ss_alignments:
     benchmark: "benchmark/bwa_sort_unmerged_{sample}_{lib}.benchmark"
     shell:
         '''
-        (time samtools sort -o {output} {input}) > {log} 2>&1
+        samtools sort -o {output} {input} > {log} 2>&1
         '''
 
 rule unmerged_mark_duplicates:
@@ -337,7 +337,7 @@ rule unmerged_mark_duplicates:
     benchmark: "benchmark/unmerged_mark_duplicates_{sample}_{lib}.benchmark"
     shell:
         '''
-        (time sambamba markdup {input} {output}) > {log} 2>&1
+        sambamba markdup {input} {output} > {log} 2>&1
         '''
 
 # Some filtering happens at the alignment step to save a little time in duplicate marking, but this step can also
@@ -368,7 +368,7 @@ rule unmerged_bwa_index:
     benchmark: "benchmark/unmerged_bwa_index_{sample}_{lib}.benchmark"
     shell:
         '''
-        (time samtools index {input}) > {log} 2>&1
+        samtools index {input} > {log} 2>&1
         '''
 
 #############################################################
