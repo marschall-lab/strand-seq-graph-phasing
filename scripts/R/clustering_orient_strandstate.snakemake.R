@@ -1050,6 +1050,17 @@ library_weights <-
 
 readr::write_csv(library_weights, args$output_lib)
 
+
+## Cosine Similarity Matrix -----------------------------------------------
+library(hdf5r)
+
+hdf5 <- H5File$new(file.path(args$intermediate_output_dir, 'cosine_similarity.hdf5'), mode = 'w')
+
+dataset <- hdf5$create_dataset('cosine_similarity', robj = cosine_similarity_mat)
+
+dataset$close()
+hdf5$close()
+
 # Plots -------------------------------------------------------------------
 
 library(ggplot2)
