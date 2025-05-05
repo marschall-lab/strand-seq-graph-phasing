@@ -209,13 +209,6 @@ ssf_mat <-
   make_ssf_mat(min_n=PARAMS$min_n_mem)
 
 
-## Cosine Similarity -------------------------------------------------------
-
-# TODO only calculate the cosine similarity mat if it is used (eg, if final
-# clusters and strand orientation is not provided)
-cosine_similarity_mat <-
-  pwc_cos_sim(ssf_mat, min_overlaps = PARAMS$min_overlaps)
-
 # Library QC --------------------------------------------------------------
 
 
@@ -260,6 +253,13 @@ exact_match_counts_df <-
   filter(lib %in% included_libraries)
 
 ssf_mat <- ssf_mat[, colnames(ssf_mat) %in% included_libraries, drop=FALSE]
+
+## Cosine Similarity -------------------------------------------------------
+
+# TODO only calculate the cosine similarity mat if it is used (eg, if final
+# clusters and strand orientation is not provided)
+cosine_similarity_mat <-
+  pwc_cos_sim(ssf_mat, min_overlaps = PARAMS$min_overlaps)
 
 # Prior Clusters ----------------------------------------------------------
 
